@@ -109,6 +109,8 @@ The platform event model supports:
 - `MAINTENANCE_DUE`
 - `VIDEO_READY`
 
+Order media links are served through signed local tokens at `/api/media/[token]`; customer-facing pages never render raw Docker volume paths.
+
 ## Production TODO Seams
 
 - Real printer agent: replace `src/workers/print-worker.ts` with a secure agent protocol that owns internal printer credentials, telemetry, and G-code dispatch.

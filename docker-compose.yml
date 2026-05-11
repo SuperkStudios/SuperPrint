@@ -9,6 +9,7 @@ services:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/superprint?schema=public
       NEXTAUTH_URL: http://localhost:3000
       NEXTAUTH_SECRET: dev-secret-change-me
+      MEDIA_TOKEN_SECRET: dev-media-secret-change-me
       REDIS_URL: redis://redis:6379
       SUPERPRINT_DATA_ROOT: /data
       PUBLIC_FACTORY_STREAM_URL: https://demo.superprint.local/live/factory

@@ -167,6 +167,8 @@ CREATE TABLE "OrderVideo" (
     "orderId" TEXT NOT NULL,
     "title" TEXT NOT NULL,
     "storageKey" TEXT NOT NULL,
+    "timelapseStorageKey" TEXT,
+    "thumbnailStorageKey" TEXT,
     "playbackUrl" TEXT NOT NULL,
     "durationSec" INTEGER NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,

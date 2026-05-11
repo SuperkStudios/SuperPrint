@@ -209,7 +209,9 @@ async function main() {
         orderId: order.id,
         title: "SP-1001 live print capture",
         storageKey: "videos/demo/SP-1001.mp4",
-        playbackUrl: "https://demo.superprint.local/videos/SP-1001.mp4",
+        timelapseStorageKey: "timelapses/demo/SP-1001.mp4",
+        thumbnailStorageKey: "thumbnails/demo/SP-1001.jpg",
+        playbackUrl: "/api/media/local",
         durationSec: 328
       }
     }),

@@ -215,6 +215,8 @@ model OrderVideo {
   order       Order    @relation(fields: [orderId], references: [id])
   title       String
   storageKey  String
+  timelapseStorageKey String?
+  thumbnailStorageKey String?
   playbackUrl String
   durationSec Int
   createdAt   DateTime @default(now())

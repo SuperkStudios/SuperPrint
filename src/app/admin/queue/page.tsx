@@ -42,6 +42,11 @@ export default async function AdminQueuePage() {
             <AdminActionButton endpoint="/api/admin/queue" payload={{ action: "requeue", printJobId: job.id }}>
               Requeue
             </AdminActionButton>
+            {job.order.status === "COMPLETED" ? (
+              <AdminActionButton endpoint="/api/admin/media" payload={{ orderId: job.order.id }}>
+                Attach media
+              </AdminActionButton>
+            ) : null}
           </CardContent>
         </Card>
       ))}

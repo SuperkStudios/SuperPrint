@@ -6,6 +6,7 @@ import { money } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { createMediaToken } from "@/lib/media-token";
 
 export const dynamic = "force-dynamic";
 
@@ -43,7 +44,18 @@ export default async function OrdersPage() {
             <CardContent className="grid gap-4 md:grid-cols-3">
               <p className="text-sm"><span className="text-muted-foreground">Total</span><br />{money(order.totalCents)}</p>
               <p className="text-sm"><span className="text-muted-foreground">Print jobs</span><br />{order.printJobs.length}</p>
-              <p className="text-sm"><span className="text-muted-foreground">Videos</span><br />{order.videos.length ? order.videos.map((video) => video.title).join(", ") : "Pending"}</p>
+              <div className="text-sm">
+                <span className="text-muted-foreground">Media</span><br />
+                {order.videos.length
+                  ? order.videos.map((video) => (
+                      <div key={video.id} className="mt-1 flex flex-wrap gap-2">
+                        <a className="underline" href={`/api/media/${createMediaToken({ key: video.storageKey, expiresAt: Date.now() + 60 * 60 * 1000 })}`}>video</a>
+                        {video.timelapseStorageKey ? <a className="underline" href={`/api/media/${createMediaToken({ key: video.timelapseStorageKey, expiresAt: Date.now() + 60 * 60 * 1000 })}`}>timelapse</a> : null}
+                        {video.thumbnailStorageKey ? <a className="underline" href={`/api/media/${createMediaToken({ key: video.thumbnailStorageKey, expiresAt: Date.now() + 60 * 60 * 1000 })}`}>thumbnail</a> : null}
+                      </div>
+                    ))
+                  : "Pending"}
+              </div>
             </CardContent>
           </Card>
         ))}
