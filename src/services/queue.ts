@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   markPrintCompleted,
   markPrintFailed,
@@ -7,6 +8,7 @@ import {
   publicQueueJob,
   reorderQueue
 } from "@/domain/queue";
+import { assignQueuedJobToPrinter } from "@/domain/queue-preparation";
 import { prisma } from "@/lib/prisma";
 import { enqueuePrintJob } from "@/lib/queue-broker";
 import { recordPlatformEvent } from "./events";
@@ -223,4 +225,61 @@ export async function requeuePrintJob(printJobId: string, actorId?: string) {
   });
 
   return updated;
+}
+
+export async function prepareNextQueuedJob() {
+  const lockToken = randomUUID();
+  const locked = await prisma.$transaction(async (tx) => {
+    const job = await tx.printJob.findFirst({
+      where: { status: "QUEUED", queueLockedAt: null },
+      orderBy: { queuePosition: "asc" }
+    });
+    if (!job) return null;
+    return tx.printJob.update({
+      where: { id: job.id },
+      data: { queueLockedAt: new Date(), queueLockToken: lockToken }
+    });
+  });
+
+  if (!locked) {
+    return null;
+  }
+
+  const [job, printers] = await Promise.all([
+    prisma.printJob.findUniqueOrThrow({
+      where: { id: locked.id },
+      include: { filament: true }
+    }),
+    prisma.printer.findMany({
+      include: {
+        currentFilament: true,
+        maintenanceTasks: { where: { status: { in: ["OPEN", "IN_PROGRESS"] } }, select: { id: true } }
+      },
+      orderBy: { publicName: "asc" }
+    })
+  ]);
+
+  const assignment = assignQueuedJobToPrinter(
+    { status: job.status, filament: job.filament },
+    printers.map((printer) => ({
+      id: printer.id,
+      heartbeatStatus: printer.heartbeatStatus,
+      status: printer.status,
+      supportedMaterials: printer.supportedMaterials,
+      currentFilament: printer.currentFilament,
+      openMaintenanceTasks: printer.maintenanceTasks.length
+    }))
+  );
+
+  await prisma.printJob.updateMany({
+    where: { id: job.id, queueLockToken: lockToken },
+    data: {
+      printerId: assignment.printerId,
+      assignedAt: assignment.printerId ? new Date() : null,
+      assignmentBlockedReason: assignment.blockedReason,
+      queueLockedAt: null,
+      queueLockToken: null
+    }
+  });
+  return prisma.printJob.findUnique({ where: { id: job.id } });
 }

@@ -232,8 +232,15 @@ model PrintJob {
   completedAt    DateTime?
   failureReason  String?
   streamUrl      String?
+  queueLockedAt  DateTime?
+  queueLockToken String?
+  assignedAt     DateTime?
+  assignmentBlockedReason String?
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
+
+  @@index([status, queuePosition])
+  @@index([queueLockToken])
 }
 
 model FilamentSpool {
