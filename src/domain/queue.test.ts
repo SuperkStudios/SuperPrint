@@ -88,8 +88,9 @@ describe("queue transitions", () => {
       status: "PRINTING",
       queuePosition: 0,
       etaMinutes: 10,
-      progressPercent: 8,
+      progressPercent: 0,
       streamUrl: "https://example.com/live",
+      telemetry: { state: "WAITING_FOR_TELEMETRY" },
       printer: { name: "Forge One", status: "HEALTHY", healthDescription: "Nominal" },
       filament: { material: "PLA", color: "Black", remainingGrams: 500, low: false }
     });

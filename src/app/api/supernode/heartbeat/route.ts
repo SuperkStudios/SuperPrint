@@ -19,6 +19,18 @@ const schema = z.object({
       thumbnails: z.string().optional()
     })
     .default({}),
+  activeJob: z
+    .object({
+      printJobId: z.string(),
+      currentLayer: z.number().int().min(0).optional().nullable(),
+      progressPercent: z.number().int().min(0).max(100).optional().nullable(),
+      elapsedSeconds: z.number().int().min(0).optional().nullable(),
+      remainingSeconds: z.number().int().min(0).optional().nullable(),
+      nozzleTempC: z.number().optional().nullable(),
+      bedTempC: z.number().optional().nullable()
+    })
+    .optional()
+    .nullable(),
   retryCount: z.number().int().min(0).default(0),
   lastError: z.string().optional().nullable()
 });
@@ -65,6 +77,21 @@ export async function POST(request: Request) {
         cameraStatus: body.cameraStatus,
         lastHeartbeatAt: heartbeatAt,
         healthDescription: body.lastError ?? "SuperNode heartbeat received"
+      }
+    });
+  }
+
+  if (body.activeJob?.printJobId) {
+    await prisma.printJob.updateMany({
+      where: { id: body.activeJob.printJobId, printerId: updatedNode.printerId ?? undefined },
+      data: {
+        currentLayer: body.activeJob.currentLayer,
+        progressPercent: body.activeJob.progressPercent,
+        elapsedSeconds: body.activeJob.elapsedSeconds,
+        remainingSeconds: body.activeJob.remainingSeconds,
+        nozzleTempC: body.activeJob.nozzleTempC,
+        bedTempC: body.activeJob.bedTempC,
+        telemetryUpdatedAt: heartbeatAt
       }
     });
   }

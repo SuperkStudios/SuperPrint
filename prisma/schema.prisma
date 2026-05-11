@@ -275,6 +275,13 @@ model PrintJob {
   operatorStartChecklist Json?
   printCommandAcknowledgedAt DateTime?
   printCommandAcknowledgedByNodeId String?
+  currentLayer   Int?
+  progressPercent Int?
+  elapsedSeconds Int?
+  remainingSeconds Int?
+  nozzleTempC    Float?
+  bedTempC       Float?
+  telemetryUpdatedAt DateTime?
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
 

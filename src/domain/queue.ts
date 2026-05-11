@@ -1,3 +1,5 @@
+import { publicPrintTelemetry } from "./telemetry";
+
 export type PrintJobStatus =
   | "QUEUED"
   | "READY_ON_NODE"
@@ -119,10 +121,15 @@ export function publicQueueJob(job: {
   order: { orderNumber: string };
   printer: { publicName: string; status: string; healthDescription: string } | null;
   filament: { material: string; color: string; remainingGrams: number; thresholdGrams: number } | null;
+  currentLayer?: number | null;
+  progressPercent?: number | null;
+  elapsedSeconds?: number | null;
+  remainingSeconds?: number | null;
+  nozzleTempC?: number | null;
+  bedTempC?: number | null;
+  telemetryUpdatedAt?: Date | null;
 }) {
-  const elapsedMinutes = job.startedAt ? Math.max(0, (Date.now() - job.startedAt.getTime()) / 60000) : 0;
-  const progressPercent =
-    job.status === "PRINTING" ? Math.min(96, Math.max(8, Math.round((elapsedMinutes / (elapsedMinutes + job.etaMinutes)) * 100))) : 0;
+  const progressPercent = job.progressPercent ?? 0;
 
   return {
     id: job.id,
@@ -132,6 +139,7 @@ export function publicQueueJob(job: {
     etaMinutes: job.etaMinutes,
     progressPercent,
     streamUrl: job.streamUrl,
+    telemetry: publicPrintTelemetry(job),
     printer: job.printer
       ? {
           name: job.printer.publicName,
