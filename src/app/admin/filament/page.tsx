@@ -1,3 +1,4 @@
+import { AdminActionButton } from "@/components/admin-action-button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { prisma } from "@/lib/prisma";
@@ -24,6 +25,22 @@ export default async function AdminFilamentPage() {
               />
             </div>
             <p className="mt-2 text-sm">{spool.remainingGrams}g remaining · threshold {spool.thresholdGrams}g</p>
+            <div className="mt-4">
+              <AdminActionButton
+                endpoint="/api/admin/filament"
+                payload={{
+                  id: spool.id,
+                  material: spool.material,
+                  color: spool.color,
+                  brand: spool.brand,
+                  remainingGrams: 1000,
+                  thresholdGrams: spool.thresholdGrams,
+                  location: spool.location
+                }}
+              >
+                Mark refilled
+              </AdminActionButton>
+            </div>
           </CardContent>
         </Card>
       ))}
