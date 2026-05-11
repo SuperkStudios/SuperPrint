@@ -1,4 +1,4 @@
-import { AdminActionButton } from "@/components/admin-action-button";
+import { UploadReviewActions } from "@/components/upload-review-actions";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { prisma } from "@/lib/prisma";
@@ -7,9 +7,10 @@ export const dynamic = "force-dynamic";
 
 export default async function AdminUploadsPage() {
   const uploads = await prisma.modelUpload.findMany({
-    include: { customer: true },
+    include: { customer: true, sliceJobs: true, selectedPrinter: true },
     orderBy: { createdAt: "desc" }
   });
+  const printers = await prisma.printer.findMany({ orderBy: { publicName: "asc" } });
 
   return (
     <div className="grid gap-4">
@@ -21,35 +22,33 @@ export default async function AdminUploadsPage() {
               <p className="mt-1 text-sm text-muted-foreground">{upload.customer.email}</p>
               <p className="mt-2 text-sm text-muted-foreground">
                 {upload.fileSizeBytes ? `${Math.round(upload.fileSizeBytes / 1024)} KB` : "size unknown"} ·{" "}
-                {upload.contentType ?? "content type unknown"} · {upload.storageKey}
+                {upload.contentType ?? "content type unknown"} · checksum {upload.checksumSha256?.slice(0, 12) ?? "pending"}
               </p>
             </div>
             <Badge>{upload.status}</Badge>
           </CardHeader>
           <CardContent className="space-y-4">
             <p className="text-sm text-muted-foreground">{upload.notes ?? "No customer notes"}</p>
-            <div className="flex flex-wrap gap-3">
-              <AdminActionButton
-                endpoint="/api/admin/uploads"
-                payload={{
-                  uploadId: upload.id,
-                  action: "approve",
-                  estimatedPriceCents: 4200,
-                  estimatedPrintMinutes: 140
-                }}
-              >
-                Approve
-              </AdminActionButton>
-              <AdminActionButton
-                endpoint="/api/admin/uploads"
-                payload={{ uploadId: upload.id, action: "reject", rejectionReason: "Model needs revision." }}
-              >
-                Reject
-              </AdminActionButton>
+            <div className="grid gap-2 text-sm md:grid-cols-4">
+              <span>Material: {upload.selectedMaterial ?? "not selected"}</span>
+              <span>Printer: {upload.selectedPrinter?.publicName ?? "not selected"}</span>
+              <span>Estimate: {upload.estimatedPrintMinutes ?? "?"}m</span>
+              <span>Grams: {upload.estimatedGrams ?? "?"}g</span>
             </div>
+            <div className="flex flex-wrap gap-2">
+              {upload.sliceJobs.map((job) => (
+                <Badge key={job.id} className="bg-secondary">Slice {job.status}</Badge>
+              ))}
+            </div>
+            {upload.status === "PENDING" ? <UploadReviewActions uploadId={upload.id} printers={printers} /> : null}
           </CardContent>
         </Card>
       ))}
+      {uploads.length === 0 ? (
+        <Card>
+          <CardContent className="p-8 text-center text-muted-foreground">No uploads are waiting for review.</CardContent>
+        </Card>
+      ) : null}
     </div>
   );
 }

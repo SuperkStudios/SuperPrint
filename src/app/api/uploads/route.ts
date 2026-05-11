@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { buildModelUploadedPayload, validateStlUploadInput } from "@/domain/uploads";
 import { buildLocalStorageKey, resolveLocalStoragePath } from "@/lib/storage";
@@ -34,13 +35,16 @@ export async function POST(request: Request) {
   const storageKey = buildLocalStorageKey("uploads", file.name);
   const localPath = resolveLocalStoragePath(storageKey);
   await mkdir(localPath.slice(0, localPath.lastIndexOf("/")), { recursive: true });
-  await writeFile(localPath, Buffer.from(await file.arrayBuffer()));
+  const fileBuffer = Buffer.from(await file.arrayBuffer());
+  const checksumSha256 = createHash("sha256").update(fileBuffer).digest("hex");
+  await writeFile(localPath, fileBuffer);
 
   const upload = await prisma.modelUpload.create({
     data: {
       customerId: session!.user.id,
       fileName: file.name,
       storageKey,
+      checksumSha256,
       fileSizeBytes: file.size,
       contentType: file.type || "application/octet-stream",
       notes: typeof notes === "string" ? notes : undefined,
@@ -56,6 +60,7 @@ export async function POST(request: Request) {
       fileName: upload.fileName,
       sizeBytes: upload.fileSizeBytes ?? file.size,
       contentType: upload.contentType ?? file.type,
+      checksumSha256,
       storageKey,
       localVolumePath: localPath
     })

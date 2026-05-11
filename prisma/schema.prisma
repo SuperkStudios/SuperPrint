@@ -37,6 +37,7 @@ enum OrderStatus {
 
 enum PrintJobStatus {
   QUEUED
+  READY_ON_NODE
   PRINTING
   PAUSED
   COMPLETED
@@ -83,6 +84,7 @@ enum SliceJobStatus {
   PENDING
   RUNNING
   READY
+  BLOCKED
   FAILED
   CANCELED
 }
@@ -92,6 +94,11 @@ enum PlatformEventType {
   MODEL_UPLOADED
   MODEL_APPROVED
   MODEL_REJECTED
+  SLICING_BLOCKED
+  SLICING_FAILED
+  SLICING_COMPLETE
+  QUEUE_ADMITTED
+  JOB_READY_ON_NODE
   PRINT_STARTED
   PRINT_PAUSED
   PRINT_REQUEUED
@@ -136,15 +143,21 @@ model ModelUpload {
   customer            User         @relation(fields: [customerId], references: [id])
   fileName            String
   storageKey          String
+  checksumSha256      String?
   fileSizeBytes       Int?
   contentType         String?
   notes               String?
+  adminNotes          String?
   status              UploadStatus @default(PENDING)
   rejectionReason     String?
   approvedById        String?
   approvedAt          DateTime?
   estimatedPriceCents Int?
+  estimatedGrams      Int?
   estimatedPrintMinutes Int?
+  selectedMaterial    FilamentMaterial?
+  selectedPrinterId   String?
+  selectedPrinter     Printer?     @relation(fields: [selectedPrinterId], references: [id])
   orders              Order[]
   sliceJobs           SliceJob[]
   createdAt           DateTime     @default(now())
@@ -197,6 +210,7 @@ model Printer {
   heartbeatLatencyMs Int?
   superNodes         SuperNode[]
   jobs               PrintJob[]
+  selectedUploads    ModelUpload[]
   maintenanceTasks   MaintenanceTask[]
   createdAt          DateTime      @default(now())
   updatedAt          DateTime      @updatedAt
@@ -247,6 +261,10 @@ model PrintJob {
   queueLockToken String?
   assignedAt     DateTime?
   assignmentBlockedReason String?
+  reservedFilamentGrams Int?
+  readyOnNodeAt  DateTime?
+  readyOnNodeId  String?
+  nodeLocalJobPath String?
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
 
@@ -300,6 +318,13 @@ model SliceJob {
   outputStorageKey  String?
   watchedFolderPath String?
   commandPreview    Json
+  estimatedPrintMinutes Int?
+  estimatedGrams    Int?
+  warnings          Json?
+  errorLog          String?
+  stdoutLog         String?
+  stderrLog         String?
+  blockedReason     String?
   startedAt         DateTime?
   completedAt       DateTime?
   failureReason     String?

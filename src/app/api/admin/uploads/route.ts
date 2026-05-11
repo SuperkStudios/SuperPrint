@@ -2,14 +2,18 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdmin } from "@/lib/http";
 import { prisma } from "@/lib/prisma";
-import { recordPlatformEvent } from "@/services/events";
-import { buildModelReviewPayload } from "@/domain/uploads";
+import { approveUploadForSlicing, rejectUploadForCustomer } from "@/services/model-review";
+import { filamentMaterials } from "@/domain/printer-profile";
 
 const actionSchema = z.object({
   uploadId: z.string(),
   action: z.enum(["approve", "reject"]),
   estimatedPriceCents: z.number().int().positive().optional(),
+  estimatedGrams: z.number().int().positive().optional(),
   estimatedPrintMinutes: z.number().int().positive().optional(),
+  selectedMaterial: z.enum(filamentMaterials).optional(),
+  selectedPrinterId: z.string().optional(),
+  adminNotes: z.string().optional(),
   rejectionReason: z.string().optional()
 });
 
@@ -29,33 +33,27 @@ export async function POST(request: Request) {
   if (response) return response;
 
   const body = actionSchema.parse(await request.json());
-  const approved = body.action === "approve";
-  const upload = await prisma.modelUpload.update({
-    where: { id: body.uploadId },
-    data: approved
-      ? {
-          status: "APPROVED",
-          approvedById: session!.user.id,
-          approvedAt: new Date(),
+  if (body.action === "approve") {
+    if (!body.estimatedGrams || !body.estimatedPrintMinutes || !body.selectedMaterial || !body.selectedPrinterId) {
+      return NextResponse.json({ error: "Approval requires grams, print time, material, and printer profile" }, { status: 400 });
+    }
+    return NextResponse.json(
+      await approveUploadForSlicing(
+        body.uploadId,
+        {
+          adminNotes: body.adminNotes,
           estimatedPriceCents: body.estimatedPriceCents,
-          estimatedPrintMinutes: body.estimatedPrintMinutes
-        }
-      : {
-          status: "REJECTED",
-          rejectionReason: body.rejectionReason ?? "Model needs revision before printing."
-        }
-  });
+          estimatedGrams: body.estimatedGrams,
+          estimatedPrintMinutes: body.estimatedPrintMinutes,
+          selectedMaterial: body.selectedMaterial,
+          selectedPrinterId: body.selectedPrinterId
+        },
+        session!.user.id
+      )
+    );
+  }
 
-  await recordPlatformEvent({
-    type: approved ? "MODEL_APPROVED" : "MODEL_REJECTED",
-    actorId: session!.user.id,
-    payload: buildModelReviewPayload({
-      uploadId: upload.id,
-      fileName: upload.fileName,
-      status: approved ? "APPROVED" : "REJECTED",
-      rejectionReason: upload.rejectionReason
-    })
+  return NextResponse.json({
+    upload: await rejectUploadForCustomer(body.uploadId, body.rejectionReason ?? "Model needs revision.", session!.user.id)
   });
-
-  return NextResponse.json({ upload });
 }

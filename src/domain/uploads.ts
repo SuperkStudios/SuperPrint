@@ -46,6 +46,7 @@ export function buildModelUploadedPayload(input: {
   fileName: string;
   sizeBytes: number;
   contentType: string;
+  checksumSha256?: string;
   storageKey: string;
   localVolumePath: string;
 }) {
@@ -54,6 +55,7 @@ export function buildModelUploadedPayload(input: {
     fileName: input.fileName,
     sizeBytes: input.sizeBytes,
     contentType: input.contentType,
+    checksumSha256: input.checksumSha256,
     localVolumeKey: input.storageKey,
     localVolumePath: input.localVolumePath
   };

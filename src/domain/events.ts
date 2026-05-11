@@ -3,6 +3,11 @@ export const platformEventTypes = [
   "MODEL_UPLOADED",
   "MODEL_APPROVED",
   "MODEL_REJECTED",
+  "SLICING_BLOCKED",
+  "SLICING_FAILED",
+  "SLICING_COMPLETE",
+  "QUEUE_ADMITTED",
+  "JOB_READY_ON_NODE",
   "PRINT_STARTED",
   "PRINT_PAUSED",
   "PRINT_REQUEUED",
@@ -42,7 +47,11 @@ const privatePayloadKeys = new Set([
   "paymentProviderId",
   "localVolumePath",
   "localVolumeKey",
-  "signedUrl"
+  "signedUrl",
+  "nodeLocalJobPath",
+  "internalNodeId",
+  "gcodeLocalPath",
+  "outputStorageKey"
 ]);
 
 export function sanitizePlatformEvent(event: PlatformEventInput): PublicPlatformEvent {
