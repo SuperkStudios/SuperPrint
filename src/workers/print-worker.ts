@@ -1,6 +1,6 @@
 import { Worker } from "bullmq";
 import IORedis from "ioredis";
-import { printQueueName } from "@/lib/queue-broker";
+import { printQueueName } from "../lib/queue-broker";
 
 if (!process.env.REDIS_URL) {
   throw new Error("REDIS_URL is required to run the print worker");
