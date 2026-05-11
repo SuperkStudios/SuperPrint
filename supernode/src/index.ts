@@ -9,6 +9,7 @@ const heartbeatIntervalMs = Number(process.env.SUPERNODE_HEARTBEAT_INTERVAL_MS ?
 if (!nodeSecret) {
   throw new Error("SUPERNODE_SECRET is required after registration");
 }
+const nodeSigningSecret = nodeSecret;
 
 let retryCount = 0;
 
@@ -34,8 +35,8 @@ async function sendHeartbeat() {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      authorization: `Bearer ${nodeSecret}`,
-      "x-supernode-signature": signNodeHeartbeat(body, nodeSecret)
+      authorization: `Bearer ${nodeSigningSecret}`,
+      "x-supernode-signature": signNodeHeartbeat(body, nodeSigningSecret)
     },
     body
   });
