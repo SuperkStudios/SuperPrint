@@ -20,7 +20,7 @@ export default async function StorePage() {
           <Card key={product.id}>
             <CardHeader>
               <div className="mb-4 flex h-36 items-center justify-center rounded bg-zinc-950 text-white">
-                <span className="text-sm">{product.name}</span>
+                <img src={product.imageUrl} alt="" className="h-full w-full rounded object-cover" />
               </div>
               <CardTitle>{product.name}</CardTitle>
               <CardDescription>{product.description}</CardDescription>

@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { sanitizePlatformEvent, type PlatformEventType } from "@/domain/events";
 
@@ -10,7 +11,7 @@ export async function recordPlatformEvent(input: {
     data: {
       type: input.type,
       actorId: input.actorId,
-      payload: input.payload
+      payload: input.payload as Prisma.InputJsonObject
     }
   });
 }

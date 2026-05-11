@@ -2,6 +2,19 @@ import { hash } from "bcryptjs";
 import { prisma } from "../src/lib/prisma";
 
 async function main() {
+  await prisma.$transaction([
+    prisma.platformEvent.deleteMany(),
+    prisma.orderVideo.deleteMany(),
+    prisma.maintenanceTask.deleteMany(),
+    prisma.printJob.deleteMany(),
+    prisma.order.deleteMany(),
+    prisma.modelUpload.deleteMany(),
+    prisma.printer.deleteMany(),
+    prisma.filamentSpool.deleteMany(),
+    prisma.product.deleteMany(),
+    prisma.user.deleteMany()
+  ]);
+
   const passwordHash = await hash("superprint-demo", 10);
 
   const [admin, customer] = await Promise.all([
