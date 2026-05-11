@@ -14,7 +14,7 @@ export default function UploadPage() {
       <Card>
         <CardHeader>
           <CardTitle>Model approval request</CardTitle>
-          <CardDescription>Demo mode stores metadata and a TODO-backed S3 upload target.</CardDescription>
+          <CardDescription>Demo mode stores metadata and resolves a Docker volume upload target.</CardDescription>
         </CardHeader>
         <CardContent>
           <UploadForm />

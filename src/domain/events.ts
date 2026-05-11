@@ -38,7 +38,8 @@ const privatePayloadKeys = new Set([
   "rawGcodeUrl",
   "customerEmail",
   "paymentProviderId",
-  "s3Key",
+  "localVolumePath",
+  "localVolumeKey",
   "signedUrl"
 ]);
 

@@ -10,7 +10,7 @@ SuperPrint is a transparent live 3D print-on-demand platform. Customers browse a
 - PostgreSQL through Prisma
 - Redis + BullMQ print queue scaffold
 - Server-Sent Events for public platform events
-- S3-compatible storage seams for STL/video objects
+- Docker volume storage for STL/model uploads, sliced files, videos, timelapses, thumbnails, logs, and backup staging
 
 ## Setup
 
@@ -19,7 +19,7 @@ npm install
 cp .env.example .env
 ```
 
-Update `.env` with PostgreSQL, Redis, auth, and S3-compatible values.
+Update `.env` with PostgreSQL, Redis, auth, local storage, backup, and Social Blade bucket values.
 
 ```bash
 npm run db:generate
@@ -32,6 +32,18 @@ Optional worker:
 
 ```bash
 npm run worker
+```
+
+Optional backup worker:
+
+```bash
+npm run backup
+```
+
+Docker MVP stack:
+
+```bash
+docker compose up --build
 ```
 
 ## Demo Users
@@ -67,7 +79,7 @@ npm run worker
 - `GET /api/mobile/queue`
 - `GET /api/mobile/events`
 
-Public APIs sanitize events and queue state. They never expose internal printer IPs, printer API URLs, admin notes, S3 keys, payment provider IDs, or operational controls.
+Public APIs sanitize events and queue state. They never expose internal printer IPs, printer API URLs, admin notes, local volume paths, payment provider IDs, or operational controls.
 
 ## Events
 
@@ -89,7 +101,36 @@ The platform event model supports:
 - Real printer agent: replace `src/workers/print-worker.ts` with a secure agent protocol that owns internal printer credentials, telemetry, and G-code dispatch.
 - Payment provider: replace the checkout placeholder in `src/app/api/orders/route.ts` with Stripe/Adyen/etc. checkout sessions and webhook verification.
 - Shipping: add rate shopping, label purchase, address validation, and fulfillment webhooks after payment success.
-- S3 storage: replace `src/lib/storage.ts` demo URLs with multipart upload signing, virus/file validation, lifecycle policies, and private video delivery.
+- Local volume storage: replace demo upload targets with streamed file writes, MIME/STL validation, thumbnail generation, and private media authorization.
+- Social Blade bucket upload: replace `SOCIAL_BLADE_UPLOAD_COMMAND` with the real bucket CLI/API once credentials and endpoint behavior are available.
+
+## Local Docker Volumes
+
+The MVP mounts separate volumes under `SUPERPRINT_DATA_ROOT`:
+
+- `/data/uploads` for STL/model uploads
+- `/data/sliced` for slicer outputs
+- `/data/videos` for finished print videos
+- `/data/timelapses` for timelapse captures
+- `/data/thumbnails` for generated thumbnails
+- `/data/logs` for worker and backup logs
+- `/data/backup-staging` for temporary and encrypted backup bundles
+
+## Backups And Restore
+
+`npm run backup` creates a PostgreSQL custom-format dump, archives media volumes, writes a manifest, compresses/encrypts the bundle, and optionally uploads it to Social Blade buckets through `SOCIAL_BLADE_UPLOAD_COMMAND`.
+
+Restore dry run:
+
+```bash
+npm run restore -- --bundle=/data/backup-staging/superprint-RUNID.tar.gz.enc
+```
+
+Execute disaster recovery:
+
+```bash
+npm run restore -- --bundle=/data/backup-staging/superprint-RUNID.tar.gz.enc --confirm=true
+```
 
 ## Verification
 

@@ -249,7 +249,7 @@ async function main() {
           payload: {
             orderNumber: "SP-1001",
             playbackUrl: "https://demo.superprint.local/videos/SP-1001.mp4",
-            s3Key: "videos/demo/SP-1001.mp4"
+            localVolumeKey: "videos/demo/SP-1001.mp4"
           }
         }
       ]

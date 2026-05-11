@@ -1,0 +1,103 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: npm run dev
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/superprint?schema=public
+      NEXTAUTH_URL: http://localhost:3000
+      NEXTAUTH_SECRET: dev-secret-change-me
+      REDIS_URL: redis://redis:6379
+      SUPERPRINT_DATA_ROOT: /data
+      PUBLIC_FACTORY_STREAM_URL: https://demo.superprint.local/live/factory
+    volumes:
+      - .:/app
+      - node_modules:/app/node_modules
+      - uploads:/data/uploads
+      - sliced:/data/sliced
+      - videos:/data/videos
+      - timelapses:/data/timelapses
+      - thumbnails:/data/thumbnails
+      - logs:/data/logs
+      - backup_staging:/data/backup-staging
+    depends_on:
+      - postgres
+      - redis
+
+  print-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: npm run worker
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/superprint?schema=public
+      REDIS_URL: redis://redis:6379
+      SUPERPRINT_DATA_ROOT: /data
+    volumes:
+      - .:/app
+      - node_modules:/app/node_modules
+      - uploads:/data/uploads
+      - sliced:/data/sliced
+      - videos:/data/videos
+      - timelapses:/data/timelapses
+      - thumbnails:/data/thumbnails
+      - logs:/data/logs
+      - backup_staging:/data/backup-staging
+    depends_on:
+      - postgres
+      - redis
+
+  backup-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: npm run backup
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/superprint?schema=public
+      SUPERPRINT_DATA_ROOT: /data
+      BACKUP_ENCRYPTION_PASSPHRASE: dev-backup-passphrase-change-me
+      BACKUP_CRON: "0 2 * * *"
+      SOCIAL_BLADE_BUCKET: social-blade://superprint-backups
+      SOCIAL_BLADE_UPLOAD_COMMAND: ""
+    volumes:
+      - .:/app
+      - node_modules:/app/node_modules
+      - uploads:/data/uploads
+      - sliced:/data/sliced
+      - videos:/data/videos
+      - timelapses:/data/timelapses
+      - thumbnails:/data/thumbnails
+      - logs:/data/logs
+      - backup_staging:/data/backup-staging
+    depends_on:
+      - postgres
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: superprint
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+volumes:
+  node_modules:
+  postgres_data:
+  uploads:
+  sliced:
+  videos:
+  timelapses:
+  thumbnails:
+  logs:
+  backup_staging:
