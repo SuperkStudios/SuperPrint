@@ -111,6 +111,8 @@ model ModelUpload {
   customer            User         @relation(fields: [customerId], references: [id])
   fileName            String
   storageKey          String
+  fileSizeBytes       Int?
+  contentType         String?
   notes               String?
   status              UploadStatus @default(PENDING)
   rejectionReason     String?

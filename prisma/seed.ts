@@ -135,6 +135,8 @@ async function main() {
       customerId: customer.id,
       fileName: "bracket-v3.stl",
       storageKey: "uploads/demo/bracket-v3.stl",
+      fileSizeBytes: 240128,
+      contentType: "model/stl",
       notes: "Needs PETG, load-bearing bracket for workshop wall.",
       status: "PENDING"
     }

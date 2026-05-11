@@ -7,25 +7,32 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 export function UploadForm() {
-  const [fileName, setFileName] = useState("custom-bracket.stl");
+  const [file, setFile] = useState<File | null>(null);
   const [notes, setNotes] = useState("");
   const [message, setMessage] = useState("");
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!file) {
+      setMessage("Choose an STL file first.");
+      return;
+    }
+    const body = new FormData();
+    body.set("file", file);
+    body.set("notes", notes);
     const response = await fetch("/api/uploads", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ fileName, notes })
+      body
     });
-    setMessage(response.ok ? "Upload registered and waiting for admin approval." : "Sign in before uploading.");
+    const result = await response.json().catch(() => ({}));
+    setMessage(response.ok ? "Upload registered and waiting for admin approval." : result.error ?? "Sign in before uploading.");
   }
 
   return (
     <form onSubmit={submit} className="space-y-4">
       <div className="space-y-2">
-        <Label htmlFor="fileName">STL file name</Label>
-        <Input id="fileName" value={fileName} onChange={(event) => setFileName(event.target.value)} />
+        <Label htmlFor="file">STL file</Label>
+        <Input id="file" type="file" accept=".stl,model/stl,application/octet-stream" onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
       </div>
       <div className="space-y-2">
         <Label htmlFor="notes">Print notes</Label>

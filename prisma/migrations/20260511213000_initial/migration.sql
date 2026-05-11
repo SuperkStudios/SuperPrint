@@ -64,6 +64,8 @@ CREATE TABLE "ModelUpload" (
     "customerId" TEXT NOT NULL,
     "fileName" TEXT NOT NULL,
     "storageKey" TEXT NOT NULL,
+    "fileSizeBytes" INTEGER,
+    "contentType" TEXT,
     "notes" TEXT,
     "status" "UploadStatus" NOT NULL DEFAULT 'PENDING',
     "rejectionReason" TEXT,
