@@ -1,3 +1,4 @@
+import { AdminActionButton } from "@/components/admin-action-button";
 import { UploadReviewActions } from "@/components/upload-review-actions";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -40,6 +41,13 @@ export default async function AdminUploadsPage() {
                 <Badge key={job.id} className="bg-secondary">Slice {job.status}</Badge>
               ))}
             </div>
+            {upload.sliceJobs.some((job) => job.status === "READY") ? (
+              <div className="flex flex-wrap gap-2">
+                {upload.sliceJobs.filter((job) => job.status === "READY").map((job) => (
+                  <AdminAdmitButton key={job.id} sliceJobId={job.id} />
+                ))}
+              </div>
+            ) : null}
             {upload.status === "PENDING" ? <UploadReviewActions uploadId={upload.id} printers={printers} /> : null}
           </CardContent>
         </Card>
@@ -50,5 +58,17 @@ export default async function AdminUploadsPage() {
         </Card>
       ) : null}
     </div>
+  );
+}
+
+function AdminAdmitButton({ sliceJobId }: { sliceJobId: string }) {
+  return (
+    <AdminActionButton
+      endpoint="/api/admin/slices"
+      payload={{ action: "admit", sliceJobId }}
+      confirm="Admit this sliced job to the live queue and reserve filament?"
+    >
+      Admit ready slice to queue
+    </AdminActionButton>
   );
 }
