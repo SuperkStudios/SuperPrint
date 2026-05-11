@@ -79,10 +79,35 @@ async function syncReadyJobs() {
   }
 }
 
+async function acknowledgeApprovedPrintCommands() {
+  const response = await fetch(`${apiBaseUrl}/api/supernode/commands?nodeId=${encodeURIComponent(nodeId)}`, {
+    headers: { authorization: `Bearer ${nodeSigningSecret}` }
+  });
+  if (!response.ok) {
+    throw new Error(`command poll rejected with ${response.status}`);
+  }
+  const { commands } = (await response.json()) as { commands: Array<{ id: string; adapter: string; localJobPath: string | null }> };
+
+  for (const command of commands) {
+    if (command.adapter !== "manual-noop") {
+      throw new Error(`unsupported printer adapter ${command.adapter}`);
+    }
+    const ack = await fetch(`${apiBaseUrl}/api/supernode/commands/${command.id}/ack`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${nodeSigningSecret}` },
+      body: JSON.stringify({ nodeId })
+    });
+    if (!ack.ok) {
+      throw new Error(`command acknowledgement rejected with ${ack.status}`);
+    }
+  }
+}
+
 async function loop() {
   try {
     await sendHeartbeat();
     await syncReadyJobs();
+    await acknowledgeApprovedPrintCommands();
   } catch (error) {
     retryCount += 1;
     console.error(error instanceof Error ? error.message : error);
