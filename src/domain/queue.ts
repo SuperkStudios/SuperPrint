@@ -1,4 +1,4 @@
-export type PrintJobStatus = "QUEUED" | "PRINTING" | "COMPLETED" | "FAILED" | "CANCELED";
+export type PrintJobStatus = "QUEUED" | "PRINTING" | "PAUSED" | "COMPLETED" | "FAILED" | "CANCELED";
 
 export type QueueJob = {
   id: string;
@@ -69,5 +69,68 @@ export function markPrintFailed<T extends QueueJob>(
     completedAt,
     failureReason,
     queuePosition: null
+  };
+}
+
+export function markPrintPaused<T extends QueueJob>(job: T, completedAt = new Date()): T {
+  if (job.status !== "PRINTING") {
+    throw new Error("Only printing jobs can be paused");
+  }
+
+  return {
+    ...job,
+    status: "PAUSED",
+    completedAt,
+    queuePosition: null
+  };
+}
+
+export function markPrintRequeued<T extends QueueJob>(job: T, queuePosition: number): T {
+  if (job.status !== "PAUSED" && job.status !== "FAILED") {
+    throw new Error("Only paused or failed jobs can be requeued");
+  }
+
+  return {
+    ...job,
+    status: "QUEUED",
+    queuePosition,
+    startedAt: null,
+    completedAt: null,
+    failureReason: null
+  };
+}
+
+export function publicQueueJob(job: {
+  id: string;
+  status: string;
+  queuePosition: number | null;
+  etaMinutes: number;
+  streamUrl: string | null;
+  order: { orderNumber: string };
+  printer: { publicName: string; status: string; healthDescription: string } | null;
+  filament: { material: string; color: string; remainingGrams: number; thresholdGrams: number } | null;
+}) {
+  return {
+    id: job.id,
+    orderNumber: job.order.orderNumber,
+    status: job.status,
+    queuePosition: job.queuePosition,
+    etaMinutes: job.etaMinutes,
+    streamUrl: job.streamUrl,
+    printer: job.printer
+      ? {
+          name: job.printer.publicName,
+          status: job.printer.status,
+          healthDescription: job.printer.healthDescription
+        }
+      : null,
+    filament: job.filament
+      ? {
+          material: job.filament.material,
+          color: job.filament.color,
+          remainingGrams: job.filament.remainingGrams,
+          low: job.filament.remainingGrams <= job.filament.thresholdGrams
+        }
+      : null
   };
 }

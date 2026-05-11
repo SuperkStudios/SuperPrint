@@ -30,11 +30,17 @@ export default async function AdminQueuePage() {
             <AdminActionButton endpoint="/api/admin/queue" payload={{ action: "start", printJobId: job.id }}>
               Start
             </AdminActionButton>
+            <AdminActionButton endpoint="/api/admin/queue" payload={{ action: "pause", printJobId: job.id }}>
+              Pause
+            </AdminActionButton>
             <AdminActionButton endpoint="/api/admin/queue" payload={{ action: "complete", printJobId: job.id }}>
               Complete
             </AdminActionButton>
             <AdminActionButton endpoint="/api/admin/queue" payload={{ action: "fail", printJobId: job.id, reason: "Operator marked failed" }}>
               Fail
+            </AdminActionButton>
+            <AdminActionButton endpoint="/api/admin/queue" payload={{ action: "requeue", printJobId: job.id }}>
+              Requeue
             </AdminActionButton>
           </CardContent>
         </Card>

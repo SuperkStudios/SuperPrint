@@ -5,12 +5,14 @@ import {
   completePrintJob,
   failPrintJob,
   getAdminQueueState,
+  pausePrintJob,
+  requeuePrintJob,
   reorderPrintQueue,
   startPrintJob
 } from "@/services/queue";
 
 const actionSchema = z.object({
-  action: z.enum(["reorder", "start", "complete", "fail"]),
+  action: z.enum(["reorder", "start", "pause", "complete", "fail", "requeue"]),
   printJobId: z.string().optional(),
   orderedIds: z.array(z.string()).optional(),
   reason: z.string().optional()
@@ -38,6 +40,12 @@ export async function POST(request: Request) {
   }
   if (body.action === "complete") {
     return NextResponse.json({ job: await completePrintJob(body.printJobId, session!.user.id) });
+  }
+  if (body.action === "pause") {
+    return NextResponse.json({ job: await pausePrintJob(body.printJobId, session!.user.id) });
+  }
+  if (body.action === "requeue") {
+    return NextResponse.json({ job: await requeuePrintJob(body.printJobId, session!.user.id) });
   }
   return NextResponse.json({ job: await failPrintJob(body.printJobId, body.reason ?? "Print failed", session!.user.id) });
 }

@@ -1,4 +1,12 @@
-import { markPrintCompleted, markPrintFailed, markPrintStarted, reorderQueue } from "@/domain/queue";
+import {
+  markPrintCompleted,
+  markPrintFailed,
+  markPrintPaused,
+  markPrintRequeued,
+  markPrintStarted,
+  publicQueueJob,
+  reorderQueue
+} from "@/domain/queue";
 import { prisma } from "@/lib/prisma";
 import { enqueuePrintJob } from "@/lib/queue-broker";
 import { recordPlatformEvent } from "./events";
@@ -23,8 +31,8 @@ export async function getPublicQueueState() {
   ]);
 
   return {
-    current: current ? publicJob(current) : null,
-    nextJobs: nextJobs.map(publicJob),
+    current: current ? publicQueueJob(current) : null,
+    nextJobs: nextJobs.map(publicQueueJob),
     printers: printers.map((printer) => ({
       id: printer.id,
       name: printer.publicName,
@@ -140,7 +148,7 @@ export async function failPrintJob(printJobId: string, reason: string, actorId?:
   });
 
   await recordPlatformEvent({
-    type: "PRINT_FAILED",
+    type: "PRINT_PAUSED",
     actorId,
     payload: {
       orderNumber: updated.order.orderNumber,
@@ -154,37 +162,65 @@ export async function failPrintJob(printJobId: string, reason: string, actorId?:
   return updated;
 }
 
-function publicJob(job: {
-  id: string;
-  status: string;
-  queuePosition: number | null;
-  etaMinutes: number;
-  streamUrl: string | null;
-  order: { orderNumber: string };
-  printer: { publicName: string; status: string; healthDescription: string } | null;
-  filament: { material: string; color: string; remainingGrams: number; thresholdGrams: number } | null;
-}) {
-  return {
-    id: job.id,
-    orderNumber: job.order.orderNumber,
-    status: job.status,
-    queuePosition: job.queuePosition,
-    etaMinutes: job.etaMinutes,
-    streamUrl: job.streamUrl,
-    printer: job.printer
-      ? {
-          name: job.printer.publicName,
-          status: job.printer.status,
-          healthDescription: job.printer.healthDescription
-        }
-      : null,
-    filament: job.filament
-      ? {
-          material: job.filament.material,
-          color: job.filament.color,
-          remainingGrams: job.filament.remainingGrams,
-          low: job.filament.remainingGrams <= job.filament.thresholdGrams
-        }
-      : null
-  };
+export async function pausePrintJob(printJobId: string, actorId?: string) {
+  const job = await prisma.printJob.findUniqueOrThrow({ where: { id: printJobId }, include: { order: true, printer: true } });
+  const next = markPrintPaused(job);
+
+  const updated = await prisma.printJob.update({
+    where: { id: printJobId },
+    data: {
+      status: next.status,
+      completedAt: next.completedAt,
+      queuePosition: next.queuePosition,
+      order: { update: { status: "QUEUED" } }
+    },
+    include: { order: true, printer: true }
+  });
+
+  await recordPlatformEvent({
+    type: "PRINT_FAILED",
+    actorId,
+    payload: {
+      orderNumber: updated.order.orderNumber,
+      printerName: updated.printer?.publicName,
+      status: "PAUSED",
+      failureReason: "Paused by operator"
+    }
+  });
+
+  return updated;
+}
+
+export async function requeuePrintJob(printJobId: string, actorId?: string) {
+  const [job, lastQueued] = await Promise.all([
+    prisma.printJob.findUniqueOrThrow({ where: { id: printJobId }, include: { order: true, printer: true } }),
+    prisma.printJob.findFirst({ where: { status: "QUEUED" }, orderBy: { queuePosition: "desc" } })
+  ]);
+  const next = markPrintRequeued(job, (lastQueued?.queuePosition ?? 0) + 1);
+
+  const updated = await prisma.printJob.update({
+    where: { id: printJobId },
+    data: {
+      status: next.status,
+      queuePosition: next.queuePosition,
+      startedAt: null,
+      completedAt: null,
+      failureReason: null,
+      order: { update: { status: "QUEUED" } }
+    },
+    include: { order: true, printer: true }
+  });
+
+  await recordPlatformEvent({
+    type: "PRINT_REQUEUED",
+    actorId,
+    payload: {
+      orderNumber: updated.order.orderNumber,
+      printerName: updated.printer?.publicName,
+      status: "REQUEUED",
+      queuePosition: updated.queuePosition
+    }
+  });
+
+  return updated;
 }

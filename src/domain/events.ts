@@ -4,6 +4,8 @@ export const platformEventTypes = [
   "MODEL_APPROVED",
   "MODEL_REJECTED",
   "PRINT_STARTED",
+  "PRINT_PAUSED",
+  "PRINT_REQUEUED",
   "PRINT_COMPLETED",
   "PRINT_FAILED",
   "FILAMENT_LOW",
