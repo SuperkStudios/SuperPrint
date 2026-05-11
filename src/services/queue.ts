@@ -10,6 +10,7 @@ import {
   reorderQueue
 } from "../domain/queue";
 import { approveOperatorPrintStart, type OperatorStartChecklist } from "../domain/operator-start";
+import { completePrintingJobAccounting, failPrintingJobAccounting } from "../domain/print-completion";
 import { assignQueuedJobToPrinter } from "../domain/queue-preparation";
 import { enqueuePrintJob } from "../lib/queue-broker";
 import { prisma } from "../lib/prisma";
@@ -143,6 +144,7 @@ export async function approvePhysicalPrintStart(printJobId: string, checklist: O
 export async function completePrintJob(printJobId: string, actorId?: string) {
   const job = await prisma.printJob.findUniqueOrThrow({ where: { id: printJobId }, include: { order: true, printer: true } });
   const next = markPrintCompleted(job);
+  const accounting = completePrintingJobAccounting(job);
 
   const updated = await prisma.printJob.update({
     where: { id: printJobId },
@@ -150,6 +152,15 @@ export async function completePrintJob(printJobId: string, actorId?: string) {
       status: next.status,
       completedAt: next.completedAt,
       queuePosition: next.queuePosition,
+      consumedFilamentGrams: accounting.consumedFilamentGrams,
+      printer: job.printerId
+        ? {
+            update: {
+              totalRuntimeMinutes: { increment: accounting.runtimeMinutes },
+              completedPrintCount: { increment: accounting.completedPrintIncrement }
+            }
+          }
+        : undefined,
       order: { update: { status: "COMPLETED" } }
     },
     include: { order: true, printer: true }
@@ -161,7 +172,9 @@ export async function completePrintJob(printJobId: string, actorId?: string) {
     payload: {
       orderNumber: updated.order.orderNumber,
       printerName: updated.printer?.publicName,
-      status: updated.status
+      status: updated.status,
+      consumedFilamentGrams: accounting.consumedFilamentGrams,
+      runtimeMinutes: accounting.runtimeMinutes
     }
   });
 
@@ -170,7 +183,8 @@ export async function completePrintJob(printJobId: string, actorId?: string) {
 
 export async function failPrintJob(printJobId: string, reason: string, actorId?: string) {
   const job = await prisma.printJob.findUniqueOrThrow({ where: { id: printJobId }, include: { order: true, printer: true } });
-  const next = markPrintFailed(job, reason);
+  const accounting = failPrintingJobAccounting({ status: job.status, reason });
+  const next = markPrintFailed(job, accounting.failureReason);
 
   const updated = await prisma.printJob.update({
     where: { id: printJobId },
@@ -179,6 +193,14 @@ export async function failPrintJob(printJobId: string, reason: string, actorId?:
       completedAt: next.completedAt,
       failureReason: next.failureReason,
       queuePosition: next.queuePosition,
+      printer: job.printerId
+        ? {
+            update: {
+              failedPrintCount: { increment: accounting.failedPrintIncrement },
+              totalRuntimeMinutes: { increment: Math.max(0, Math.round((job.elapsedSeconds ?? 0) / 60)) }
+            }
+          }
+        : undefined,
       order: { update: { status: "FAILED" } }
     },
     include: { order: true, printer: true }
@@ -191,7 +213,7 @@ export async function failPrintJob(printJobId: string, reason: string, actorId?:
       orderNumber: updated.order.orderNumber,
       printerName: updated.printer?.publicName,
       status: updated.status,
-      failureReason: reason,
+      failureReason: accounting.failureReason,
       adminNotes: "Review printer logs before requeue"
     }
   });

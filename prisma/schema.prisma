@@ -266,6 +266,7 @@ model PrintJob {
   assignedAt     DateTime?
   assignmentBlockedReason String?
   reservedFilamentGrams Int?
+  consumedFilamentGrams Int?
   readyOnNodeAt  DateTime?
   readyOnNodeId  String?
   nodeLocalJobPath String?
