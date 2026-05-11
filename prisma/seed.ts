@@ -1,5 +1,7 @@
 import { hash } from "bcryptjs";
+import { mkdir, writeFile } from "node:fs/promises";
 import { prisma } from "../src/lib/prisma";
+import { resolveLocalStoragePath } from "../src/lib/storage";
 
 async function main() {
   await prisma.$transaction([
@@ -42,6 +44,19 @@ async function main() {
 
   const products = await Promise.all([
     prisma.product.upsert({
+      where: { slug: "articulated-dragon" },
+      update: {},
+      create: {
+        slug: "articulated-dragon",
+        name: "Articulated Dragon",
+        description: "A showpiece flexible dragon print used for live factory demos.",
+        imageUrl: "/products/dragon.svg",
+        priceCents: 5400,
+        estimatedPrintMinutes: 186,
+        defaultMaterial: "PLA"
+      }
+    }),
+    prisma.product.upsert({
       where: { slug: "desk-cable-loom" },
       update: {},
       create: {
@@ -82,7 +97,7 @@ async function main() {
     })
   ]);
 
-  const [blackPla, clearPetg] = await Promise.all([
+  const [blackPla, clearPetg, silkGreenPla] = await Promise.all([
     prisma.filamentSpool.create({
       data: {
         material: "PLA",
@@ -102,6 +117,16 @@ async function main() {
         thresholdGrams: 200,
         location: "Rack B1"
       }
+    }),
+    prisma.filamentSpool.create({
+      data: {
+        material: "PLA",
+        color: "Silk Emerald",
+        brand: "Bambu",
+        remainingGrams: 812,
+        thresholdGrams: 160,
+        location: "Rack A4"
+      }
     })
   ]);
 
@@ -114,7 +139,7 @@ async function main() {
         healthDescription: "Nominal: bed level stable, nozzle clean",
         internalIp: "10.10.0.21",
         controlApiUrl: "http://10.10.0.21/api",
-        currentFilamentId: blackPla.id
+        currentFilamentId: silkGreenPla.id
       }
     }),
     prisma.printer.create({
@@ -133,18 +158,18 @@ async function main() {
   const upload = await prisma.modelUpload.create({
     data: {
       customerId: customer.id,
-      fileName: "bracket-v3.stl",
-      storageKey: "uploads/demo/bracket-v3.stl",
-      fileSizeBytes: 240128,
+      fileName: "camera-rig-handle-v7.stl",
+      storageKey: "uploads/demo/camera-rig-handle-v7.stl",
+      fileSizeBytes: 1840128,
       contentType: "model/stl",
-      notes: "Needs PETG, load-bearing bracket for workshop wall.",
+      notes: "Needs PETG, hand-held camera rig grip. Please check wall thickness around the screw bosses.",
       status: "PENDING"
     }
   });
 
-  const order = await prisma.order.create({
+  const activeOrder = await prisma.order.create({
     data: {
-      orderNumber: "SP-1001",
+      orderNumber: "SP-2401",
       customerId: customer.id,
       productId: products[0].id,
       status: "PRINTING",
@@ -154,12 +179,35 @@ async function main() {
       printJobs: {
         create: {
           printerId: forgeOne.id,
-          filamentId: blackPla.id,
+          filamentId: silkGreenPla.id,
           status: "PRINTING",
           queuePosition: 0,
-          etaMinutes: 38,
-          startedAt: new Date("2026-05-11T19:00:00.000Z"),
+          etaMinutes: 74,
+          startedAt: new Date(Date.now() - 52 * 60 * 1000),
           streamUrl: process.env.PUBLIC_FACTORY_STREAM_URL ?? "https://demo.superprint.local/live/factory"
+        }
+      }
+    }
+  });
+
+  const completedOrder = await prisma.order.create({
+    data: {
+      orderNumber: "SP-2399",
+      customerId: customer.id,
+      productId: products[2].id,
+      status: "COMPLETED",
+      totalCents: products[2].priceCents,
+      paymentStatus: "PAID",
+      shippingStatus: "READY_TO_SHIP",
+      printJobs: {
+        create: {
+          printerId: forgeTwo.id,
+          filamentId: blackPla.id,
+          status: "COMPLETED",
+          queuePosition: null,
+          etaMinutes: 0,
+          startedAt: new Date(Date.now() - 5 * 60 * 60 * 1000),
+          completedAt: new Date(Date.now() - 3 * 60 * 60 * 1000)
         }
       }
     }
@@ -168,7 +216,7 @@ async function main() {
   await Promise.all([
     prisma.order.create({
       data: {
-        orderNumber: "SP-1002",
+        orderNumber: "SP-2402",
         customerId: customer.id,
         productId: products[1].id,
         status: "QUEUED",
@@ -187,7 +235,45 @@ async function main() {
     }),
     prisma.order.create({
       data: {
-        orderNumber: "SP-1003",
+        orderNumber: "SP-2403",
+        customerId: customer.id,
+        productId: products[2].id,
+        status: "QUEUED",
+        totalCents: products[2].priceCents,
+        paymentStatus: "PAID",
+        printJobs: {
+          create: {
+            printerId: forgeOne.id,
+            filamentId: blackPla.id,
+            status: "QUEUED",
+            queuePosition: 2,
+            etaMinutes: 34
+          }
+        }
+      }
+    }),
+    prisma.order.create({
+      data: {
+        orderNumber: "SP-2404",
+        customerId: customer.id,
+        productId: products[3].id,
+        status: "QUEUED",
+        totalCents: products[3].priceCents,
+        paymentStatus: "PAID",
+        printJobs: {
+          create: {
+            printerId: forgeTwo.id,
+            filamentId: clearPetg.id,
+            status: "QUEUED",
+            queuePosition: 3,
+            etaMinutes: 72
+          }
+        }
+      }
+    }),
+    prisma.order.create({
+      data: {
+        orderNumber: "SP-2405",
         customerId: customer.id,
         uploadId: upload.id,
         status: "CHECKOUT_READY",
@@ -198,19 +284,19 @@ async function main() {
     prisma.maintenanceTask.create({
       data: {
         printerId: forgeTwo.id,
-        title: "Replace PETG spool",
-        description: "Swap clear PETG after current job or before SP-1002 starts.",
-        dueAt: new Date("2026-05-11T23:00:00.000Z"),
+        title: "Replace PETG spool before long queue run",
+        description: "Clear PETG is below threshold. Swap after current dragon print or before SP-2402 starts.",
+        dueAt: new Date(Date.now() + 90 * 60 * 1000),
         status: "OPEN"
       }
     }),
     prisma.orderVideo.create({
       data: {
-        orderId: order.id,
-        title: "SP-1001 live print capture",
-        storageKey: "videos/demo/SP-1001.mp4",
-        timelapseStorageKey: "timelapses/demo/SP-1001.mp4",
-        thumbnailStorageKey: "thumbnails/demo/SP-1001.jpg",
+        orderId: completedOrder.id,
+        title: "SP-2399 finished print media",
+        storageKey: "videos/demo/SP-2399.mp4",
+        timelapseStorageKey: "timelapses/demo/SP-2399.mp4",
+        thumbnailStorageKey: "thumbnails/demo/SP-2399.svg",
         playbackUrl: "/api/media/local",
         durationSec: 328
       }
@@ -220,22 +306,22 @@ async function main() {
         {
           type: "ORDER_CREATED",
           actorId: customer.id,
-          payload: { orderNumber: "SP-1001", customerEmail: customer.email }
+          payload: { orderNumber: "SP-2401", customerEmail: customer.email }
         },
         {
           type: "MODEL_UPLOADED",
           actorId: customer.id,
-          payload: { fileName: "bracket-v3.stl", uploadId: upload.id }
+          payload: { fileName: "camera-rig-handle-v7.stl", uploadId: upload.id }
         },
         {
           type: "PRINT_STARTED",
           actorId: admin.id,
           payload: {
-            orderNumber: "SP-1001",
+            orderNumber: activeOrder.orderNumber,
             printerName: "Forge One",
             printerInternalIp: "10.10.0.21",
             status: "PRINTING",
-            etaMinutes: 38
+            etaMinutes: 74
           }
         },
         {
@@ -251,14 +337,33 @@ async function main() {
         {
           type: "VIDEO_READY",
           payload: {
-            orderNumber: "SP-1001",
-            playbackUrl: "https://demo.superprint.local/videos/SP-1001.mp4",
-            localVolumeKey: "videos/demo/SP-1001.mp4"
+            orderNumber: completedOrder.orderNumber,
+            playbackUrl: "/api/media/local",
+            localVolumeKey: "videos/demo/SP-2399.mp4"
           }
         }
       ]
     })
   ]);
+
+  await Promise.all([
+    writeDemoMedia("videos/demo/SP-2399.mp4", "SuperPrint demo video placeholder for SP-2399\n"),
+    writeDemoMedia("timelapses/demo/SP-2399.mp4", "SuperPrint demo timelapse placeholder for SP-2399\n"),
+    writeDemoMedia(
+      "thumbnails/demo/SP-2399.svg",
+      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360"><rect width="640" height="360" fill="#082f49"/><text x="48" y="190" fill="#22c55e" font-family="Arial" font-size="42">SP-2399 complete</text></svg>`
+    )
+  ]);
+}
+
+async function writeDemoMedia(storageKey: string, contents: string) {
+  try {
+    const localPath = resolveLocalStoragePath(storageKey);
+    await mkdir(localPath.slice(0, localPath.lastIndexOf("/")), { recursive: true });
+    await writeFile(localPath, contents);
+  } catch (error) {
+    console.warn(`Skipped demo media write for ${storageKey}:`, error);
+  }
 }
 
 main()

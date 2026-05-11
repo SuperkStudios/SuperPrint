@@ -63,6 +63,17 @@ Then open `http://localhost:3000`. The app service runs migrations automatically
 - Customer: `customer@superprint.test`
 - Password for both: `superprint-demo`
 
+## Run The Demo Locally
+
+```bash
+docker compose build
+docker compose up -d postgres redis app worker
+docker compose run --rm app npm run db:seed
+curl http://localhost:3000/api/health
+```
+
+Open `http://localhost:3000` and sign in with the demo users above. The seeded factory story includes an active articulated dragon print, three queued jobs, a pending customer upload, low-filament warning, open maintenance task, and a completed order with local media placeholders.
+
 ## Main Routes
 
 - `/` public homepage with hero and live factory queue centerpiece
