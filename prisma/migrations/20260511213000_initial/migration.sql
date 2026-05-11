@@ -1,0 +1,2 @@
+-- Initial SuperPrint MVP schema. Generated for reviewable scaffold use.
+-- Run `npm run db:migrate` against PostgreSQL to apply via Prisma.

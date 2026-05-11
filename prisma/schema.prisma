@@ -1,0 +1,227 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  CUSTOMER
+  ADMIN
+}
+
+enum ProductStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum UploadStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum OrderStatus {
+  DRAFT
+  CHECKOUT_READY
+  PAID
+  QUEUED
+  PRINTING
+  COMPLETED
+  FAILED
+  CANCELED
+}
+
+enum PrintJobStatus {
+  QUEUED
+  PRINTING
+  COMPLETED
+  FAILED
+  CANCELED
+}
+
+enum PrinterStatus {
+  HEALTHY
+  WARNING
+  OFFLINE
+  MAINTENANCE
+}
+
+enum FilamentMaterial {
+  PLA
+  PETG
+  ABS
+  TPU
+  NYLON
+  RESIN
+}
+
+enum MaintenanceStatus {
+  OPEN
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum PlatformEventType {
+  ORDER_CREATED
+  MODEL_UPLOADED
+  MODEL_APPROVED
+  MODEL_REJECTED
+  PRINT_STARTED
+  PRINT_COMPLETED
+  PRINT_FAILED
+  FILAMENT_LOW
+  MAINTENANCE_DUE
+  VIDEO_READY
+}
+
+model User {
+  id           String        @id @default(cuid())
+  email        String        @unique
+  name         String
+  passwordHash String
+  role         UserRole      @default(CUSTOMER)
+  uploads      ModelUpload[]
+  orders       Order[]
+  events       PlatformEvent[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+}
+
+model Product {
+  id                   String        @id @default(cuid())
+  slug                 String        @unique
+  name                 String
+  description          String
+  imageUrl             String
+  priceCents           Int
+  estimatedPrintMinutes Int
+  defaultMaterial      FilamentMaterial
+  status               ProductStatus @default(ACTIVE)
+  orders               Order[]
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+}
+
+model ModelUpload {
+  id                  String       @id @default(cuid())
+  customerId          String
+  customer            User         @relation(fields: [customerId], references: [id])
+  fileName            String
+  storageKey          String
+  notes               String?
+  status              UploadStatus @default(PENDING)
+  rejectionReason     String?
+  approvedById        String?
+  approvedAt          DateTime?
+  estimatedPriceCents Int?
+  estimatedPrintMinutes Int?
+  orders              Order[]
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+}
+
+model Order {
+  id             String      @id @default(cuid())
+  orderNumber    String      @unique
+  customerId     String
+  customer       User        @relation(fields: [customerId], references: [id])
+  productId      String?
+  product        Product?    @relation(fields: [productId], references: [id])
+  uploadId       String?
+  upload         ModelUpload? @relation(fields: [uploadId], references: [id])
+  status         OrderStatus @default(CHECKOUT_READY)
+  totalCents     Int
+  paymentStatus  String      @default("PENDING")
+  shippingStatus String      @default("NOT_STARTED")
+  printJobs      PrintJob[]
+  videos         OrderVideo[]
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+}
+
+model Printer {
+  id                 String        @id @default(cuid())
+  name               String
+  publicName         String
+  status             PrinterStatus @default(HEALTHY)
+  healthDescription  String
+  internalIp         String
+  controlApiUrl      String
+  currentFilamentId  String?
+  currentFilament    FilamentSpool? @relation(fields: [currentFilamentId], references: [id])
+  jobs               PrintJob[]
+  maintenanceTasks   MaintenanceTask[]
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+}
+
+model PrintJob {
+  id             String         @id @default(cuid())
+  orderId        String
+  order          Order          @relation(fields: [orderId], references: [id])
+  printerId      String?
+  printer        Printer?       @relation(fields: [printerId], references: [id])
+  filamentId     String?
+  filament       FilamentSpool? @relation(fields: [filamentId], references: [id])
+  status         PrintJobStatus @default(QUEUED)
+  queuePosition  Int?
+  etaMinutes     Int
+  startedAt      DateTime?
+  completedAt    DateTime?
+  failureReason  String?
+  streamUrl      String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+}
+
+model FilamentSpool {
+  id             String           @id @default(cuid())
+  material       FilamentMaterial
+  color          String
+  brand          String
+  remainingGrams Int
+  thresholdGrams Int
+  location       String
+  printers       Printer[]
+  jobs           PrintJob[]
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+}
+
+model MaintenanceTask {
+  id          String            @id @default(cuid())
+  printerId   String
+  printer     Printer           @relation(fields: [printerId], references: [id])
+  title       String
+  description String
+  dueAt       DateTime
+  status      MaintenanceStatus @default(OPEN)
+  completedAt DateTime?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+}
+
+model OrderVideo {
+  id          String   @id @default(cuid())
+  orderId     String
+  order       Order    @relation(fields: [orderId], references: [id])
+  title       String
+  storageKey  String
+  playbackUrl String
+  durationSec Int
+  createdAt   DateTime @default(now())
+}
+
+model PlatformEvent {
+  id        String            @id @default(cuid())
+  type      PlatformEventType
+  actorId   String?
+  actor     User?             @relation(fields: [actorId], references: [id])
+  payload   Json
+  createdAt DateTime          @default(now())
+
+  @@index([type, createdAt])
+}

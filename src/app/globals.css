@@ -1,0 +1,40 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 210 22% 96%;
+  --foreground: 222 30% 12%;
+  --card: 0 0% 100%;
+  --card-foreground: 222 30% 12%;
+  --primary: 172 66% 31%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 39 92% 56%;
+  --secondary-foreground: 222 30% 12%;
+  --muted: 210 18% 90%;
+  --muted-foreground: 222 12% 38%;
+  --accent: 262 55% 48%;
+  --accent-foreground: 0 0% 100%;
+  --destructive: 0 72% 51%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 214 18% 82%;
+  --input: 214 18% 82%;
+  --ring: 172 66% 31%;
+  --radius: 0.5rem;
+}
+
+* {
+  border-color: hsl(var(--border));
+}
+
+body {
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+}
+
+.factory-grid {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.08) 1px, transparent 1px);
+  background-size: 32px 32px;
+}

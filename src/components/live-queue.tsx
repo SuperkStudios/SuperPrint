@@ -1,0 +1,111 @@
+import Link from "next/link";
+import { Activity, Clock, Cpu, Radio } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+
+type QueueState = Awaited<ReturnType<typeof import("@/services/queue").getPublicQueueState>>;
+
+export function LiveQueue({ queue }: { queue: QueueState }) {
+  return (
+    <section className="bg-zinc-950 py-14 text-white sm:py-20">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div className="mb-8 flex flex-col justify-between gap-4 md:flex-row md:items-end">
+          <div>
+            <Badge className="border-emerald-300/30 bg-emerald-300/10 text-emerald-100">
+              Observable manufacturing
+            </Badge>
+            <h2 className="mt-4 text-3xl font-semibold tracking-tight sm:text-4xl">Live factory queue</h2>
+            <p className="mt-3 max-w-2xl text-zinc-300">
+              Customers see the same queue that drives production: current print, ETA, filament state,
+              printer health, and post-print video availability.
+            </p>
+          </div>
+          <Button asChild variant="secondary">
+            <Link href="/queue">
+              <Radio className="size-4" />
+              Watch queue
+            </Link>
+          </Button>
+        </div>
+
+        <div className="grid gap-6 lg:grid-cols-[1.25fr_0.75fr]">
+          <div className="factory-grid overflow-hidden rounded-lg border border-white/10 bg-zinc-900">
+            <div className="grid gap-0 md:grid-cols-[1fr_280px]">
+              <div className="min-h-[360px] p-6">
+                <div className="flex items-center justify-between">
+                  <Badge className="border-cyan-300/30 bg-cyan-300/10 text-cyan-100">Current print</Badge>
+                  <span className="flex items-center gap-2 text-sm text-zinc-300">
+                    <Activity className="size-4 text-emerald-300" />
+                    {queue.current?.status ?? "IDLE"}
+                  </span>
+                </div>
+                <div className="mt-16 flex items-end justify-center gap-6">
+                  <div className="h-36 w-40 rounded border border-cyan-200/50 bg-cyan-200/10 shadow-[0_0_60px_rgba(34,211,238,0.2)]" />
+                  <div className="h-52 w-10 rounded bg-amber-300/80" />
+                  <div className="h-20 w-56 rounded border border-emerald-200/50 bg-emerald-200/10" />
+                </div>
+              </div>
+              <div className="border-t border-white/10 bg-black/25 p-6 md:border-l md:border-t-0">
+                <p className="text-sm text-zinc-400">Order</p>
+                <p className="mt-1 text-2xl font-semibold">{queue.current?.orderNumber ?? "No active job"}</p>
+                <div className="mt-6 grid gap-4 text-sm">
+                  <Metric icon={Cpu} label="Printer" value={queue.current?.printer?.name ?? "Standby"} />
+                  <Metric icon={Clock} label="ETA" value={`${queue.current?.etaMinutes ?? 0} min`} />
+                  <Metric
+                    icon={Activity}
+                    label="Filament"
+                    value={
+                      queue.current?.filament
+                        ? `${queue.current.filament.color} ${queue.current.filament.material}`
+                        : "Not loaded"
+                    }
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-white/10 bg-zinc-900 p-5">
+            <h3 className="text-lg font-semibold">Next jobs</h3>
+            <div className="mt-4 space-y-3">
+              {queue.nextJobs.map((job) => (
+                <div key={job.id} className="rounded border border-white/10 bg-white/[0.03] p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="font-medium">{job.orderNumber}</span>
+                    <Badge className="border-amber-200/30 bg-amber-200/10 text-amber-100">
+                      #{job.queuePosition}
+                    </Badge>
+                  </div>
+                  <p className="mt-2 text-sm text-zinc-300">
+                    {job.printer?.name ?? "Assigning printer"} · {job.etaMinutes} min ·{" "}
+                    {job.filament ? `${job.filament.color} ${job.filament.material}` : "filament pending"}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function Metric({
+  icon: Icon,
+  label,
+  value
+}: {
+  icon: typeof Activity;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="flex items-center gap-3">
+      <Icon className="size-4 text-cyan-200" />
+      <div>
+        <p className="text-zinc-500">{label}</p>
+        <p className="text-zinc-100">{value}</p>
+      </div>
+    </div>
+  );
+}
