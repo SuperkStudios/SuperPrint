@@ -8,12 +8,11 @@ import {
   pausePrintJob,
   approvePhysicalPrintStart,
   requeuePrintJob,
-  reorderPrintQueue,
-  startPrintJob
+  reorderPrintQueue
 } from "@/services/queue";
 
 const actionSchema = z.object({
-  action: z.enum(["reorder", "approvePhysicalStart", "start", "pause", "complete", "fail", "requeue"]),
+  action: z.enum(["reorder", "approvePhysicalStart", "pause", "complete", "fail", "requeue"]),
   printJobId: z.string().optional(),
   orderedIds: z.array(z.string()).optional(),
   checklist: z
@@ -25,7 +24,8 @@ const actionSchema = z.object({
       gcodeVerifiedOnNode: z.boolean()
     })
     .optional(),
-  reason: z.string().optional()
+  reason: z.string().optional(),
+  requeueAfterFailure: z.boolean().optional()
 });
 
 export async function GET() {
@@ -44,9 +44,6 @@ export async function POST(request: Request) {
   }
   if (!body.printJobId) {
     return NextResponse.json({ error: "printJobId is required" }, { status: 400 });
-  }
-  if (body.action === "start") {
-    return NextResponse.json({ job: await startPrintJob(body.printJobId, session!.user.id) });
   }
   if (body.action === "approvePhysicalStart") {
     if (!body.checklist) {
@@ -67,5 +64,15 @@ export async function POST(request: Request) {
   if (body.action === "requeue") {
     return NextResponse.json({ job: await requeuePrintJob(body.printJobId, session!.user.id) });
   }
-  return NextResponse.json({ job: await failPrintJob(body.printJobId, body.reason ?? "Print failed", session!.user.id) });
+  if (!body.reason?.trim()) {
+    return NextResponse.json({ error: "Failure reason is required" }, { status: 400 });
+  }
+  const failedJob = await failPrintJob(body.printJobId, body.reason, session!.user.id);
+  if (body.requeueAfterFailure) {
+    return NextResponse.json({
+      failedJob,
+      job: await requeuePrintJob(body.printJobId, session!.user.id)
+    });
+  }
+  return NextResponse.json({ job: failedJob });
 }

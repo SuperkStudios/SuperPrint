@@ -39,6 +39,13 @@ export default async function AdminQueuePage() {
             <AdminActionButton endpoint="/api/admin/queue" payload={{ action: "fail", printJobId: job.id, reason: "Operator marked failed" }} confirm={`Fail ${job.order.orderNumber}? This will be visible in the event audit.`}>
               Fail
             </AdminActionButton>
+            <AdminActionButton
+              endpoint="/api/admin/queue"
+              payload={{ action: "fail", printJobId: job.id, reason: "Operator marked failed and requested requeue", requeueAfterFailure: true }}
+              confirm={`Fail and requeue ${job.order.orderNumber}? This records the failure before creating a fresh queue attempt.`}
+            >
+              Fail + Requeue
+            </AdminActionButton>
             <AdminActionButton endpoint="/api/admin/queue" payload={{ action: "requeue", printJobId: job.id }} confirm={`Requeue ${job.order.orderNumber}?`}>
               Requeue
             </AdminActionButton>
