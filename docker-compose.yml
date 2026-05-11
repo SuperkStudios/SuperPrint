@@ -11,6 +11,7 @@ services:
       NEXTAUTH_SECRET: dev-secret-change-me
       MEDIA_TOKEN_SECRET: dev-media-secret-change-me
       REDIS_URL: redis://redis:6379
+      SUPERNODE_REGISTRATION_TOKEN: dev-supernode-registration-token
       SUPERPRINT_DATA_ROOT: /data
       PUBLIC_FACTORY_STREAM_URL: https://demo.superprint.local/live/factory
     volumes:
@@ -78,6 +79,32 @@ services:
       - backup_staging:/data/backup-staging
     depends_on:
       postgres:
+        condition: service_healthy
+
+  supernode:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: npm run supernode
+    environment:
+      SUPERPRINT_API_URL: http://app:3000
+      SUPERNODE_ID: supernode-local
+      SUPERNODE_SECRET: change-me-after-registration
+      SUPERNODE_PRINTER_ID: ""
+      SUPERNODE_UPLOADS_PATH: /data/uploads
+      SUPERNODE_SLICED_PATH: /data/sliced
+      SUPERNODE_VIDEOS_PATH: /data/videos
+      SUPERNODE_TIMELAPSES_PATH: /data/timelapses
+      SUPERNODE_THUMBNAILS_PATH: /data/thumbnails
+    volumes:
+      - uploads:/data/uploads
+      - sliced:/data/sliced
+      - videos:/data/videos
+      - timelapses:/data/timelapses
+      - thumbnails:/data/thumbnails
+      - logs:/data/logs
+    depends_on:
+      app:
         condition: service_healthy
 
   postgres:
