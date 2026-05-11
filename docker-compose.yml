@@ -57,6 +57,26 @@ services:
       redis:
         condition: service_healthy
 
+  slice-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: npm run slice-worker
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/superprint?schema=public
+      REDIS_URL: redis://redis:6379
+      SUPERPRINT_DATA_ROOT: /data
+      ORCA_SLICER_BIN: /usr/local/bin/orca-slicer
+    volumes:
+      - uploads:/data/uploads
+      - sliced:/data/sliced
+      - logs:/data/logs
+    depends_on:
+      app:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
   backup-worker:
     build:
       context: .

@@ -15,6 +15,7 @@
     "db:seed": "tsx prisma/seed.ts",
     "docker:start": "sh scripts/docker-start.sh",
     "worker": "tsx src/workers/print-worker.ts",
+    "slice-worker": "tsx src/workers/slice-worker.ts",
     "supernode": "tsx supernode/src/index.ts",
     "backup": "tsx src/workers/backup-worker.ts",
     "restore": "tsx scripts/restore-disaster-recovery.ts"

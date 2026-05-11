@@ -79,6 +79,14 @@ enum MaintenanceStatus {
   COMPLETED
 }
 
+enum SliceJobStatus {
+  PENDING
+  RUNNING
+  READY
+  FAILED
+  CANCELED
+}
+
 enum PlatformEventType {
   ORDER_CREATED
   MODEL_UPLOADED
@@ -138,6 +146,7 @@ model ModelUpload {
   estimatedPriceCents Int?
   estimatedPrintMinutes Int?
   orders              Order[]
+  sliceJobs           SliceJob[]
   createdAt           DateTime     @default(now())
   updatedAt           DateTime     @updatedAt
 }
@@ -225,6 +234,8 @@ model PrintJob {
   printer        Printer?       @relation(fields: [printerId], references: [id])
   filamentId     String?
   filament       FilamentSpool? @relation(fields: [filamentId], references: [id])
+  sliceJobId     String?
+  sliceJob       SliceJob?      @relation(fields: [sliceJobId], references: [id])
   status         PrintJobStatus @default(QUEUED)
   queuePosition  Int?
   etaMinutes     Int
@@ -241,6 +252,73 @@ model PrintJob {
 
   @@index([status, queuePosition])
   @@index([queueLockToken])
+}
+
+model SlicerProfile {
+  id          String     @id @default(cuid())
+  name        String
+  description String
+  profilePath String
+  isDefault   Boolean    @default(false)
+  sliceJobs   SliceJob[]
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+}
+
+model MachineProfile {
+  id          String     @id @default(cuid())
+  name        String
+  modelName   String
+  profilePath String
+  sliceJobs   SliceJob[]
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+}
+
+model FilamentProfile {
+  id          String           @id @default(cuid())
+  name        String
+  material    FilamentMaterial
+  profilePath String
+  sliceJobs   SliceJob[]
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+}
+
+model SliceJob {
+  id                String          @id @default(cuid())
+  uploadId          String
+  upload            ModelUpload     @relation(fields: [uploadId], references: [id])
+  slicerProfileId   String
+  slicerProfile     SlicerProfile   @relation(fields: [slicerProfileId], references: [id])
+  machineProfileId  String
+  machineProfile    MachineProfile  @relation(fields: [machineProfileId], references: [id])
+  filamentProfileId String
+  filamentProfile   FilamentProfile @relation(fields: [filamentProfileId], references: [id])
+  status            SliceJobStatus   @default(PENDING)
+  inputStorageKey   String
+  outputStorageKey  String?
+  watchedFolderPath String?
+  commandPreview    Json
+  startedAt         DateTime?
+  completedAt       DateTime?
+  failureReason     String?
+  printJobs         PrintJob[]
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@index([status, createdAt])
+}
+
+model WatchedFolder {
+  id          String   @id @default(cuid())
+  name        String
+  folderPath  String
+  purpose     String
+  enabled     Boolean  @default(true)
+  lastScanAt  DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
 model FilamentSpool {
