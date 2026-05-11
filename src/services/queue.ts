@@ -21,7 +21,7 @@ export async function getPublicQueueState() {
       orderBy: { startedAt: "desc" }
     }),
     prisma.printJob.findMany({
-      where: { status: "QUEUED" },
+      where: { status: { in: ["QUEUED", "READY_ON_NODE"] } },
       include: { order: true, printer: true, filament: true },
       orderBy: { queuePosition: "asc" },
       take: 8

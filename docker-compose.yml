@@ -116,6 +116,7 @@ services:
       SUPERNODE_VIDEOS_PATH: /data/videos
       SUPERNODE_TIMELAPSES_PATH: /data/timelapses
       SUPERNODE_THUMBNAILS_PATH: /data/thumbnails
+      SUPERNODE_JOBS_PATH: /data/node-jobs
     volumes:
       - uploads:/data/uploads
       - sliced:/data/sliced
@@ -123,6 +124,7 @@ services:
       - timelapses:/data/timelapses
       - thumbnails:/data/thumbnails
       - logs:/data/logs
+      - node_jobs:/data/node-jobs
     depends_on:
       app:
         condition: service_healthy
@@ -165,3 +167,4 @@ volumes:
   thumbnails:
   logs:
   backup_staging:
+  node_jobs:

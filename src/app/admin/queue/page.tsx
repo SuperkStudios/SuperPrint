@@ -26,6 +26,7 @@ export default async function AdminQueuePage() {
             <span className="text-sm text-muted-foreground">
               #{job.queuePosition ?? "-"} · {job.printer?.publicName ?? "Unassigned"} ·{" "}
               {job.filament ? `${job.filament.color} ${job.filament.material}` : "filament pending"}
+              {job.readyOnNodeAt ? ` · Ready on node ${job.readyOnNodeAt.toLocaleString()}` : ""}
             </span>
             <AdminActionButton endpoint="/api/admin/queue" payload={{ action: "start", printJobId: job.id }} confirm={`Start print for ${job.order.orderNumber}?`}>
               Start
