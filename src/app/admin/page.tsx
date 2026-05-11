@@ -9,14 +9,16 @@ import { getDataRoot } from "@/lib/storage";
 export const dynamic = "force-dynamic";
 
 export default async function AdminDashboardPage() {
-  const [orders, uploads, printers, maintenance, jobs, events, filament] = await Promise.all([
+  const [orders, uploads, printers, maintenance, jobs, events, filament, products, media] = await Promise.all([
     prisma.order.count(),
     prisma.modelUpload.findMany({ where: { status: "PENDING" }, include: { customer: true }, orderBy: { createdAt: "desc" }, take: 4 }),
     prisma.printer.findMany({ include: { currentFilament: true }, orderBy: { publicName: "asc" } }),
     prisma.maintenanceTask.findMany({ where: { status: { not: "COMPLETED" } }, include: { printer: true }, orderBy: { dueAt: "asc" }, take: 4 }),
     getAdminQueueState(),
     listPublicEvents(8),
-    prisma.filamentSpool.findMany({ orderBy: { remainingGrams: "asc" }, take: 4 })
+    prisma.filamentSpool.findMany({ orderBy: { remainingGrams: "asc" }, take: 4 }),
+    prisma.product.count({ where: { status: "ACTIVE" } }),
+    prisma.orderVideo.count()
   ]);
   const activeJob = jobs.find((job) => job.status === "PRINTING");
   const queuedJobs = jobs.filter((job) => job.status === "QUEUED");
@@ -52,9 +54,21 @@ export default async function AdminDashboardPage() {
 
       <Card className="md:col-span-2">
         <CardHeader>
-          <CardTitle>Storage and backup</CardTitle>
+          <CardTitle>Setup checklist</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-3 text-sm">
+          <StatusRow icon={Server} label="Printer registered" value={printers.length ? "Complete" : "Add first printer"} />
+          <StatusRow icon={Radio} label="Filament available" value={filament.length ? "Complete" : "Add first spool"} />
+          <StatusRow icon={Boxes} label="Products published" value={products ? `${products} active` : "No products published"} />
+          <StatusRow icon={DatabaseBackup} label="Media attached" value={media ? `${media} records` : "No finished media yet"} />
+        </CardContent>
+      </Card>
+
+      <Card className="md:col-span-4">
+        <CardHeader>
+          <CardTitle>Storage and backup</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-3 text-sm md:grid-cols-3">
           <StatusRow icon={Server} label="Data root" value={getDataRoot()} />
           <StatusRow icon={DatabaseBackup} label="Backup staging" value={`${getDataRoot()}/backup-staging`} />
           <StatusRow icon={Radio} label="Backup upload" value={process.env.SOCIAL_BLADE_BUCKET ? "Configured" : "Dry run"} />
