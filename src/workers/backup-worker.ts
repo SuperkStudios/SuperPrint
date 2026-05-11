@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import { createWriteStream } from "node:fs";
 import path from "node:path";
 import { createBackupPlan } from "./backup-planner";
+import { toPgDumpUrl } from "./postgres-url";
 
 type BackupManifest = {
   runId: string;
@@ -29,7 +30,7 @@ async function runBackup() {
   const logFile = createWriteStream(path.join(dataRoot, "logs", "backups", `${runId}.log`), { flags: "a" });
 
   await log(logFile, `Starting backup ${runId}`);
-  await run("pg_dump", ["--format=custom", `--file=${plan.databaseDumpPath}`, process.env.DATABASE_URL!], logFile);
+  await run("pg_dump", ["--format=custom", `--file=${plan.databaseDumpPath}`, toPgDumpUrl(process.env.DATABASE_URL!)], logFile);
   await run("tar", ["-czf", plan.mediaArchivePath, ...plan.mediaSources], logFile);
 
   const manifest: BackupManifest = {

@@ -7,10 +7,10 @@ import {
   markPrintStarted,
   publicQueueJob,
   reorderQueue
-} from "@/domain/queue";
-import { assignQueuedJobToPrinter } from "@/domain/queue-preparation";
-import { prisma } from "@/lib/prisma";
-import { enqueuePrintJob } from "@/lib/queue-broker";
+} from "../domain/queue";
+import { assignQueuedJobToPrinter } from "../domain/queue-preparation";
+import { enqueuePrintJob } from "../lib/queue-broker";
+import { prisma } from "../lib/prisma";
 import { recordPlatformEvent } from "./events";
 
 export async function getPublicQueueState() {
