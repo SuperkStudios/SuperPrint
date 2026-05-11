@@ -1,4 +1,4 @@
-export type PrintJobStatus = "QUEUED" | "PRINTING" | "PAUSED" | "COMPLETED" | "FAILED" | "CANCELED";
+export type PrintJobStatus = "QUEUED" | "READY_ON_NODE" | "PRINTING" | "PAUSED" | "COMPLETED" | "FAILED" | "CANCELED";
 
 export type QueueJob = {
   id: string;
