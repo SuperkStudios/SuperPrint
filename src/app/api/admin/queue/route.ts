@@ -6,15 +6,25 @@ import {
   failPrintJob,
   getAdminQueueState,
   pausePrintJob,
+  approvePhysicalPrintStart,
   requeuePrintJob,
   reorderPrintQueue,
   startPrintJob
 } from "@/services/queue";
 
 const actionSchema = z.object({
-  action: z.enum(["reorder", "start", "pause", "complete", "fail", "requeue"]),
+  action: z.enum(["reorder", "approvePhysicalStart", "start", "pause", "complete", "fail", "requeue"]),
   printJobId: z.string().optional(),
   orderedIds: z.array(z.string()).optional(),
+  checklist: z
+    .object({
+      correctFilamentLoaded: z.boolean(),
+      buildPlateClear: z.boolean(),
+      cameraVisible: z.boolean(),
+      printerAreaSafe: z.boolean(),
+      gcodeVerifiedOnNode: z.boolean()
+    })
+    .optional(),
   reason: z.string().optional()
 });
 
@@ -37,6 +47,16 @@ export async function POST(request: Request) {
   }
   if (body.action === "start") {
     return NextResponse.json({ job: await startPrintJob(body.printJobId, session!.user.id) });
+  }
+  if (body.action === "approvePhysicalStart") {
+    if (!body.checklist) {
+      return NextResponse.json({ error: "Operator checklist is required" }, { status: 400 });
+    }
+    try {
+      return NextResponse.json({ job: await approvePhysicalPrintStart(body.printJobId, body.checklist as never, session!.user.id) });
+    } catch (error) {
+      return NextResponse.json({ error: error instanceof Error ? error.message : "Physical start approval blocked" }, { status: 400 });
+    }
   }
   if (body.action === "complete") {
     return NextResponse.json({ job: await completePrintJob(body.printJobId, session!.user.id) });

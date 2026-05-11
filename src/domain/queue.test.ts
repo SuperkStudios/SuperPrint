@@ -24,8 +24,9 @@ describe("queue transitions", () => {
     ]);
   });
 
-  it("moves queued jobs through started, completed, and failed states", () => {
-    const started = markPrintStarted(jobs[0], new Date("2026-05-01T10:00:00.000Z"));
+  it("moves operator-approved jobs through started, completed, and failed states", () => {
+    const approved = { ...jobs[0], status: "AWAITING_OPERATOR_START" as const };
+    const started = markPrintStarted(approved, new Date("2026-05-01T10:00:00.000Z"));
     expect(started).toMatchObject({
       id: "job_1",
       status: "PRINTING",
@@ -47,7 +48,7 @@ describe("queue transitions", () => {
   });
 
   it("pauses and requeues printing or failed jobs with guardrails", () => {
-    const started = markPrintStarted(jobs[0], new Date("2026-05-01T10:00:00.000Z"));
+    const started = markPrintStarted({ ...jobs[0], status: "AWAITING_OPERATOR_START" as const }, new Date("2026-05-01T10:00:00.000Z"));
     const paused = markPrintPaused(started, new Date("2026-05-01T10:15:00.000Z"));
 
     expect(paused).toMatchObject({ id: "job_1", status: "PAUSED" });
@@ -96,7 +97,7 @@ describe("queue transitions", () => {
 
   it("rejects invalid state transitions", () => {
     expect(() => markPrintStarted({ ...jobs[0], status: "COMPLETED" as const })).toThrow(
-      "Only queued jobs can be started"
+      "Only operator-approved jobs can be started"
     );
     expect(() => markPrintCompleted(jobs[0])).toThrow("Only printing jobs can be completed");
     expect(() => markPrintFailed(jobs[0], "nozzle jam")).toThrow("Only printing jobs can fail");

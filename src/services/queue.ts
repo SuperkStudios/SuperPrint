@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { Prisma } from "@prisma/client";
 import {
   markPrintCompleted,
   markPrintFailed,
@@ -8,6 +9,7 @@ import {
   publicQueueJob,
   reorderQueue
 } from "../domain/queue";
+import { approveOperatorPrintStart, type OperatorStartChecklist } from "../domain/operator-start";
 import { assignQueuedJobToPrinter } from "../domain/queue-preparation";
 import { enqueuePrintJob } from "../lib/queue-broker";
 import { prisma } from "../lib/prisma";
@@ -99,6 +101,39 @@ export async function startPrintJob(printJobId: string, actorId?: string) {
       printerInternalIp: updated.printer?.internalIp,
       status: updated.status,
       etaMinutes: updated.etaMinutes
+    }
+  });
+
+  return updated;
+}
+
+export async function approvePhysicalPrintStart(printJobId: string, checklist: OperatorStartChecklist, actorId: string) {
+  const job = await prisma.printJob.findUniqueOrThrow({
+    where: { id: printJobId },
+    include: { order: true, printer: true }
+  });
+  const next = approveOperatorPrintStart(job, { operatorId: actorId, checklist });
+
+  const updated = await prisma.printJob.update({
+    where: { id: printJobId },
+    data: {
+      status: next.status,
+      operatorStartApprovedById: next.operatorStartApprovedById,
+      operatorStartApprovedAt: next.operatorStartApprovedAt,
+      operatorStartChecklist: next.operatorStartChecklist as unknown as Prisma.InputJsonObject
+    },
+    include: { order: true, printer: true }
+  });
+
+  await recordPlatformEvent({
+    type: "OPERATOR_PRINT_START_APPROVED",
+    actorId,
+    payload: {
+      orderNumber: updated.order.orderNumber,
+      printerName: updated.printer?.publicName,
+      status: updated.status,
+      checklistConfirmed: true,
+      adminNotes: "Physical print start approved by operator checklist"
     }
   });
 

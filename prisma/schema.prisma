@@ -38,6 +38,7 @@ enum OrderStatus {
 enum PrintJobStatus {
   QUEUED
   READY_ON_NODE
+  AWAITING_OPERATOR_START
   PRINTING
   PAUSED
   COMPLETED
@@ -99,6 +100,8 @@ enum PlatformEventType {
   SLICING_COMPLETE
   QUEUE_ADMITTED
   JOB_READY_ON_NODE
+  OPERATOR_PRINT_START_APPROVED
+  PRINT_COMMAND_ACKNOWLEDGED
   PRINT_STARTED
   PRINT_PAUSED
   PRINT_REQUEUED
@@ -118,6 +121,7 @@ model User {
   uploads      ModelUpload[]
   orders       Order[]
   events       PlatformEvent[]
+  operatorPrintStarts PrintJob[] @relation("OperatorPrintStarts")
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
 }
@@ -265,6 +269,12 @@ model PrintJob {
   readyOnNodeAt  DateTime?
   readyOnNodeId  String?
   nodeLocalJobPath String?
+  operatorStartApprovedById String?
+  operatorStartApprovedBy   User?   @relation("OperatorPrintStarts", fields: [operatorStartApprovedById], references: [id])
+  operatorStartApprovedAt DateTime?
+  operatorStartChecklist Json?
+  printCommandAcknowledgedAt DateTime?
+  printCommandAcknowledgedByNodeId String?
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
 

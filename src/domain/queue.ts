@@ -1,4 +1,12 @@
-export type PrintJobStatus = "QUEUED" | "READY_ON_NODE" | "PRINTING" | "PAUSED" | "COMPLETED" | "FAILED" | "CANCELED";
+export type PrintJobStatus =
+  | "QUEUED"
+  | "READY_ON_NODE"
+  | "AWAITING_OPERATOR_START"
+  | "PRINTING"
+  | "PAUSED"
+  | "COMPLETED"
+  | "FAILED"
+  | "CANCELED";
 
 export type QueueJob = {
   id: string;
@@ -30,8 +38,8 @@ export function reorderQueue<T extends QueueJob>(jobs: T[], orderedIds: string[]
 }
 
 export function markPrintStarted<T extends QueueJob>(job: T, startedAt = new Date()): T {
-  if (job.status !== "QUEUED") {
-    throw new Error("Only queued jobs can be started");
+  if (job.status !== "AWAITING_OPERATOR_START") {
+    throw new Error("Only operator-approved jobs can be started");
   }
 
   return {

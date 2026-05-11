@@ -1,4 +1,5 @@
 import { AdminActionButton } from "@/components/admin-action-button";
+import { OperatorStartButton } from "@/components/operator-start-button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getAdminQueueState } from "@/services/queue";
@@ -28,9 +29,7 @@ export default async function AdminQueuePage() {
               {job.filament ? `${job.filament.color} ${job.filament.material}` : "filament pending"}
               {job.readyOnNodeAt ? ` · Ready on node ${job.readyOnNodeAt.toLocaleString()}` : ""}
             </span>
-            <AdminActionButton endpoint="/api/admin/queue" payload={{ action: "start", printJobId: job.id }} confirm={`Start print for ${job.order.orderNumber}?`}>
-              Start
-            </AdminActionButton>
+            {job.status === "READY_ON_NODE" ? <OperatorStartButton printJobId={job.id} orderNumber={job.order.orderNumber} /> : null}
             <AdminActionButton endpoint="/api/admin/queue" payload={{ action: "pause", printJobId: job.id }} confirm={`Pause print for ${job.order.orderNumber}?`}>
               Pause
             </AdminActionButton>
