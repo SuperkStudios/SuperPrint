@@ -51,6 +51,19 @@ enum PrinterStatus {
   MAINTENANCE
 }
 
+enum HeartbeatStatus {
+  UNKNOWN
+  ONLINE
+  STALE
+  OFFLINE
+}
+
+enum CameraStatus {
+  UNKNOWN
+  ONLINE
+  OFFLINE
+}
+
 enum FilamentMaterial {
   PLA
   PETG
@@ -152,12 +165,27 @@ model Printer {
   id                 String        @id @default(cuid())
   name               String
   publicName         String
+  modelName          String        @default("Elegoo Centauri Carbon")
+  nozzleSizeMm       Float         @default(0.4)
+  buildVolumeXmm     Int           @default(256)
+  buildVolumeYmm     Int           @default(256)
+  buildVolumeZmm     Int           @default(256)
+  supportedMaterials Json          @default("[\"PLA\",\"PETG\"]")
   status             PrinterStatus @default(HEALTHY)
   healthDescription  String
   internalIp         String
   controlApiUrl      String
   currentFilamentId  String?
   currentFilament    FilamentSpool? @relation(fields: [currentFilamentId], references: [id])
+  cameraSource       String?
+  cameraStatus       CameraStatus  @default(UNKNOWN)
+  maintenanceProfile String        @default("Elegoo Centauri Carbon standard maintenance")
+  totalRuntimeMinutes Int          @default(0)
+  completedPrintCount Int          @default(0)
+  failedPrintCount   Int           @default(0)
+  heartbeatStatus    HeartbeatStatus @default(UNKNOWN)
+  lastHeartbeatAt    DateTime?
+  heartbeatLatencyMs Int?
   jobs               PrintJob[]
   maintenanceTasks   MaintenanceTask[]
   createdAt          DateTime      @default(now())

@@ -6,6 +6,7 @@ import { getBootstrapStatus } from "@/lib/bootstrap";
 
 const adminNav = [
   { href: "/admin", label: "Dashboard" },
+  { href: "/admin/printers", label: "Printers" },
   { href: "/admin/uploads", label: "Uploads" },
   { href: "/admin/queue", label: "Queue" },
   { href: "/admin/filament", label: "Filament" },
