@@ -58,3 +58,17 @@ export function buildModelUploadedPayload(input: {
     localVolumePath: input.localVolumePath
   };
 }
+
+export function buildModelReviewPayload(input: {
+  uploadId: string;
+  fileName: string;
+  status: "APPROVED" | "REJECTED";
+  rejectionReason?: string | null;
+}) {
+  return {
+    uploadId: input.uploadId,
+    fileName: input.fileName,
+    status: input.status,
+    ...(input.rejectionReason ? { rejectionReason: input.rejectionReason } : {})
+  };
+}

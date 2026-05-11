@@ -1,0 +1,11 @@
+node_modules
+.next
+.git
+coverage
+dist
+*.log
+.env
+.env.local
+.env.*.local
+uploads
+prisma/dev.db

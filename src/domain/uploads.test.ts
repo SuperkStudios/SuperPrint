@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildModelUploadedPayload, validateStlUploadInput } from "./uploads";
+import { buildModelReviewPayload, buildModelUploadedPayload, validateStlUploadInput } from "./uploads";
 
 describe("validateStlUploadInput", () => {
   it("accepts safe STL uploads with common MIME fallbacks", () => {
@@ -47,6 +47,32 @@ describe("buildModelUploadedPayload", () => {
       contentType: "model/stl",
       localVolumeKey: "uploads/123-bracket.stl",
       localVolumePath: "/data/uploads/123-bracket.stl"
+    });
+  });
+});
+
+describe("buildModelReviewPayload", () => {
+  it("creates approval and rejection event payloads", () => {
+    expect(
+      buildModelReviewPayload({
+        uploadId: "upload_1",
+        fileName: "bracket.stl",
+        status: "APPROVED"
+      })
+    ).toEqual({ uploadId: "upload_1", fileName: "bracket.stl", status: "APPROVED" });
+
+    expect(
+      buildModelReviewPayload({
+        uploadId: "upload_1",
+        fileName: "bracket.stl",
+        status: "REJECTED",
+        rejectionReason: "Wall thickness too low"
+      })
+    ).toEqual({
+      uploadId: "upload_1",
+      fileName: "bracket.stl",
+      status: "REJECTED",
+      rejectionReason: "Wall thickness too low"
     });
   });
 });
