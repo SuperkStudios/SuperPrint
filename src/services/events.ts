@@ -1,6 +1,6 @@
 import { Prisma } from "@prisma/client";
-import { prisma } from "@/lib/prisma";
-import { sanitizePlatformEvent, type PlatformEventType } from "@/domain/events";
+import { sanitizePlatformEvent, type PlatformEventType } from "../domain/events";
+import { prisma } from "../lib/prisma";
 
 export async function recordPlatformEvent(input: {
   type: PlatformEventType;
