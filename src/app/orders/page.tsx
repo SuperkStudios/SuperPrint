@@ -43,9 +43,16 @@ export default async function OrdersPage() {
               </div>
               <Badge>{order.status}</Badge>
             </CardHeader>
-            <CardContent className="grid gap-4 md:grid-cols-3">
+            <CardContent className="grid gap-4 md:grid-cols-4">
               <p className="text-sm"><span className="text-muted-foreground">Total</span><br />{money(order.totalCents)}</p>
-              <p className="text-sm"><span className="text-muted-foreground">Print jobs</span><br />{order.printJobs.length}</p>
+              <p className="text-sm">
+                <span className="text-muted-foreground">Upload</span><br />
+                {order.upload ? `${order.upload.status}${order.upload.rejectionReason ? `: ${order.upload.rejectionReason}` : ""}` : "Product order"}
+              </p>
+              <p className="text-sm">
+                <span className="text-muted-foreground">Print jobs</span><br />
+                {order.printJobs.length ? order.printJobs.map((job) => job.status).join(", ") : "Not queued"}
+              </p>
               <div className="text-sm">
                 <span className="text-muted-foreground">Media</span><br />
                 {order.videos.length
