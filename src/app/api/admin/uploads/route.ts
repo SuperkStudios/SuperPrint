@@ -52,7 +52,7 @@ export async function POST(request: Request) {
     payload: buildModelReviewPayload({
       uploadId: upload.id,
       fileName: upload.fileName,
-      status: upload.status,
+      status: approved ? "APPROVED" : "REJECTED",
       rejectionReason: upload.rejectionReason
     })
   });
