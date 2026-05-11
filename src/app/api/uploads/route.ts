@@ -5,8 +5,12 @@ import { buildLocalStorageKey, resolveLocalStoragePath } from "@/lib/storage";
 import { prisma } from "@/lib/prisma";
 import { requireCustomer } from "@/lib/http";
 import { recordPlatformEvent } from "@/services/events";
+import { getBootstrapStatus } from "@/lib/bootstrap";
 
 export async function POST(request: Request) {
+  if (!(await getBootstrapStatus()).isComplete) {
+    return NextResponse.json({ error: "Setup required" }, { status: 503 });
+  }
   const { session, response } = await requireCustomer();
   if (response) return response;
 

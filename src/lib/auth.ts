@@ -57,5 +57,5 @@ export const authOptions: NextAuthOptions = {
 };
 
 export function hasAdminRole(role?: string | null) {
-  return role === "ADMIN";
+  return role === "ADMIN" || role === "OWNER";
 }

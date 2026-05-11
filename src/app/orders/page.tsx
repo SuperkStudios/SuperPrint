@@ -8,10 +8,15 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { createMediaToken } from "@/lib/media-token";
 import { AuthRequired } from "@/components/auth-required";
+import { getBootstrapStatus } from "@/lib/bootstrap";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
 export default async function OrdersPage() {
+  if (!(await getBootstrapStatus()).isComplete) {
+    redirect("/setup");
+  }
   const session = await getServerSession(authOptions);
   if (!session?.user.id) {
     return <AuthRequired title="Sign in to view orders" copy="Order history, private queue status, and local media downloads are only available to the signed-in customer." />;

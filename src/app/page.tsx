@@ -5,10 +5,15 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { getPublicQueueState } from "@/services/queue";
 import { listPublicEvents } from "@/services/events";
+import { getBootstrapStatus } from "@/lib/bootstrap";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
+  if (!(await getBootstrapStatus()).isComplete) {
+    redirect("/setup");
+  }
   const [queue, events] = await Promise.all([getPublicQueueState(), listPublicEvents(6)]);
 
   return (

@@ -3,10 +3,15 @@ import { UploadForm } from "@/components/upload-form";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { AuthRequired } from "@/components/auth-required";
 import { authOptions } from "@/lib/auth";
+import { getBootstrapStatus } from "@/lib/bootstrap";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
 export default async function UploadPage() {
+  if (!(await getBootstrapStatus()).isComplete) {
+    redirect("/setup");
+  }
   const session = await getServerSession(authOptions);
   if (!session?.user.id) {
     return (
@@ -34,7 +39,7 @@ export default async function UploadPage() {
       <Card>
         <CardHeader>
           <CardTitle>Model approval request</CardTitle>
-          <CardDescription>Demo mode stores metadata and resolves a Docker volume upload target.</CardDescription>
+          <CardDescription>Files are written to the mounted local upload volume for operator review.</CardDescription>
         </CardHeader>
         <CardContent>
           <UploadForm />

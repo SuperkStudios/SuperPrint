@@ -1,6 +1,10 @@
 import { listPublicEvents } from "@/services/events";
+import { getBootstrapStatus } from "@/lib/bootstrap";
 
 export async function GET() {
+  if (!(await getBootstrapStatus()).isComplete) {
+    return new Response("Setup required", { status: 503 });
+  }
   const stream = new ReadableStream({
     async start(controller) {
       const encoder = new TextEncoder();

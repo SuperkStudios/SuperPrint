@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireCustomer } from "@/lib/http";
 import { recordPlatformEvent } from "@/services/events";
+import { getBootstrapStatus } from "@/lib/bootstrap";
 
 const createOrderSchema = z.object({
   productId: z.string().optional(),
@@ -10,6 +11,9 @@ const createOrderSchema = z.object({
 });
 
 export async function GET() {
+  if (!(await getBootstrapStatus()).isComplete) {
+    return NextResponse.json({ error: "Setup required" }, { status: 503 });
+  }
   const { session, response } = await requireCustomer();
   if (response) return response;
 
@@ -22,6 +26,9 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  if (!(await getBootstrapStatus()).isComplete) {
+    return NextResponse.json({ error: "Setup required" }, { status: 503 });
+  }
   const { session, response } = await requireCustomer();
   if (response) return response;
 

@@ -3,10 +3,15 @@ import { prisma } from "@/lib/prisma";
 import { money } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { getBootstrapStatus } from "@/lib/bootstrap";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
 export default async function StorePage() {
+  if (!(await getBootstrapStatus()).isComplete) {
+    redirect("/setup");
+  }
   const products = await prisma.product.findMany({ where: { status: "ACTIVE" }, orderBy: { name: "asc" } });
 
   return (
