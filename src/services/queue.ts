@@ -148,7 +148,7 @@ export async function failPrintJob(printJobId: string, reason: string, actorId?:
   });
 
   await recordPlatformEvent({
-    type: "PRINT_PAUSED",
+    type: "PRINT_FAILED",
     actorId,
     payload: {
       orderNumber: updated.order.orderNumber,
@@ -178,7 +178,7 @@ export async function pausePrintJob(printJobId: string, actorId?: string) {
   });
 
   await recordPlatformEvent({
-    type: "PRINT_FAILED",
+    type: "PRINT_PAUSED",
     actorId,
     payload: {
       orderNumber: updated.order.orderNumber,

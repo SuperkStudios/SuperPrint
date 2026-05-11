@@ -7,16 +7,21 @@ export function AdminActionButton({
   endpoint,
   payload,
   children,
-  variant = "outline"
+  variant = "outline",
+  confirm
 }: {
   endpoint: string;
   payload: Record<string, unknown>;
   children: React.ReactNode;
   variant?: "default" | "outline" | "secondary" | "ghost";
+  confirm?: string;
 }) {
   const [message, setMessage] = useState("");
 
   async function run() {
+    if (confirm && !window.confirm(confirm)) {
+      return;
+    }
     const response = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

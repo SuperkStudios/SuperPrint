@@ -27,19 +27,19 @@ export default async function AdminQueuePage() {
               #{job.queuePosition ?? "-"} · {job.printer?.publicName ?? "Unassigned"} ·{" "}
               {job.filament ? `${job.filament.color} ${job.filament.material}` : "filament pending"}
             </span>
-            <AdminActionButton endpoint="/api/admin/queue" payload={{ action: "start", printJobId: job.id }}>
+            <AdminActionButton endpoint="/api/admin/queue" payload={{ action: "start", printJobId: job.id }} confirm={`Start print for ${job.order.orderNumber}?`}>
               Start
             </AdminActionButton>
-            <AdminActionButton endpoint="/api/admin/queue" payload={{ action: "pause", printJobId: job.id }}>
+            <AdminActionButton endpoint="/api/admin/queue" payload={{ action: "pause", printJobId: job.id }} confirm={`Pause print for ${job.order.orderNumber}?`}>
               Pause
             </AdminActionButton>
-            <AdminActionButton endpoint="/api/admin/queue" payload={{ action: "complete", printJobId: job.id }}>
+            <AdminActionButton endpoint="/api/admin/queue" payload={{ action: "complete", printJobId: job.id }} confirm={`Mark ${job.order.orderNumber} complete?`}>
               Complete
             </AdminActionButton>
-            <AdminActionButton endpoint="/api/admin/queue" payload={{ action: "fail", printJobId: job.id, reason: "Operator marked failed" }}>
+            <AdminActionButton endpoint="/api/admin/queue" payload={{ action: "fail", printJobId: job.id, reason: "Operator marked failed" }} confirm={`Fail ${job.order.orderNumber}? This will be visible in the event audit.`}>
               Fail
             </AdminActionButton>
-            <AdminActionButton endpoint="/api/admin/queue" payload={{ action: "requeue", printJobId: job.id }}>
+            <AdminActionButton endpoint="/api/admin/queue" payload={{ action: "requeue", printJobId: job.id }} confirm={`Requeue ${job.order.orderNumber}?`}>
               Requeue
             </AdminActionButton>
             {job.order.status === "COMPLETED" ? (

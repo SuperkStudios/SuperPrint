@@ -4,6 +4,7 @@ export type QueueJob = {
   id: string;
   status: PrintJobStatus;
   queuePosition: number | null;
+  etaMinutes?: number;
   startedAt?: Date | null;
   completedAt?: Date | null;
   failureReason?: string | null;
@@ -105,17 +106,23 @@ export function publicQueueJob(job: {
   status: string;
   queuePosition: number | null;
   etaMinutes: number;
+  startedAt?: Date | null;
   streamUrl: string | null;
   order: { orderNumber: string };
   printer: { publicName: string; status: string; healthDescription: string } | null;
   filament: { material: string; color: string; remainingGrams: number; thresholdGrams: number } | null;
 }) {
+  const elapsedMinutes = job.startedAt ? Math.max(0, (Date.now() - job.startedAt.getTime()) / 60000) : 0;
+  const progressPercent =
+    job.status === "PRINTING" ? Math.min(96, Math.max(8, Math.round((elapsedMinutes / (elapsedMinutes + job.etaMinutes)) * 100))) : 0;
+
   return {
     id: job.id,
     orderNumber: job.order.orderNumber,
     status: job.status,
     queuePosition: job.queuePosition,
     etaMinutes: job.etaMinutes,
+    progressPercent,
     streamUrl: job.streamUrl,
     printer: job.printer
       ? {

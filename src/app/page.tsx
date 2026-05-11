@@ -4,18 +4,20 @@ import { LiveQueue } from "@/components/live-queue";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { getPublicQueueState } from "@/services/queue";
+import { listPublicEvents } from "@/services/events";
 
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
-  const queue = await getPublicQueueState();
+  const [queue, events] = await Promise.all([getPublicQueueState(), listPublicEvents(6)]);
 
   return (
     <main>
       <section className="relative overflow-hidden bg-white">
+        <div className="absolute inset-x-0 top-0 h-2 bg-gradient-to-r from-primary via-secondary to-accent" />
         <div className="mx-auto grid min-h-[calc(100vh-4rem)] max-w-7xl items-center gap-10 px-4 py-14 sm:px-6 lg:grid-cols-[0.95fr_1.05fr] lg:px-8">
           <div>
-            <Badge>Software-defined 3D printing</Badge>
+            <Badge className="bg-primary/10 text-primary">Observable manufacturing</Badge>
             <h1 className="mt-5 max-w-3xl text-5xl font-semibold tracking-tight sm:text-6xl lg:text-7xl">
               SuperPrint
             </h1>
@@ -47,7 +49,7 @@ export default async function HomePage() {
               ))}
             </div>
           </div>
-          <div className="rounded-lg border bg-zinc-950 p-5 text-white shadow-2xl">
+          <div className="rounded-lg border bg-zinc-950 p-5 text-white shadow-2xl shadow-primary/20">
             <div className="factory-grid rounded border border-white/10 p-5">
               <div className="flex items-center justify-between">
                 <span className="text-sm text-zinc-400">Factory cell A</span>
@@ -72,7 +74,7 @@ export default async function HomePage() {
           </div>
         </div>
       </section>
-      <LiveQueue queue={queue} />
+      <LiveQueue queue={queue} events={events} />
       <section className="bg-white py-14">
         <div className="mx-auto grid max-w-7xl gap-6 px-4 sm:px-6 md:grid-cols-3 lg:px-8">
           {[

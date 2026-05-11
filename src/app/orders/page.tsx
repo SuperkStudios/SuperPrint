@@ -7,19 +7,14 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { createMediaToken } from "@/lib/media-token";
+import { AuthRequired } from "@/components/auth-required";
 
 export const dynamic = "force-dynamic";
 
 export default async function OrdersPage() {
   const session = await getServerSession(authOptions);
   if (!session?.user.id) {
-    return (
-      <main className="mx-auto max-w-2xl px-4 py-12">
-        <h1 className="text-3xl font-semibold">Order history</h1>
-        <p className="mt-3 text-muted-foreground">Sign in to view queue status and finished print videos.</p>
-        <Button asChild className="mt-6"><Link href="/login">Sign in</Link></Button>
-      </main>
-    );
+    return <AuthRequired title="Sign in to view orders" copy="Order history, private queue status, and local media downloads are only available to the signed-in customer." />;
   }
 
   const orders = await prisma.order.findMany({
@@ -30,9 +25,11 @@ export default async function OrdersPage() {
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-12 sm:px-6 lg:px-8">
-      <h1 className="text-3xl font-semibold tracking-tight">Order history</h1>
+      <p className="text-sm font-medium text-primary">Customer workspace</p>
+      <h1 className="mt-1 text-3xl font-semibold tracking-tight">Order history</h1>
+      <p className="mt-3 max-w-2xl text-muted-foreground">Track production status and retrieve finished print videos, timelapses, and thumbnails.</p>
       <div className="mt-8 grid gap-4">
-        {orders.map((order) => (
+        {orders.length ? orders.map((order) => (
           <Card key={order.id}>
             <CardHeader className="flex-row items-start justify-between">
               <div>
@@ -49,16 +46,22 @@ export default async function OrdersPage() {
                 {order.videos.length
                   ? order.videos.map((video) => (
                       <div key={video.id} className="mt-1 flex flex-wrap gap-2">
-                        <a className="underline" href={`/api/media/${createMediaToken({ key: video.storageKey, expiresAt: Date.now() + 60 * 60 * 1000 })}`}>video</a>
-                        {video.timelapseStorageKey ? <a className="underline" href={`/api/media/${createMediaToken({ key: video.timelapseStorageKey, expiresAt: Date.now() + 60 * 60 * 1000 })}`}>timelapse</a> : null}
-                        {video.thumbnailStorageKey ? <a className="underline" href={`/api/media/${createMediaToken({ key: video.thumbnailStorageKey, expiresAt: Date.now() + 60 * 60 * 1000 })}`}>thumbnail</a> : null}
+                        <Button asChild size="sm" variant="outline"><a href={`/api/media/${createMediaToken({ key: video.storageKey, expiresAt: Date.now() + 60 * 60 * 1000 })}`}>View video</a></Button>
+                        {video.timelapseStorageKey ? <Button asChild size="sm" variant="outline"><a href={`/api/media/${createMediaToken({ key: video.timelapseStorageKey, expiresAt: Date.now() + 60 * 60 * 1000 })}`}>Timelapse</a></Button> : null}
+                        {video.thumbnailStorageKey ? <Button asChild size="sm" variant="outline"><a href={`/api/media/${createMediaToken({ key: video.thumbnailStorageKey, expiresAt: Date.now() + 60 * 60 * 1000 })}`}>Thumbnail</a></Button> : null}
                       </div>
                     ))
-                  : "Pending"}
+                  : <span className="text-muted-foreground">Pending completion</span>}
               </div>
             </CardContent>
           </Card>
-        ))}
+        )) : (
+          <Card>
+            <CardContent className="p-8 text-center text-muted-foreground">
+              No orders yet. Browse the store or upload a model to start a transparent print.
+            </CardContent>
+          </Card>
+        )}
       </div>
     </main>
   );
