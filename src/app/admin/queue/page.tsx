@@ -42,18 +42,13 @@ export default async function AdminQueuePage() {
             <AdminActionButton endpoint="/api/admin/queue" payload={{ action: "requeue", printJobId: job.id }} confirm={`Requeue ${job.order.orderNumber}?`}>
               Requeue
             </AdminActionButton>
-            {job.order.status === "COMPLETED" ? (
-              <AdminActionButton endpoint="/api/admin/media" payload={{ orderId: job.order.id }}>
-                Attach media
-              </AdminActionButton>
-            ) : null}
           </CardContent>
         </Card>
       ))}
       {queuedIds.length > 1 ? (
         <Card>
           <CardContent className="flex items-center justify-between gap-4 p-5">
-            <p className="text-sm text-muted-foreground">Demo reorder action reverses the queued jobs into contiguous positions.</p>
+            <p className="text-sm text-muted-foreground">Reorder action reverses the queued jobs into contiguous positions.</p>
             <AdminActionButton endpoint="/api/admin/queue" payload={{ action: "reorder", orderedIds: [...queuedIds].reverse() }}>
               Reverse queued order
             </AdminActionButton>

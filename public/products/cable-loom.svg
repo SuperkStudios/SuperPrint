@@ -1,8 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 320" role="img" aria-label="Desk cable loom">
-  <rect width="480" height="320" fill="#0f172a"/>
-  <rect x="82" y="176" width="316" height="54" rx="12" fill="#14b8a6"/>
-  <path d="M112 176c0-70 256-70 256 0" fill="none" stroke="#f59e0b" stroke-width="28" stroke-linecap="round"/>
-  <circle cx="144" cy="203" r="13" fill="#ecfeff"/>
-  <circle cx="240" cy="203" r="13" fill="#ecfeff"/>
-  <circle cx="336" cy="203" r="13" fill="#ecfeff"/>
-</svg>

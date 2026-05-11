@@ -2,7 +2,7 @@
 CREATE SCHEMA IF NOT EXISTS "public";
 
 -- CreateEnum
-CREATE TYPE "UserRole" AS ENUM ('CUSTOMER', 'ADMIN');
+CREATE TYPE "UserRole" AS ENUM ('OWNER', 'CUSTOMER', 'ADMIN');
 
 -- CreateEnum
 CREATE TYPE "ProductStatus" AS ENUM ('ACTIVE', 'ARCHIVED');
@@ -187,6 +187,17 @@ CREATE TABLE "PlatformEvent" (
     CONSTRAINT "PlatformEvent_pkey" PRIMARY KEY ("id")
 );
 
+-- CreateTable
+CREATE TABLE "SystemSetting" (
+    "id" TEXT NOT NULL,
+    "key" TEXT NOT NULL,
+    "value" JSONB NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "SystemSetting_pkey" PRIMARY KEY ("id")
+);
+
 -- CreateIndex
 CREATE UNIQUE INDEX "User_email_key" ON "User"("email");
 
@@ -198,6 +209,9 @@ CREATE UNIQUE INDEX "Order_orderNumber_key" ON "Order"("orderNumber");
 
 -- CreateIndex
 CREATE INDEX "PlatformEvent_type_createdAt_idx" ON "PlatformEvent"("type", "createdAt");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "SystemSetting_key_key" ON "SystemSetting"("key");
 
 -- AddForeignKey
 ALTER TABLE "ModelUpload" ADD CONSTRAINT "ModelUpload_customerId_fkey" FOREIGN KEY ("customerId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

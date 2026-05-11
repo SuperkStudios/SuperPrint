@@ -26,9 +26,10 @@ Update `.env` with PostgreSQL, Redis, auth, local storage, backup, and Social Bl
 ```bash
 npm run db:generate
 npm run db:migrate
-npm run db:seed
 npm run dev
 ```
+
+`npm run db:seed` is bootstrap-safe and optional. It does not create users, products, printers, jobs, orders, uploads, media, telemetry, or events.
 
 Optional worker:
 
@@ -49,30 +50,21 @@ docker compose build
 docker compose up
 ```
 
-First-run Docker setup:
-
-```bash
-docker compose run --rm app npm run db:seed
-```
-
 Then open `http://localhost:3000`. The app service runs migrations automatically on startup with `prisma migrate deploy`.
 
-## Demo Users
-
-- Admin: `admin@superprint.test`
-- Customer: `customer@superprint.test`
-- Password for both: `superprint-demo`
-
-## Run The Demo Locally
+## Clean First-Run Setup
 
 ```bash
 docker compose build
 docker compose up -d postgres redis app worker
-docker compose run --rm app npm run db:seed
 curl http://localhost:3000/api/health
 ```
 
-Open `http://localhost:3000` and sign in with the demo users above. The seeded factory story includes an active articulated dragon print, three queued jobs, a pending customer upload, low-filament warning, open maintenance task, and a completed order with local media placeholders.
+Open `http://localhost:3000`. On a clean database, SuperPrint redirects to `/setup`.
+
+The setup wizard creates the first owner account, company/brand name, storage confirmation, first printer profile, first filament spool, and security confirmations. After an owner or admin exists, `/setup` and the bootstrap API lock permanently.
+
+The production database starts empty: no fake users, products, printers, jobs, orders, uploads, media, telemetry, or events.
 
 ## Main Routes
 
@@ -100,6 +92,8 @@ Open `http://localhost:3000` and sign in with the demo users above. The seeded f
 - `GET|POST /api/admin/maintenance`
 - `GET /api/mobile/queue`
 - `GET /api/mobile/events`
+- `GET /api/bootstrap/status`
+- `POST /api/bootstrap`
 
 Public APIs sanitize events and queue state. They never expose internal printer IPs, printer API URLs, admin notes, local volume paths, payment provider IDs, or operational controls.
 
@@ -127,7 +121,7 @@ Order media links are served through signed local tokens at `/api/media/[token]`
 - Real printer agent: replace `src/workers/print-worker.ts` with a secure agent protocol that owns internal printer credentials, telemetry, and G-code dispatch.
 - Payment provider: replace the checkout placeholder in `src/app/api/orders/route.ts` with Stripe/Adyen/etc. checkout sessions and webhook verification.
 - Shipping: add rate shopping, label purchase, address validation, and fulfillment webhooks after payment success.
-- Local volume storage: replace demo upload targets with streamed file writes, MIME/STL validation, thumbnail generation, and private media authorization.
+- Local volume storage: add richer file processing, thumbnail generation, and private media authorization policy.
 - Social Blade bucket upload: replace `SOCIAL_BLADE_UPLOAD_COMMAND` with the real bucket CLI/API once credentials and endpoint behavior are available.
 
 ## Local Docker Volumes
