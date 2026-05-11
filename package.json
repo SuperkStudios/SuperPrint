@@ -11,7 +11,9 @@
     "test:watch": "vitest",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy",
     "db:seed": "tsx prisma/seed.ts",
+    "docker:start": "sh scripts/docker-start.sh",
     "worker": "tsx src/workers/print-worker.ts",
     "backup": "tsx src/workers/backup-worker.ts",
     "restore": "tsx scripts/restore-disaster-recovery.ts"

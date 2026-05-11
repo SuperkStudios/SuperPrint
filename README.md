@@ -14,6 +14,8 @@ SuperPrint is a transparent live 3D print-on-demand platform. Customers browse a
 
 ## Setup
 
+### Local Node
+
 ```bash
 npm install
 cp .env.example .env
@@ -43,8 +45,17 @@ npm run backup
 Docker MVP stack:
 
 ```bash
-docker compose up --build
+docker compose build
+docker compose up
 ```
+
+First-run Docker setup:
+
+```bash
+docker compose run --rm app npm run db:seed
+```
+
+Then open `http://localhost:3000`. The app service runs migrations automatically on startup with `prisma migrate deploy`.
 
 ## Demo Users
 

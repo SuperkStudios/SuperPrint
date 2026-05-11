@@ -3,7 +3,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    command: npm run dev
     ports:
       - "3000:3000"
     environment:
@@ -14,8 +13,6 @@ services:
       SUPERPRINT_DATA_ROOT: /data
       PUBLIC_FACTORY_STREAM_URL: https://demo.superprint.local/live/factory
     volumes:
-      - .:/app
-      - node_modules:/app/node_modules
       - uploads:/data/uploads
       - sliced:/data/sliced
       - videos:/data/videos
@@ -24,10 +21,18 @@ services:
       - logs:/data/logs
       - backup_staging:/data/backup-staging
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:3000/api/health >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
 
-  print-worker:
+  worker:
     build:
       context: .
       dockerfile: Dockerfile
@@ -37,8 +42,6 @@ services:
       REDIS_URL: redis://redis:6379
       SUPERPRINT_DATA_ROOT: /data
     volumes:
-      - .:/app
-      - node_modules:/app/node_modules
       - uploads:/data/uploads
       - sliced:/data/sliced
       - videos:/data/videos
@@ -47,8 +50,10 @@ services:
       - logs:/data/logs
       - backup_staging:/data/backup-staging
     depends_on:
-      - postgres
-      - redis
+      app:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   backup-worker:
     build:
@@ -63,8 +68,6 @@ services:
       SOCIAL_BLADE_BUCKET: social-blade://superprint-backups
       SOCIAL_BLADE_UPLOAD_COMMAND: ""
     volumes:
-      - .:/app
-      - node_modules:/app/node_modules
       - uploads:/data/uploads
       - sliced:/data/sliced
       - videos:/data/videos
@@ -73,7 +76,8 @@ services:
       - logs:/data/logs
       - backup_staging:/data/backup-staging
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
 
   postgres:
     image: postgres:16-alpine
@@ -85,15 +89,27 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d superprint"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
 
   redis:
     image: redis:7-alpine
     ports:
       - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
 
 volumes:
-  node_modules:
   postgres_data:
+  redis_data:
   uploads:
   sliced:
   videos:
