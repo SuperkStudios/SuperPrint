@@ -1,0 +1,33 @@
+export type NavItem = {
+  href: string;
+  label: string;
+};
+
+export const mainNavigation: NavItem[] = [
+  { href: "/", label: "Home" },
+  { href: "/about", label: "About us" },
+  { href: "/queue", label: "Live" },
+  { href: "/stats", label: "Stats" }
+];
+
+export function buildUserNavigation(role?: string | null): NavItem[] {
+  if (role === "ADMIN" || role === "OWNER") {
+    return [
+      { href: "/admin", label: "Admin" },
+      { href: "/admin/uploads", label: "Uploads" },
+      { href: "/admin/queue", label: "Queue" },
+      { href: "/admin/filament", label: "Filament" },
+      { href: "/admin/settings", label: "Settings" }
+    ];
+  }
+
+  if (role) {
+    return [
+      { href: "/store", label: "Store" },
+      { href: "/upload", label: "Upload STL" },
+      { href: "/orders", label: "Orders" }
+    ];
+  }
+
+  return [{ href: "/login", label: "Sign in" }];
+}
