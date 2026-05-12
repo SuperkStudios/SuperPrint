@@ -9,14 +9,15 @@ export default async function StatsPage() {
     redirect("/setup");
   }
 
-  const [orders, uploads, jobs, completedJobs, events, media] = await Promise.all([
+  const [orders, uploads, jobs, completedJobs, stoppedJobs, consumed] = await Promise.all([
     prisma.order.count(),
     prisma.modelUpload.count(),
     prisma.printJob.count(),
     prisma.printJob.count({ where: { status: "COMPLETED" } }),
-    prisma.platformEvent.count(),
-    prisma.orderVideo.count()
+    prisma.printJob.count({ where: { status: { in: ["FAILED", "PAUSED", "CANCELED"] } } }),
+    prisma.printJob.aggregate({ _sum: { consumedFilamentGrams: true } })
   ]);
+  const consumedGrams = consumed._sum.consumedFilamentGrams ?? 0;
 
   return (
     <main className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
@@ -30,18 +31,18 @@ export default async function StatsPage() {
         <Stat label="Model uploads" value={uploads} />
         <Stat label="Print jobs" value={jobs} />
         <Stat label="Completed prints" value={completedJobs} />
-        <Stat label="Events emitted" value={events} />
-        <Stat label="Media attachments" value={media} />
+        <Stat label="Stopped jobs" value={stoppedJobs} />
+        <Stat label="Accounted grams" value={consumedGrams} suffix="g" />
       </div>
     </main>
   );
 }
 
-function Stat({ label, value }: { label: string; value: number }) {
+function Stat({ label, value, suffix = "" }: { label: string; value: number; suffix?: string }) {
   return (
     <div className="rounded-lg border bg-white p-6">
       <p className="text-sm text-muted-foreground">{label}</p>
-      <p className="mt-2 text-3xl font-semibold">{value}</p>
+      <p className="mt-2 text-3xl font-semibold">{value}{suffix}</p>
     </div>
   );
 }

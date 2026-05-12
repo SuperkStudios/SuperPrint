@@ -10,7 +10,7 @@ import { refreshAllPrinterHeartbeats } from "@/services/printer-heartbeat";
 export const dynamic = "force-dynamic";
 
 export default async function AdminDashboardPage() {
-  const [orders, uploads, printers, maintenance, jobs, events, filament, products, media] = await Promise.all([
+  const [orders, uploads, printers, maintenance, jobs, events, filament, products, media, consumed] = await Promise.all([
     prisma.order.count(),
     prisma.modelUpload.findMany({ where: { status: "PENDING" }, include: { customer: true }, orderBy: { createdAt: "desc" }, take: 4 }),
     refreshAllPrinterHeartbeats(),
@@ -19,10 +19,14 @@ export default async function AdminDashboardPage() {
     listPublicEvents(8),
     prisma.filamentSpool.findMany({ orderBy: { remainingGrams: "asc" }, take: 4 }),
     prisma.product.count({ where: { status: "ACTIVE" } }),
-    prisma.orderVideo.count()
+    prisma.orderVideo.count(),
+    prisma.printJob.aggregate({ _sum: { consumedFilamentGrams: true } })
   ]);
   const activeJob = jobs.find((job) => job.status === "PRINTING");
   const queuedJobs = jobs.filter((job) => job.status === "QUEUED");
+  const completedJobs = jobs.filter((job) => job.status === "COMPLETED").length;
+  const stoppedJobs = jobs.filter((job) => ["FAILED", "PAUSED", "CANCELED"].includes(job.status)).length;
+  const accountedGrams = consumed._sum.consumedFilamentGrams ?? 0;
 
   return (
     <div className="grid gap-6 md:grid-cols-4">
@@ -30,6 +34,10 @@ export default async function AdminDashboardPage() {
       <Metric icon={Layers} label="Pending uploads" value={uploads.length.toString()} />
       <Metric icon={Activity} label="Printers" value={printers.length.toString()} />
       <Metric icon={ClipboardCheck} label="Open maintenance" value={maintenance.length.toString()} />
+      <Metric icon={ClipboardCheck} label="Completed prints" value={completedJobs.toString()} />
+      <Metric icon={AlertTriangle} label="Stopped jobs" value={stoppedJobs.toString()} />
+      <Metric icon={Boxes} label="Accounted material" value={`${accountedGrams}g`} />
+      <Metric icon={DatabaseBackup} label="Media records" value={media.toString()} />
 
       <Card className="md:col-span-2">
         <CardHeader>

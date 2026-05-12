@@ -13,7 +13,13 @@ export function completePrintingJobAccounting(job: {
   };
 }
 
-export function failPrintingJobAccounting(input: { status: string; reason: string; requeue?: boolean }) {
+export function failPrintingJobAccounting(input: {
+  status: string;
+  reason: string;
+  requeue?: boolean;
+  reservedFilamentGrams?: number | null;
+  elapsedSeconds?: number | null;
+}) {
   if (input.status !== "PRINTING") {
     throw new Error("Only printing jobs can fail");
   }
@@ -22,7 +28,9 @@ export function failPrintingJobAccounting(input: { status: string; reason: strin
     throw new Error("Failure reason is required");
   }
   return {
+    consumedFilamentGrams: input.reservedFilamentGrams ?? 0,
     failureReason: reason,
+    runtimeMinutes: Math.max(0, Math.round((input.elapsedSeconds ?? 0) / 60)),
     requeue: input.requeue === true,
     failedPrintIncrement: 1
   };

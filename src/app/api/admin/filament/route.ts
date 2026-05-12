@@ -9,9 +9,11 @@ const filamentSchema = z.object({
   material: z.enum(["PLA", "PETG", "ABS", "TPU", "NYLON", "RESIN"]),
   color: z.string(),
   brand: z.string(),
+  startingGrams: z.number().int().positive().default(1000),
   remainingGrams: z.number().int().nonnegative(),
-  thresholdGrams: z.number().int().nonnegative(),
-  location: z.string()
+  thresholdGrams: z.number().int().nonnegative().default(150),
+  rollCostCents: z.number().int().nonnegative().default(0),
+  location: z.string().default("Stock")
 });
 
 export async function GET() {

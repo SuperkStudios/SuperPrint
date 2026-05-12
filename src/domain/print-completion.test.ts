@@ -16,10 +16,12 @@ describe("print completion accounting", () => {
     });
   });
 
-  it("requires a failure reason and can request requeue", () => {
+  it("accounts for reserved grams when a print is stopped or failed", () => {
     expect(() => failPrintingJobAccounting({ status: "PRINTING", reason: "" })).toThrow("Failure reason is required");
-    expect(failPrintingJobAccounting({ status: "PRINTING", reason: "Layer shift", requeue: true })).toEqual({
+    expect(failPrintingJobAccounting({ status: "PRINTING", reason: "Layer shift", requeue: true, reservedFilamentGrams: 36, elapsedSeconds: 1860 })).toEqual({
+      consumedFilamentGrams: 36,
       failureReason: "Layer shift",
+      runtimeMinutes: 31,
       requeue: true,
       failedPrintIncrement: 1
     });

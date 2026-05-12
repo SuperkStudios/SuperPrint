@@ -1,0 +1,4 @@
+ALTER TABLE "Product" ADD COLUMN "imageStorageKey" TEXT;
+ALTER TABLE "Product" ADD COLUMN "productFileStorageKey" TEXT;
+ALTER TABLE "Product" ADD COLUMN "estimatedGrams" INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE "Product" ADD COLUMN "materialCostCents" INTEGER NOT NULL DEFAULT 0;

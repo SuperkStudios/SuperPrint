@@ -66,22 +66,39 @@ export async function markOrderPaidAndQueue(orderId: string, actorId?: string) {
     select: { queuePosition: true }
   });
   const position = nextQueuePosition(queueJobs.map((job) => job.queuePosition));
-
-  const updated = await prisma.order.update({
-    where: { id: orderId },
-    data: {
-      status: "QUEUED",
-      paymentStatus: "PAID",
-      printJobs: {
-        create: {
-          etaMinutes: order.product.estimatedPrintMinutes,
-          queuePosition: position,
-          status: "QUEUED",
-          streamUrl: "/api/printer-feed/stream"
-        }
-      }
+  const spool = await prisma.filamentSpool.findFirst({
+    where: {
+      material: order.product.defaultMaterial,
+      remainingGrams: { gt: order.product.estimatedGrams }
     },
-    include: { product: true, printJobs: true }
+    orderBy: { remainingGrams: "asc" }
+  });
+
+  const updated = await prisma.$transaction(async (tx) => {
+    if (spool) {
+      await tx.filamentSpool.update({
+        where: { id: spool.id },
+        data: { remainingGrams: { decrement: order.product!.estimatedGrams } }
+      });
+    }
+    return tx.order.update({
+      where: { id: orderId },
+      data: {
+        status: "QUEUED",
+        paymentStatus: "PAID",
+        printJobs: {
+          create: {
+            etaMinutes: order.product!.estimatedPrintMinutes,
+            queuePosition: position,
+            status: "QUEUED",
+            streamUrl: "/api/printer-feed/stream",
+            filamentId: spool?.id,
+            reservedFilamentGrams: order.product!.estimatedGrams
+          }
+        }
+      },
+      include: { product: true, printJobs: true }
+    });
   });
 
   await recordPlatformEvent({
@@ -91,6 +108,8 @@ export async function markOrderPaidAndQueue(orderId: string, actorId?: string) {
       orderNumber: updated.orderNumber,
       productName: updated.product?.name,
       queuePosition: position,
+      reservedGrams: updated.product?.estimatedGrams,
+      filamentReserved: Boolean(spool),
       operatorGate: "Physical start still requires admin checklist"
     }
   });

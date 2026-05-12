@@ -182,8 +182,12 @@ model Product {
   name                 String
   description          String
   imageUrl             String
+  imageStorageKey      String?
+  productFileStorageKey String?
   priceCents           Int
   estimatedPrintMinutes Int
+  estimatedGrams       Int           @default(1)
+  materialCostCents    Int           @default(0)
   defaultMaterial      FilamentMaterial
   status               ProductStatus @default(ACTIVE)
   orders               Order[]

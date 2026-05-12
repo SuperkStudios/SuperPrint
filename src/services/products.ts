@@ -13,16 +13,23 @@ export async function upsertProduct(input: ProductInput & { id?: string }, actor
     : await prisma.product.create({
         data: product as Prisma.ProductCreateInput
       });
+  const finalProduct =
+    saved.imageUrl === "__LOCAL_IMAGE__"
+      ? await prisma.product.update({
+          where: { id: saved.id },
+          data: { imageUrl: `/api/products/${saved.id}/image` }
+        })
+      : saved;
 
   await recordPlatformEvent({
     type: "ORDER_CREATED",
     actorId,
     payload: {
       adminAction: input.id ? "PRODUCT_UPDATED" : "PRODUCT_CREATED",
-      productId: saved.id,
-      productName: saved.name
+      productId: finalProduct.id,
+      productName: finalProduct.name
     }
   });
 
-  return saved;
+  return finalProduct;
 }

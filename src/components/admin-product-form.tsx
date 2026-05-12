@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,32 +11,30 @@ type ProductDraft = {
   slug?: string;
   description: string;
   imageUrl: string;
+  imageStorageKey?: string | null;
+  productFileStorageKey?: string | null;
   priceCents: number;
   estimatedPrintMinutes: number;
+  estimatedGrams: number;
+  materialCostCents: number;
   defaultMaterial: string;
   status: string;
 };
 
 export function AdminProductForm({ product }: { product?: ProductDraft }) {
   const [message, setMessage] = useState("");
+  const [estimatedGrams, setEstimatedGrams] = useState(product?.estimatedGrams ?? 50);
+  const [rollCostDollars, setRollCostDollars] = useState(20);
+  const materialCost = useMemo(() => ((estimatedGrams / 1000) * rollCostDollars).toFixed(2), [estimatedGrams, rollCostDollars]);
 
   async function submit(formData: FormData) {
     setMessage("");
-    const payload = {
-      id: product?.id,
-      name: String(formData.get("name") ?? ""),
-      slug: String(formData.get("slug") ?? ""),
-      description: String(formData.get("description") ?? ""),
-      imageUrl: String(formData.get("imageUrl") ?? ""),
-      priceCents: Math.round(Number(formData.get("priceDollars") ?? 0) * 100),
-      estimatedPrintMinutes: Number(formData.get("estimatedPrintMinutes") ?? 0),
-      defaultMaterial: String(formData.get("defaultMaterial") ?? "PLA"),
-      status: String(formData.get("status") ?? "ACTIVE")
-    };
+    if (product?.id) formData.set("id", product.id);
+    formData.set("priceCents", String(Math.round(Number(formData.get("priceDollars") ?? 0) * 100)));
+    formData.set("materialCostCents", String(Math.round(Number(formData.get("materialCostDollars") ?? 0) * 100)));
     const response = await fetch("/api/admin/products", {
       method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(payload)
+      body: formData
     });
     setMessage(response.ok ? "Product saved." : (await response.json().catch(() => null))?.error ?? "Product save failed.");
     if (response.ok) window.location.reload();
@@ -58,7 +56,15 @@ export function AdminProductForm({ product }: { product?: ProductDraft }) {
       </div>
       <div className="grid gap-2">
         <Label htmlFor="imageUrl">Product image URL</Label>
-        <Input id="imageUrl" name="imageUrl" defaultValue={product?.imageUrl} required />
+        <Input id="imageUrl" name="imageUrl" defaultValue={product?.imageUrl?.startsWith("/api/") ? "" : product?.imageUrl} placeholder="Optional when uploading an image" />
+      </div>
+      <div className="grid gap-2">
+        <Label htmlFor="imageFile">Upload product image</Label>
+        <Input id="imageFile" name="imageFile" type="file" accept="image/png,image/jpeg,image/webp" />
+      </div>
+      <div className="grid gap-2">
+        <Label htmlFor="printFile">Upload product STL/G-code file</Label>
+        <Input id="printFile" name="printFile" type="file" accept=".stl,.gcode,.3mf,model/stl,text/plain,application/octet-stream" />
       </div>
       <div className="grid gap-4 md:grid-cols-3">
         <div className="grid gap-2">
@@ -70,10 +76,36 @@ export function AdminProductForm({ product }: { product?: ProductDraft }) {
           <Input id="estimatedPrintMinutes" name="estimatedPrintMinutes" type="number" min="1" defaultValue={product?.estimatedPrintMinutes ?? 60} required />
         </div>
         <div className="grid gap-2">
+          <Label htmlFor="estimatedGrams">Estimated grams</Label>
+          <Input
+            id="estimatedGrams"
+            name="estimatedGrams"
+            type="number"
+            min="1"
+            value={estimatedGrams}
+            onChange={(event) => setEstimatedGrams(Number(event.target.value))}
+            required
+          />
+        </div>
+        <div className="grid gap-2">
           <Label htmlFor="defaultMaterial">Material</Label>
           <select id="defaultMaterial" name="defaultMaterial" defaultValue={product?.defaultMaterial ?? "PLA"} className="h-10 rounded-md border border-input bg-background px-3 text-sm">
             {["PLA", "PETG", "ABS", "TPU", "NYLON", "RESIN"].map((material) => <option key={material}>{material}</option>)}
           </select>
+        </div>
+      </div>
+      <div className="grid gap-4 rounded-md border bg-muted/30 p-3 md:grid-cols-3">
+        <div className="grid gap-2">
+          <Label htmlFor="rollCostDollars">Cost basis per 1kg roll</Label>
+          <Input id="rollCostDollars" name="rollCostDollars" type="number" min="0" step="0.01" value={rollCostDollars} onChange={(event) => setRollCostDollars(Number(event.target.value))} />
+        </div>
+        <div className="grid gap-2">
+          <Label htmlFor="materialCostDollars">Calculated material cost</Label>
+          <Input id="materialCostDollars" name="materialCostDollars" type="number" min="0" step="0.01" value={materialCost} readOnly />
+        </div>
+        <div className="text-sm text-muted-foreground">
+          <p className="font-medium text-foreground">Product cost preview</p>
+          <p className="mt-2">{estimatedGrams}g from a ${rollCostDollars.toFixed(2)} roll = ${materialCost}</p>
         </div>
       </div>
       <div className="grid gap-2">

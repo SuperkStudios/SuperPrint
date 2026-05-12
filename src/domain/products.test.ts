@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeProductInput } from "./products";
+import { calculateProductMaterialCostCents, normalizeProductInput } from "./products";
 
 describe("product catalog", () => {
   it("normalizes product input for admin-created store items", () => {
@@ -10,6 +10,8 @@ describe("product catalog", () => {
         imageUrl: "https://example.com/cable-clip.png",
         priceCents: 1299,
         estimatedPrintMinutes: 42,
+        estimatedGrams: 64,
+        materialCostCents: 153,
         defaultMaterial: "PLA"
       })
     ).toMatchObject({
@@ -28,8 +30,13 @@ describe("product catalog", () => {
         imageUrl: "not-a-url",
         priceCents: 0,
         estimatedPrintMinutes: 0,
+        estimatedGrams: 0,
         defaultMaterial: "PLA"
       })
     ).toThrow();
+  });
+
+  it("calculates material cost from grams and spool cost", () => {
+    expect(calculateProductMaterialCostCents({ estimatedGrams: 72, rollCostCents: 2400, rollGrams: 1000 })).toBe(173);
   });
 });

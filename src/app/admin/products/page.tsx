@@ -33,7 +33,11 @@ export default async function AdminProductsPage() {
               <img src={product.imageUrl} alt="" className="h-24 w-full rounded object-cover" />
               <div className="space-y-2 text-sm">
                 <p>{product.description}</p>
-                <p className="font-medium">{money(product.priceCents)} · {product.estimatedPrintMinutes} min · {product.defaultMaterial}</p>
+                <p className="font-medium">{money(product.priceCents)} · {product.estimatedPrintMinutes} min · {product.estimatedGrams}g · {product.defaultMaterial}</p>
+                <p className="text-muted-foreground">
+                  Material cost {money(product.materialCostCents)}
+                  {product.productFileStorageKey ? " · print file attached" : " · no print file yet"}
+                </p>
                 <AdminProductForm product={product} />
               </div>
             </CardContent>
