@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { signIn } from "next-auth/react";
 import { ArrowLeft, ArrowRight, Boxes, CheckCircle2, Printer, ShieldCheck } from "lucide-react";
 import {
@@ -9,6 +9,7 @@ import {
   type BootstrapInputDraft
 } from "@/domain/bootstrap";
 import { DEFAULT_FILAMENT_ROLL_GRAMS, planFilamentStockAssignments, type CompletedPrinterHistoryItem } from "@/domain/filament-usage";
+import { buildThemeCssVariables, normalizePrimaryColor } from "@/domain/theme";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -81,6 +82,13 @@ export function SetupForm() {
   const totalAssignedPrintCount = assignmentPlan.spools.reduce((total, spool) => total + spool.assignedPrints.length, 0);
   const totalRemainingGrams = assignmentPlan.spools.reduce((total, spool) => total + spool.usage.remainingGrams, 0);
   const totalAssignedGrams = assignmentPlan.spools.reduce((total, spool) => total + spool.usage.assignedGrams, 0);
+
+  useEffect(() => {
+    const variables = buildThemeCssVariables(draft.company.primaryColor);
+    for (const [key, value] of Object.entries(variables)) {
+      document.documentElement.style.setProperty(key, value);
+    }
+  }, [draft.company.primaryColor]);
 
   const summary = useMemo(
     () =>
@@ -324,7 +332,7 @@ export function SetupForm() {
           <div className="grid gap-2">
             <Label htmlFor="primary-color">Primary color</Label>
             <div className="flex gap-2">
-              <Input id="primary-color" type="color" value={draft.company.primaryColor ?? "#0f8f7f"} onChange={(event) => updateCompany("primaryColor", event.target.value)} className="h-10 w-16 p-1" />
+              <Input id="primary-color" type="color" value={normalizePrimaryColor(draft.company.primaryColor)} onChange={(event) => updateCompany("primaryColor", event.target.value)} className="h-10 w-16 p-1" />
               <Input value={draft.company.primaryColor ?? "#0f8f7f"} onChange={(event) => updateCompany("primaryColor", event.target.value)} />
             </div>
           </div>

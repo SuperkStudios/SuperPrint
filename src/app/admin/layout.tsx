@@ -10,7 +10,8 @@ const adminNav = [
   { href: "/admin/uploads", label: "Uploads" },
   { href: "/admin/queue", label: "Queue" },
   { href: "/admin/filament", label: "Filament" },
-  { href: "/admin/maintenance", label: "Maintenance" }
+  { href: "/admin/maintenance", label: "Maintenance" },
+  { href: "/admin/settings", label: "Settings" }
 ];
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
