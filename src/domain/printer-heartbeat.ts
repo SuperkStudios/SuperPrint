@@ -41,3 +41,134 @@ export function buildCentauriVideoEnableRequest(mainboardId = "0000000000000000"
     Topic: `sdcp/request/${mainboardId}`
   };
 }
+
+export function buildCentauriStatusRefreshRequest(mainboardId = "0000000000000000", requestId = crypto.randomUUID(), timestamp = Math.floor(Date.now() / 1000)) {
+  return {
+    Id: requestId,
+    Data: {
+      Cmd: 0,
+      Data: {},
+      RequestID: requestId,
+      MainboardID: mainboardId,
+      TimeStamp: timestamp,
+      From: 0
+    },
+    Topic: `sdcp/request/${mainboardId}`
+  };
+}
+
+type SdcpRecord = Record<string, unknown>;
+
+export type PublicPrinterTelemetry = {
+  state: "LIVE";
+  source: "centauri-sdcp";
+  machineStatus: number | null;
+  machineStatusLabel: string;
+  printStatus: number | null;
+  printStatusLabel: string;
+  nozzleTempC: number | null;
+  nozzleTargetC: number | null;
+  bedTempC: number | null;
+  bedTargetC: number | null;
+  chamberTempC: number | null;
+  chamberTargetC: number | null;
+  progressPercent: number | null;
+  currentLayer: number | null;
+  totalLayer: number | null;
+  elapsedSeconds: number | null;
+  remainingSeconds: number | null;
+  printSpeedPercent: number | null;
+  updatedAt: string;
+};
+
+export function parseCentauriStatusTelemetry(message: unknown, checkedAt = new Date()): PublicPrinterTelemetry | null {
+  const status = findRecordByKey(message, "Status");
+  if (!status) return null;
+  const printInfo = asRecord(status.PrintInfo);
+  const currentTicks = readNumber(printInfo?.CurrentTicks);
+  const totalTicks = readNumber(printInfo?.TotalTicks);
+  const elapsedSeconds = currentTicks;
+  const remainingSeconds = currentTicks != null && totalTicks != null ? Math.max(0, totalTicks - currentTicks) : null;
+  const currentLayer = readNumber(printInfo?.CurrentLayer);
+  const totalLayer = readNumber(printInfo?.TotalLayer);
+  const progressFromTicks = currentTicks != null && totalTicks ? Math.round((currentTicks / totalTicks) * 100) : null;
+  const progressFromLayers = currentLayer != null && totalLayer ? Math.round((currentLayer / totalLayer) * 100) : null;
+  const machineStatus = readNumber(Array.isArray(status.CurrentStatus) ? status.CurrentStatus[0] : status.CurrentStatus);
+  const printStatus = readNumber(printInfo?.Status);
+
+  return {
+    state: "LIVE",
+    source: "centauri-sdcp",
+    machineStatus,
+    machineStatusLabel: machineStatusLabel(machineStatus),
+    printStatus,
+    printStatusLabel: printStatusLabel(printStatus),
+    nozzleTempC: readNumber(status.TempOfNozzle),
+    nozzleTargetC: readNumber(status.TempTargetNozzle),
+    bedTempC: readNumber(status.TempOfHotbed),
+    bedTargetC: readNumber(status.TempTargetHotbed),
+    chamberTempC: readNumber(status.TempOfBox),
+    chamberTargetC: readNumber(status.TempTargetBox),
+    progressPercent: clampPercent(progressFromTicks ?? progressFromLayers),
+    currentLayer,
+    totalLayer,
+    elapsedSeconds,
+    remainingSeconds,
+    printSpeedPercent: readNumber(printInfo?.PrintSpeed) ?? readNumber(status.PrintSpeed),
+    updatedAt: checkedAt.toISOString()
+  };
+}
+
+function findRecordByKey(input: unknown, key: string, depth = 0): SdcpRecord | null {
+  if (depth > 6 || !input || typeof input !== "object") return null;
+  const record = input as SdcpRecord;
+  const direct = asRecord(record[key]);
+  if (direct) return direct;
+  for (const value of Object.values(record)) {
+    const found = findRecordByKey(value, key, depth + 1);
+    if (found) return found;
+  }
+  return null;
+}
+
+function asRecord(value: unknown): SdcpRecord | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as SdcpRecord) : null;
+}
+
+function readNumber(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function clampPercent(value: number | null) {
+  return value == null ? null : Math.min(100, Math.max(0, value));
+}
+
+function machineStatusLabel(status: number | null) {
+  const labels: Record<number, string> = {
+    0: "Idle",
+    1: "Printing",
+    2: "File transferring",
+    3: "Calibrating",
+    4: "Device testing"
+  };
+  return status == null ? "Unknown" : labels[status] ?? `Status ${status}`;
+}
+
+function printStatusLabel(status: number | null) {
+  const labels: Record<number, string> = {
+    0: "Idle",
+    1: "Homing",
+    5: "Pausing",
+    6: "Paused",
+    7: "Stopping",
+    8: "Stopped",
+    9: "Complete",
+    10: "File checking"
+  };
+  return status == null ? "Unknown" : labels[status] ?? `Print status ${status}`;
+}

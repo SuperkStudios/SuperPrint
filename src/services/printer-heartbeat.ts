@@ -1,6 +1,13 @@
 import http from "node:http";
 import https from "node:https";
-import { buildPrinterHeartbeatUpdate, getCentauriMjpegUrl } from "@/domain/printer-heartbeat";
+import WebSocket from "ws";
+import {
+  buildCentauriStatusRefreshRequest,
+  buildPrinterHeartbeatUpdate,
+  getCentauriMjpegUrl,
+  parseCentauriStatusTelemetry,
+  type PublicPrinterTelemetry
+} from "@/domain/printer-heartbeat";
 import { probePrinterConnection } from "@/domain/bootstrap";
 import { prisma } from "@/lib/prisma";
 
@@ -34,6 +41,41 @@ export async function refreshPrinterHeartbeat(printerId: string) {
 export async function refreshAllPrinterHeartbeats() {
   const printers = await prisma.printer.findMany({ orderBy: { publicName: "asc" } });
   return Promise.all(printers.map((printer) => refreshPrinterHeartbeat(printer.id)));
+}
+
+export async function readPrinterTelemetry(printerId: string): Promise<PublicPrinterTelemetry | null> {
+  const printer = await prisma.printer.findUniqueOrThrow({ where: { id: printerId } });
+  if (!printer.controlApiUrl.startsWith("ws")) return null;
+  return readCentauriTelemetry(printer.controlApiUrl, 3500);
+}
+
+function readCentauriTelemetry(controlApiUrl: string, timeoutMs: number) {
+  return new Promise<PublicPrinterTelemetry | null>((resolve) => {
+    const socket = new WebSocket(controlApiUrl);
+    let settled = false;
+    const checkedAt = new Date();
+    const finish = (telemetry: PublicPrinterTelemetry | null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      socket.close();
+      resolve(telemetry);
+    };
+    const timeout = setTimeout(() => finish(null), timeoutMs);
+
+    socket.on("open", () => {
+      socket.send(JSON.stringify(buildCentauriStatusRefreshRequest()));
+    });
+    socket.on("message", (data) => {
+      try {
+        const telemetry = parseCentauriStatusTelemetry(JSON.parse(data.toString()), checkedAt);
+        if (telemetry) finish(telemetry);
+      } catch {
+        // Ignore non-status frames and wait for the SDCP status message.
+      }
+    });
+    socket.on("error", () => finish(null));
+  });
 }
 
 function probeCameraReachable(url: string, timeoutMs: number) {

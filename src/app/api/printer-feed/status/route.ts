@@ -2,13 +2,15 @@ import { NextResponse } from "next/server";
 import { getCentauriMjpegUrl } from "@/domain/printer-heartbeat";
 import { prisma } from "@/lib/prisma";
 import { getPublicQueueState } from "@/services/queue";
-import { refreshPrinterHeartbeat } from "@/services/printer-heartbeat";
+import { readPrinterTelemetry, refreshPrinterHeartbeat } from "@/services/printer-heartbeat";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   const registeredPrinter = await prisma.printer.findFirst({ orderBy: { publicName: "asc" } });
-  const refreshed = registeredPrinter ? await refreshPrinterHeartbeat(registeredPrinter.id) : null;
+  const [refreshed, telemetry] = registeredPrinter
+    ? await Promise.all([refreshPrinterHeartbeat(registeredPrinter.id), readPrinterTelemetry(registeredPrinter.id)])
+    : [null, null];
   const queue = await getPublicQueueState();
   const publicPrinter = queue.current?.printer ?? queue.printers[0] ?? null;
 
@@ -23,6 +25,7 @@ export async function GET() {
     latencyMode: "mjpeg-direct",
     heartbeatAt: refreshed?.lastHeartbeatAt,
     heartbeatLatencyMs: refreshed?.heartbeatLatencyMs,
+    telemetry: telemetry ?? { state: "WAITING_FOR_TELEMETRY" },
     privateCameraUrlConfigured: refreshed ? Boolean(getCentauriMjpegUrl({ internalIp: refreshed.internalIp, cameraSource: refreshed.cameraSource })) : false
   });
 }

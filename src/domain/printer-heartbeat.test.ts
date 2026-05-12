@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { buildCentauriVideoEnableRequest, buildPrinterHeartbeatUpdate, getCentauriMjpegUrl } from "./printer-heartbeat";
+import {
+  buildCentauriStatusRefreshRequest,
+  buildCentauriVideoEnableRequest,
+  buildPrinterHeartbeatUpdate,
+  getCentauriMjpegUrl,
+  parseCentauriStatusTelemetry
+} from "./printer-heartbeat";
 
 describe("printer heartbeat", () => {
   it("marks reachable printers online with a simple operator-safe status", () => {
@@ -45,5 +51,64 @@ describe("printer heartbeat", () => {
     expect(request.Data.Cmd).toBe(386);
     expect(request.Data.Data).toEqual({ Enable: 1 });
     expect(request.Topic).toBe("sdcp/request/0000000000000000");
+  });
+
+  it("builds the Centauri SDCP status refresh request", () => {
+    const request = buildCentauriStatusRefreshRequest("mainboard-1", "request-2", 1778547601);
+
+    expect(request.Data.Cmd).toBe(0);
+    expect(request.Data.Data).toEqual({});
+    expect(request.Topic).toBe("sdcp/request/mainboard-1");
+  });
+
+  it("parses safe Centauri SDCP telemetry from status messages", () => {
+    const telemetry = parseCentauriStatusTelemetry(
+      {
+        Data: {
+          Status: {
+            CurrentStatus: 1,
+            TempOfNozzle: 214,
+            TempTargetNozzle: 220,
+            TempOfHotbed: "59.5",
+            TempTargetHotbed: 60,
+            TempOfBox: 31,
+            TempTargetBox: 0,
+            PrintSpeed: 100,
+            PrintInfo: {
+              Status: 1,
+              CurrentLayer: 12,
+              TotalLayer: 100,
+              CurrentTicks: 120,
+              TotalTicks: 600,
+              Filename: "/private/path/model.gcode"
+            }
+          }
+        }
+      },
+      new Date("2026-05-12T14:30:00.000Z")
+    );
+
+    expect(telemetry).toEqual({
+      state: "LIVE",
+      source: "centauri-sdcp",
+      machineStatus: 1,
+      machineStatusLabel: "Printing",
+      printStatus: 1,
+      printStatusLabel: "Homing",
+      nozzleTempC: 214,
+      nozzleTargetC: 220,
+      bedTempC: 59.5,
+      bedTargetC: 60,
+      chamberTempC: 31,
+      chamberTargetC: 0,
+      progressPercent: 20,
+      currentLayer: 12,
+      totalLayer: 100,
+      elapsedSeconds: 120,
+      remainingSeconds: 480,
+      printSpeedPercent: 100,
+      updatedAt: "2026-05-12T14:30:00.000Z"
+    });
+    expect(JSON.stringify(telemetry)).not.toContain("/private/path");
   });
 });

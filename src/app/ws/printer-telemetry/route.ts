@@ -1,4 +1,6 @@
 import { getPublicQueueState } from "@/services/queue";
+import { readPrinterTelemetry, refreshPrinterHeartbeat } from "@/services/printer-heartbeat";
+import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
@@ -7,8 +9,13 @@ export async function GET() {
     async start(controller) {
       const encoder = new TextEncoder();
       const send = async () => {
-        const queue = await getPublicQueueState();
-        controller.enqueue(encoder.encode(`event: printer-telemetry\ndata: ${JSON.stringify(queue.current?.telemetry ?? null)}\n\n`));
+        const [queue, printer] = await Promise.all([
+          getPublicQueueState(),
+          prisma.printer.findFirst({ orderBy: { publicName: "asc" } })
+        ]);
+        const liveTelemetry = printer ? await readPrinterTelemetry(printer.id) : null;
+        if (printer) await refreshPrinterHeartbeat(printer.id);
+        controller.enqueue(encoder.encode(`event: printer-telemetry\ndata: ${JSON.stringify(liveTelemetry ?? queue.current?.telemetry ?? null)}\n\n`));
       };
       await send();
       const interval = setInterval(send, 5000);

@@ -3,12 +3,19 @@
 import { Activity, Clock, Cpu, Gauge, Layers3, Thermometer, Zap } from "lucide-react";
 import { motion } from "framer-motion";
 import { Badge } from "@/components/ui/badge";
+import { usePrinterFeedStatus } from "@/hooks/use-printer-feed-status";
 
 type PublicQueue = Awaited<ReturnType<typeof import("@/services/queue").getPublicQueueState>>;
 
 export function TelemetryDashboard({ queue }: { queue: PublicQueue }) {
+  const livePrinter = usePrinterFeedStatus();
   const current = queue.current;
   const printer = current?.printer ?? queue.printers[0] ?? null;
+  const centauriTelemetry = livePrinter?.telemetry?.state === "LIVE" ? livePrinter.telemetry : null;
+  const telemetry = centauriTelemetry ?? (current?.telemetry?.state === "LIVE" ? current.telemetry : null);
+  const progressPercent = current?.progressPercent ?? telemetry?.progressPercent ?? 0;
+  const printerStatus = livePrinter?.online ? centauriTelemetry?.machineStatusLabel ?? "Online" : current?.status ?? "IDLE";
+  const health = livePrinter?.online ? livePrinter.health : printer?.healthDescription ?? "No printer online";
 
   return (
     <div className="grid gap-4">
@@ -17,7 +24,7 @@ export function TelemetryDashboard({ queue }: { queue: PublicQueue }) {
           <Badge className="border-cyan-300/30 bg-cyan-300/10 text-cyan-100">NOW PRINTING</Badge>
           <span className="flex items-center gap-2 text-sm text-emerald-200">
             <span className="size-2 rounded-full bg-emerald-300 shadow-[0_0_18px_rgba(110,231,183,0.9)]" />
-            {current?.status ?? "IDLE"}
+            {printerStatus}
           </span>
         </div>
         <h3 className="mt-5 text-2xl font-semibold text-white">{current?.orderNumber ?? "No active print"}</h3>
@@ -28,18 +35,18 @@ export function TelemetryDashboard({ queue }: { queue: PublicQueue }) {
           <motion.div
             className="h-full rounded-full bg-cyan-300 shadow-[0_0_22px_rgba(103,232,249,0.9)]"
             initial={{ width: 0 }}
-            animate={{ width: `${current?.progressPercent ?? 0}%` }}
+            animate={{ width: `${progressPercent}%` }}
           />
         </div>
       </motion.div>
 
       <div className="grid gap-3 sm:grid-cols-2">
-        <Tile icon={Layers3} label="Layer progress" value={current?.progressPercent != null ? `${current.progressPercent}%` : "Waiting"} />
-        <Tile icon={Thermometer} label="Nozzle temp" value={current?.telemetry.nozzleTempC != null ? `${current.telemetry.nozzleTempC}C` : "Telemetry pending"} />
-        <Tile icon={Gauge} label="Bed temp" value={current?.telemetry.bedTempC != null ? `${current.telemetry.bedTempC}C` : "Telemetry pending"} />
-        <Tile icon={Clock} label="Remaining" value={current?.telemetry.remainingSeconds ? `${Math.ceil(current.telemetry.remainingSeconds / 60)}m` : `${current?.etaMinutes ?? 0}m`} />
-        <Tile icon={Cpu} label="Printer health" value={printer?.healthDescription ?? "No printer online"} />
-        <Tile icon={Activity} label="Runtime speed" value="Operator governed" />
+        <Tile icon={Layers3} label="Layer progress" value={telemetry?.progressPercent != null ? `${telemetry.progressPercent}%` : "No active layer"} />
+        <Tile icon={Thermometer} label="Nozzle temp" value={formatTemp(telemetry?.nozzleTempC, centauriTelemetry?.nozzleTargetC)} />
+        <Tile icon={Gauge} label="Bed temp" value={formatTemp(telemetry?.bedTempC, centauriTelemetry?.bedTargetC)} />
+        <Tile icon={Clock} label="Remaining" value={telemetry?.remainingSeconds != null ? `${Math.ceil(telemetry.remainingSeconds / 60)}m` : `${current?.etaMinutes ?? 0}m`} />
+        <Tile icon={Cpu} label="Printer health" value={health} />
+        <Tile icon={Activity} label="Runtime speed" value={centauriTelemetry?.printSpeedPercent != null ? `${centauriTelemetry.printSpeedPercent}%` : "Operator governed"} />
       </div>
 
       <motion.div layout className="rounded-2xl border border-white/10 bg-black/35 p-5">
@@ -60,6 +67,11 @@ export function TelemetryDashboard({ queue }: { queue: PublicQueue }) {
       </motion.div>
     </div>
   );
+}
+
+function formatTemp(current?: number | null, target?: number | null) {
+  if (current == null) return "Waiting for printer";
+  return target != null ? `${current}C / ${target}C` : `${current}C`;
 }
 
 function Tile({ icon: Icon, label, value }: { icon: typeof Activity; label: string; value: string }) {
