@@ -7,16 +7,18 @@ import {
   buildBootstrapSecuritySummary,
   type BootstrapInputDraft
 } from "@/domain/bootstrap";
-import { calculateFilamentRollUsage, type CompletedPrinterHistoryItem } from "@/domain/filament-usage";
+import { DEFAULT_FILAMENT_ROLL_GRAMS, planCompletedPrintAssignments, type CompletedPrinterHistoryItem } from "@/domain/filament-usage";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 type StorageCheck = { storageClass: string; path: string; configured: boolean };
 
-const steps = ["Owner", "Brand", "Printer", "Filament", "Security"];
+const steps = ["Owner", "Brand", "Printer", "Filament", "Prints", "Security"];
 
-export function SetupForm({ storageChecks, storageRoot }: { storageChecks: StorageCheck[]; storageRoot: string }) {
+export function SetupForm({ storageChecks: _storageChecks, storageRoot: _storageRoot }: { storageChecks: StorageCheck[]; storageRoot: string }) {
+  void _storageChecks;
+  void _storageRoot;
   const [step, setStep] = useState(0);
   const [message, setMessage] = useState("");
   const [connectionMessage, setConnectionMessage] = useState("Connection test has not run yet.");
@@ -26,10 +28,11 @@ export function SetupForm({ storageChecks, storageRoot }: { storageChecks: Stora
   const [historyLoading, setHistoryLoading] = useState(false);
   const [completedPrints, setCompletedPrints] = useState<CompletedPrinterHistoryItem[]>([]);
   const [assignedPrintIds, setAssignedPrintIds] = useState<string[]>([]);
+  const [ignoredPrintIds, setIgnoredPrintIds] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [draft, setDraft] = useState<BootstrapInputDraft>({
     owner: { name: "", email: "", password: "" },
-    company: { brandName: "SuperPrint" },
+    company: { brandName: "SuperPrint", primaryColor: "#0f8f7f", lowFilamentThresholdGrams: 150 },
     printer: {
       name: "centauri-carbon-1",
       publicName: "Centauri Carbon 1",
@@ -40,35 +43,48 @@ export function SetupForm({ storageChecks, storageRoot }: { storageChecks: Stora
       material: "PLA",
       color: "",
       brand: "",
-      startingGrams: 1000,
-      remainingGrams: 1000,
-      thresholdGrams: 150,
+      startingGrams: DEFAULT_FILAMENT_ROLL_GRAMS,
+      remainingGrams: DEFAULT_FILAMENT_ROLL_GRAMS,
       rollCostCents: 0,
       assignedPrinterHistory: [],
-      location: ""
+      ignoredPrinterHistory: []
     }
   });
 
-  const assignedPrints = completedPrints
-    .filter((print) => assignedPrintIds.includes(print.id) && typeof print.gramsUsed === "number")
-    .map((print) => ({ id: print.id, name: print.name, gramsUsed: print.gramsUsed ?? 0, completedAt: print.completedAt }));
-  const filamentUsage = calculateFilamentRollUsage({
-    startingGrams: draft.filament.startingGrams ?? 1000,
+  const assignmentPlan = planCompletedPrintAssignments({
     rollCostCents: draft.filament.rollCostCents ?? 0,
-    assignedPrints
+    completedPrints,
+    assignedIds: assignedPrintIds,
+    ignoredIds: ignoredPrintIds
   });
+  const assignedPrints = assignmentPlan.assignedPrints;
+  const ignoredPrints = assignmentPlan.ignoredPrints;
+  const filamentUsage = assignmentPlan.usage;
 
   const summary = useMemo(
     () =>
       buildBootstrapSecuritySummary({
         ownerEmail: draft.owner.email || "not set",
         brandName: draft.company.brandName || "not set",
+        primaryColor: draft.company.primaryColor,
+        lowFilamentThresholdGrams: draft.company.lowFilamentThresholdGrams,
         printerPublicName: draft.printer.publicName || "not set",
         printerInternalIp: draft.printer.internalIp || "not set",
-        storageRoot,
-        storageClasses: storageChecks.map((check) => check.storageClass)
+        assignedPrintCount: assignedPrints.length,
+        ignoredPrintCount: ignoredPrints.length,
+        remainingGrams: filamentUsage.remainingGrams
       }),
-    [draft.company.brandName, draft.owner.email, draft.printer.internalIp, draft.printer.publicName, storageChecks, storageRoot]
+    [
+      assignedPrints.length,
+      draft.company.brandName,
+      draft.company.lowFilamentThresholdGrams,
+      draft.company.primaryColor,
+      draft.owner.email,
+      draft.printer.internalIp,
+      draft.printer.publicName,
+      filamentUsage.remainingGrams,
+      ignoredPrints.length
+    ]
   );
 
   function updateOwner(field: keyof BootstrapInputDraft["owner"], value: string) {
@@ -112,12 +128,8 @@ export function SetupForm({ storageChecks, storageRoot }: { storageChecks: Stora
       }
     }
     if (step === 3) {
-      if (!draft.filament.color.trim() || !draft.filament.brand.trim() || !draft.filament.location.trim()) {
+      if (!draft.filament.color.trim() || !draft.filament.brand.trim()) {
         setMessage("Add the first filament roll details before continuing.");
-        return false;
-      }
-      if ((draft.filament.startingGrams ?? 0) <= 0) {
-        setMessage("Starting grams must be greater than zero.");
         return false;
       }
     }
@@ -191,7 +203,13 @@ export function SetupForm({ storageChecks, storageRoot }: { storageChecks: Stora
   }
 
   function toggleAssignedPrint(printId: string) {
+    setIgnoredPrintIds((current) => current.filter((id) => id !== printId));
     setAssignedPrintIds((current) => (current.includes(printId) ? current.filter((id) => id !== printId) : [...current, printId]));
+  }
+
+  function toggleIgnoredPrint(printId: string) {
+    setAssignedPrintIds((current) => current.filter((id) => id !== printId));
+    setIgnoredPrintIds((current) => (current.includes(printId) ? current.filter((id) => id !== printId) : [...current, printId]));
   }
 
   async function finish() {
@@ -206,8 +224,10 @@ export function SetupForm({ storageChecks, storageRoot }: { storageChecks: Stora
       ...draft,
       filament: {
         ...draft.filament,
+        startingGrams: DEFAULT_FILAMENT_ROLL_GRAMS,
         remainingGrams: filamentUsage.remainingGrams,
-        assignedPrinterHistory
+        assignedPrinterHistory,
+        ignoredPrinterHistory: ignoredPrints
       }
     };
     const response = await fetch("/api/bootstrap", {
@@ -230,7 +250,7 @@ export function SetupForm({ storageChecks, storageRoot }: { storageChecks: Stora
 
   return (
     <div className="grid gap-6">
-      <div className="grid gap-2 rounded-lg border bg-white p-4 md:grid-cols-5">
+      <div className="grid gap-2 rounded-lg border bg-white p-4 md:grid-cols-6">
         {steps.map((label, index) => (
           <div key={label} className={`rounded-md border p-3 text-sm ${index === step ? "border-primary bg-primary/5" : "bg-muted/30"}`}>
             <div className="flex items-center gap-2 font-medium">
@@ -250,19 +270,21 @@ export function SetupForm({ storageChecks, storageRoot }: { storageChecks: Stora
       ) : null}
 
       {step === 1 ? (
-        <Panel title="Brand info and storage" description="Set the public name customers see and confirm Docker volume storage is mounted.">
+        <Panel title="Brand and platform settings" description="Set the public name, theme color, and platform-level low filament alert threshold.">
           <Field label="Public brand name" value={draft.company.brandName} onChange={(value) => updateCompany("brandName", value)} />
-          <div className="md:col-span-2">
-            <p className="mb-2 text-sm font-medium">Mounted local storage</p>
-            <div className="grid gap-2 text-sm">
-              {storageChecks.map((check) => (
-                <div key={check.storageClass} className="flex items-center justify-between rounded border p-3">
-                  <span>{check.storageClass}</span>
-                  <span className="text-muted-foreground">{check.path}</span>
-                </div>
-              ))}
+          <div className="grid gap-2">
+            <Label htmlFor="primary-color">Primary color</Label>
+            <div className="flex gap-2">
+              <Input id="primary-color" type="color" value={draft.company.primaryColor ?? "#0f8f7f"} onChange={(event) => updateCompany("primaryColor", event.target.value)} className="h-10 w-16 p-1" />
+              <Input value={draft.company.primaryColor ?? "#0f8f7f"} onChange={(event) => updateCompany("primaryColor", event.target.value)} />
             </div>
           </div>
+          <Field
+            label="Low filament alert grams"
+            type="number"
+            value={String(draft.company.lowFilamentThresholdGrams ?? 150)}
+            onChange={(value) => updateCompany("lowFilamentThresholdGrams", Number(value) as never)}
+          />
         </Panel>
       ) : null}
 
@@ -289,7 +311,7 @@ export function SetupForm({ storageChecks, storageRoot }: { storageChecks: Stora
       ) : null}
 
       {step === 3 ? (
-        <Panel title="Filament roll and completed prints" description="Add the first 1kg roll, pull completed printer history, and assign completed prints to calculate current remaining grams.">
+        <Panel title="Filament roll" description="Add the first roll. New rolls start at 1kg; completed prints are assigned on the next step.">
           <div className="grid gap-2">
             <Label htmlFor="filamentMaterial">Material</Label>
             <select
@@ -306,10 +328,15 @@ export function SetupForm({ storageChecks, storageRoot }: { storageChecks: Stora
           <Field label="Filament color" value={draft.filament.color} onChange={(value) => updateFilament("color", value)} />
           <Field label="Filament brand" value={draft.filament.brand} onChange={(value) => updateFilament("brand", value)} />
           <Field label="Roll cost dollars" type="number" value={String(((draft.filament.rollCostCents ?? 0) / 100).toFixed(2))} onChange={(value) => updateFilament("rollCostCents", Math.round(Number(value) * 100))} />
-          <Field label="Starting grams" type="number" value={String(draft.filament.startingGrams ?? 1000)} onChange={(value) => updateFilament("startingGrams", Number(value))} />
-          <Field label="Low threshold grams" type="number" value={String(draft.filament.thresholdGrams)} onChange={(value) => updateFilament("thresholdGrams", Number(value))} />
-          <Field label="Storage location" value={draft.filament.location} onChange={(value) => updateFilament("location", value)} />
+          <div className="rounded-md border bg-muted/30 p-4 text-sm">
+            <p className="text-muted-foreground">Starting weight</p>
+            <p className="mt-1 text-lg font-semibold">{DEFAULT_FILAMENT_ROLL_GRAMS}g</p>
+          </div>
+        </Panel>
+      ) : null}
 
+      {step === 4 ? (
+        <Panel title="Assign completed prints" description="Pull completed printer history, assign prints to this roll, or ignore test prints you do not want tracked.">
           <div className="md:col-span-2 rounded-md border p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2">
@@ -324,13 +351,20 @@ export function SetupForm({ storageChecks, storageRoot }: { storageChecks: Stora
             <div className="mt-4 grid gap-2">
               {completedPrints.length ? (
                 completedPrints.map((print) => (
-                  <label key={print.id} className="flex items-center justify-between gap-3 rounded border p-3 text-sm">
+                  <div key={print.id} className="grid gap-3 rounded border p-3 text-sm md:grid-cols-[1fr_auto] md:items-center">
                     <span>
                       <span className="font-medium">{print.name}</span>
                       <span className="ml-2 text-muted-foreground">{print.gramsUsed ?? 0}g</span>
                     </span>
-                    <input type="checkbox" checked={assignedPrintIds.includes(print.id)} onChange={() => toggleAssignedPrint(print.id)} />
-                  </label>
+                    <span className="flex items-center gap-2">
+                      <Button type="button" size="sm" variant={assignedPrintIds.includes(print.id) ? "default" : "outline"} onClick={() => toggleAssignedPrint(print.id)}>
+                        Assign
+                      </Button>
+                      <Button type="button" size="sm" variant={ignoredPrintIds.includes(print.id) ? "secondary" : "outline"} onClick={() => toggleIgnoredPrint(print.id)}>
+                        Ignore
+                      </Button>
+                    </span>
+                  </div>
                 ))
               ) : (
                 <p className="rounded border border-dashed p-3 text-sm text-muted-foreground">No completed prints with material usage loaded yet.</p>
@@ -347,7 +381,7 @@ export function SetupForm({ storageChecks, storageRoot }: { storageChecks: Stora
         </Panel>
       ) : null}
 
-      {step === 4 ? (
+      {step === 5 ? (
         <Panel title="Security summary" description="SuperPrint will hash the owner password, lock bootstrap after setup, and keep physical printer control behind the operator/SuperNode gate.">
           <div className="md:col-span-2 rounded-md border bg-muted/30 p-4">
             <div className="mb-3 flex items-center gap-2">

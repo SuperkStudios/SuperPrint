@@ -9,7 +9,9 @@ const schema = z.object({
     password: z.string().min(12)
   }),
   company: z.object({
-    brandName: z.string().min(1)
+    brandName: z.string().min(1),
+    primaryColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+    lowFilamentThresholdGrams: z.number().int().nonnegative().optional()
   }),
   printer: z.object({
     name: z.string().min(1),
@@ -23,7 +25,6 @@ const schema = z.object({
     brand: z.string().min(1),
     startingGrams: z.number().int().positive().optional(),
     remainingGrams: z.number().int().nonnegative(),
-    thresholdGrams: z.number().int().nonnegative(),
     rollCostCents: z.number().int().nonnegative().optional(),
     assignedPrinterHistory: z
       .array(
@@ -36,7 +37,16 @@ const schema = z.object({
         })
       )
       .optional(),
-    location: z.string().min(1)
+    ignoredPrinterHistory: z
+      .array(
+        z.object({
+          id: z.string(),
+          name: z.string(),
+          gramsUsed: z.number().nonnegative(),
+          completedAt: z.string().optional()
+        })
+      )
+      .optional()
   }),
   security: z.object({
     mediaTokenSecretSet: z.boolean(),

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calculateFilamentRollUsage, filterCompletedPrinterHistory } from "./filament-usage";
+import { calculateFilamentRollUsage, filterCompletedPrinterHistory, planCompletedPrintAssignments } from "./filament-usage";
 import { buildCentauriHistoryDetailRequest, extractCompletedCentauriHistory, parseGcodeFilamentGrams } from "./centauri-history";
 
 describe("filament roll usage", () => {
@@ -32,6 +32,22 @@ describe("filament roll usage", () => {
         assignedPrints: [{ id: "too-big", name: "huge.gcode", gramsUsed: 1200 }]
       }).remainingGrams
     ).toBe(0);
+  });
+
+  it("uses a fixed 1kg roll and ignores selected completed prints", () => {
+    const plan = planCompletedPrintAssignments({
+      rollCostCents: 2200,
+      completedPrints: [
+        { id: "real-job", name: "customer.gcode", status: "COMPLETED", gramsUsed: 44 },
+        { id: "test-job", name: "sample pla plus.gcode", status: "COMPLETED", gramsUsed: 30 }
+      ],
+      assignedIds: ["real-job"],
+      ignoredIds: ["test-job"]
+    });
+
+    expect(plan.assignedPrints).toEqual([{ id: "real-job", name: "customer.gcode", gramsUsed: 44 }]);
+    expect(plan.ignoredPrints).toEqual([{ id: "test-job", name: "sample pla plus.gcode", gramsUsed: 30 }]);
+    expect(plan.usage.remainingGrams).toBe(956);
   });
 });
 

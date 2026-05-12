@@ -25,7 +25,7 @@ describe("createBootstrapOwner", () => {
           email: "owner@superprint.test",
           password: "correct-horse-battery-staple"
         },
-        company: { brandName: "SuperPrint Denver" },
+        company: { brandName: "SuperPrint Denver", primaryColor: "#117766", lowFilamentThresholdGrams: 120 },
         printer: {
           name: "forge-alpha",
           publicName: "Forge Alpha",
@@ -36,9 +36,11 @@ describe("createBootstrapOwner", () => {
           material: "PLA",
           color: "Matte Black",
           brand: "Polymaker",
+          startingGrams: 1000,
           remainingGrams: 1000,
-          thresholdGrams: 150,
-          location: "Rack A1"
+          rollCostCents: 2499,
+          assignedPrinterHistory: [],
+          ignoredPrinterHistory: []
         },
         security: { mediaTokenSecretSet: true, backupPassphraseSet: true }
       },
@@ -68,7 +70,7 @@ describe("createBootstrapOwner", () => {
           owner: { name: "Riley", email: "owner@test.com", password: "password" },
           company: { brandName: "SuperPrint" },
           printer: { name: "forge", publicName: "Forge", internalIp: "10.0.0.2", controlApiUrl: "http://10.0.0.2" },
-          filament: { material: "PLA", color: "Black", brand: "Brand", remainingGrams: 1000, thresholdGrams: 100, location: "Rack" },
+          filament: { material: "PLA", color: "Black", brand: "Brand", remainingGrams: 1000 },
           security: { mediaTokenSecretSet: true, backupPassphraseSet: true }
         },
         {
@@ -87,7 +89,7 @@ describe("bootstrap wizard helpers", () => {
       owner: { name: "Riley", email: "owner@test.com", password: "correct-horse-battery-staple" },
       company: { brandName: "SuperPrint" },
       printer: { name: "forge", publicName: "Forge", internalIp: "192.168.10.125", controlApiUrl: "http://192.168.10.125/api" },
-      filament: { material: "PLA", color: "Black", brand: "Brand", remainingGrams: 1000, thresholdGrams: 100, location: "Rack" }
+      filament: { material: "PLA", color: "Black", brand: "Brand" }
     });
 
     expect(input.security).toEqual({ mediaTokenSecretSet: true, backupPassphraseSet: true });
@@ -179,14 +181,19 @@ describe("bootstrap wizard helpers", () => {
     const summary = buildBootstrapSecuritySummary({
       ownerEmail: "owner@test.com",
       brandName: "SuperPrint",
+      primaryColor: "#0f8f7f",
+      lowFilamentThresholdGrams: 150,
       printerPublicName: "Forge",
       printerInternalIp: "192.168.10.125",
-      storageRoot: "/data",
-      storageClasses: ["uploads", "videos"]
+      assignedPrintCount: 2,
+      ignoredPrintCount: 1,
+      remainingGrams: 950
     });
 
     expect(summary).toContain("Owner email: owner@test.com");
     expect(summary).toContain("Printer IP/host: 192.168.10.125");
+    expect(summary).toContain("Primary color: #0f8f7f");
+    expect(summary).toContain("Ignored completed prints: 1");
     expect(summary).toContain("Real printer API calls: disabled");
     expect(summary).not.toContain("password");
   });

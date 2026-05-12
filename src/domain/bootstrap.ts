@@ -6,6 +6,8 @@ export type BootstrapInput = {
   };
   company: {
     brandName: string;
+    primaryColor: string;
+    lowFilamentThresholdGrams: number;
   };
   printer: {
     name: string;
@@ -19,10 +21,9 @@ export type BootstrapInput = {
     brand: string;
     startingGrams: number;
     remainingGrams: number;
-    thresholdGrams: number;
     rollCostCents: number;
     assignedPrinterHistory: Array<{ id: string; name: string; gramsUsed: number; materialCostCents?: number; completedAt?: string }>;
-    location: string;
+    ignoredPrinterHistory: Array<{ id: string; name: string; gramsUsed: number; completedAt?: string }>;
   };
   security: {
     mediaTokenSecretSet: boolean;
@@ -30,9 +31,10 @@ export type BootstrapInput = {
   };
 };
 
-export type BootstrapInputDraft = Omit<BootstrapInput, "security" | "filament"> & {
-  filament: Omit<BootstrapInput["filament"], "startingGrams" | "remainingGrams" | "rollCostCents" | "assignedPrinterHistory"> &
-    Partial<Pick<BootstrapInput["filament"], "startingGrams" | "remainingGrams" | "rollCostCents" | "assignedPrinterHistory">>;
+export type BootstrapInputDraft = Omit<BootstrapInput, "security" | "company" | "filament"> & {
+  company: Pick<BootstrapInput["company"], "brandName"> & Partial<Omit<BootstrapInput["company"], "brandName">>;
+  filament: Omit<BootstrapInput["filament"], "startingGrams" | "remainingGrams" | "rollCostCents" | "assignedPrinterHistory" | "ignoredPrinterHistory"> &
+    Partial<Pick<BootstrapInput["filament"], "startingGrams" | "remainingGrams" | "rollCostCents" | "assignedPrinterHistory" | "ignoredPrinterHistory">>;
   security?: Partial<BootstrapInput["security"]>;
 };
 
@@ -57,12 +59,18 @@ export function normalizeBootstrapInput(input: BootstrapInputDraft): BootstrapIn
   const startingGrams = input.filament.startingGrams ?? input.filament.remainingGrams ?? 1000;
   return {
     ...input,
+    company: {
+      ...input.company,
+      primaryColor: input.company.primaryColor ?? "#0f8f7f",
+      lowFilamentThresholdGrams: input.company.lowFilamentThresholdGrams ?? 150
+    },
     filament: {
       ...input.filament,
       startingGrams,
       remainingGrams: input.filament.remainingGrams ?? startingGrams,
       rollCostCents: input.filament.rollCostCents ?? 0,
-      assignedPrinterHistory: input.filament.assignedPrinterHistory ?? []
+      assignedPrinterHistory: input.filament.assignedPrinterHistory ?? [],
+      ignoredPrinterHistory: input.filament.ignoredPrinterHistory ?? []
     },
     security: {
       mediaTokenSecretSet: input.security?.mediaTokenSecretSet ?? true,
@@ -222,19 +230,25 @@ function connectWebSocket(url: string, timeoutMs: number) {
 export function buildBootstrapSecuritySummary(input: {
   ownerEmail: string;
   brandName: string;
+  primaryColor?: string;
+  lowFilamentThresholdGrams?: number;
   printerPublicName: string;
   printerInternalIp: string;
-  storageRoot: string;
-  storageClasses: string[];
+  assignedPrintCount?: number;
+  ignoredPrintCount?: number;
+  remainingGrams?: number;
 }) {
   return [
     "SuperPrint first-run setup summary",
     `Owner email: ${input.ownerEmail}`,
     `Public brand: ${input.brandName}`,
+    `Primary color: ${input.primaryColor ?? "not set"}`,
+    `Low filament alert: ${input.lowFilamentThresholdGrams ?? 150}g`,
     `Printer: ${input.printerPublicName}`,
     `Printer IP/host: ${input.printerInternalIp}`,
-    `Local storage root: ${input.storageRoot}`,
-    `Mounted storage classes: ${input.storageClasses.join(", ")}`,
+    `Assigned completed prints: ${input.assignedPrintCount ?? 0}`,
+    `Ignored completed prints: ${input.ignoredPrintCount ?? 0}`,
+    `Calculated remaining filament: ${input.remainingGrams ?? 1000}g`,
     "Security: owner credential is hashed before storage",
     "Bootstrap route: locks after owner/admin creation",
     "Real printer API calls: disabled",
@@ -263,6 +277,8 @@ export async function createBootstrapOwner(input: BootstrapInputDraft, repo: Boo
     })) as { id?: string };
 
     await tx.upsertSetting("company.brandName", normalized.company.brandName);
+    await tx.upsertSetting("company.primaryColor", normalized.company.primaryColor);
+    await tx.upsertSetting("filament.lowThresholdGrams", normalized.company.lowFilamentThresholdGrams);
     await tx.upsertSetting("bootstrap.completedAt", new Date().toISOString());
     await tx.createPrinter({
       name: normalized.printer.name,
@@ -272,7 +288,11 @@ export async function createBootstrapOwner(input: BootstrapInputDraft, repo: Boo
       status: "OFFLINE",
       healthDescription: "Registered during bootstrap; waiting for first printer agent check"
     });
-    await tx.createFilament(normalized.filament);
+    await tx.createFilament({
+      ...normalized.filament,
+      thresholdGrams: normalized.company.lowFilamentThresholdGrams,
+      location: "bootstrap"
+    });
 
     return { ownerId: owner.id ?? "owner" };
   });
