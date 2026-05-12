@@ -70,21 +70,21 @@ export function getSafePrinterConnectionCheck(input: { internalIp: string; contr
 
   try {
     const url = new URL(input.controlApiUrl);
-    if (!["http:", "https:"].includes(url.protocol)) {
+    if (!["http:", "https:", "ws:", "wss:"].includes(url.protocol)) {
       throw new Error("Unsupported protocol");
     }
   } catch {
     return {
       ok: false,
       status: "NEEDS_CONTROL_URL",
-      message: "Enter a valid HTTP or HTTPS control URL. SuperPrint will not call it during bootstrap."
+      message: "Enter a valid HTTP, HTTPS, WS, or WSS control URL."
     };
   }
 
   return {
     ok: true,
     status: "READY_FOR_SUPERNODE",
-    message: "Address format looks valid. SuperPrint will wait for a signed SuperNode heartbeat before marking the printer online."
+    message: "Connection target looks valid. SuperPrint will test the printer endpoint before continuing."
   };
 }
 
@@ -93,22 +93,39 @@ export async function probePrinterConnection(
   options?: {
     timeoutMs?: number;
     fetcher?: (url: string, init: { method: "GET"; signal?: AbortSignal; cache: "no-store" }) => Promise<{ status: number; statusText: string }>;
+    webSocketConnector?: (url: string, timeoutMs: number) => Promise<void>;
   }
 ) {
   const shapeCheck = getSafePrinterConnectionCheck(input);
   if (!shapeCheck.ok) return shapeCheck;
 
   const timeoutMs = options?.timeoutMs ?? 3000;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-
   try {
+    const url = new URL(input.controlApiUrl);
+    if (["ws:", "wss:"].includes(url.protocol)) {
+      await (options?.webSocketConnector ?? connectWebSocket)(input.controlApiUrl, timeoutMs);
+      return {
+        ok: true,
+        status: "CONNECTED",
+        message: "Printer SDCP WebSocket endpoint accepted a connection."
+      };
+    }
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
     const response = await (options?.fetcher ?? fetch)(input.controlApiUrl, {
       method: "GET",
       signal: controller.signal,
       cache: "no-store"
-    });
+    }).finally(() => clearTimeout(timeout));
     const statusText = response.statusText ? ` ${response.statusText}` : "";
+    if (response.status < 200 || response.status >= 400) {
+      return {
+        ok: false,
+        status: "HTTP_NOT_OK",
+        message: `Printer endpoint responded with HTTP ${response.status}${statusText}. Use the Centauri Carbon SDCP endpoint ws://${input.internalIp}:3030/websocket for control connectivity.`
+      };
+    }
     return {
       ok: true,
       status: "CONNECTED",
@@ -123,9 +140,27 @@ export async function probePrinterConnection(
         ? `Printer endpoint did not respond within ${timeoutMs}ms.`
         : `Could not reach printer endpoint: ${error instanceof Error ? error.message : "network request failed"}.`
     };
-  } finally {
-    clearTimeout(timeout);
   }
+}
+
+function connectWebSocket(url: string, timeoutMs: number) {
+  return new Promise<void>((resolve, reject) => {
+    const socket = new WebSocket(url);
+    const timeout = setTimeout(() => {
+      socket.close();
+      reject(Object.assign(new Error(`Printer WebSocket did not open within ${timeoutMs}ms.`), { name: "AbortError" }));
+    }, timeoutMs);
+
+    socket.addEventListener("open", () => {
+      clearTimeout(timeout);
+      socket.close();
+      resolve();
+    });
+    socket.addEventListener("error", () => {
+      clearTimeout(timeout);
+      reject(new Error("Printer WebSocket handshake failed."));
+    });
+  });
 }
 
 export function buildBootstrapSecuritySummary(input: {

@@ -29,7 +29,7 @@ export function SetupForm({ storageChecks, storageRoot }: { storageChecks: Stora
       name: "centauri-carbon-1",
       publicName: "Centauri Carbon 1",
       internalIp: "192.168.10.125",
-      controlApiUrl: "http://192.168.10.125/api"
+      controlApiUrl: "ws://192.168.10.125:3030/websocket"
     },
     filament: {
       material: "PLA",
@@ -201,7 +201,7 @@ export function SetupForm({ storageChecks, storageRoot }: { storageChecks: Stora
       ) : null}
 
       {step === 2 ? (
-        <Panel title="Printer setup and connection test" description="Register the first printer profile and first loaded filament spool. The test makes a real non-control HTTP request to the printer URL.">
+        <Panel title="Printer setup and connection test" description="Register the first printer profile and first loaded filament spool. The test opens the Centauri Carbon SDCP WebSocket and then closes it without sending printer commands.">
           <Field label="Internal printer name" value={draft.printer.name} onChange={(value) => updatePrinter("name", value)} />
           <Field label="Public printer name" value={draft.printer.publicName} onChange={(value) => updatePrinter("publicName", value)} />
           <Field label="Internal IP or hostname" value={draft.printer.internalIp} onChange={(value) => updatePrinter("internalIp", value)} />

@@ -94,35 +94,51 @@ describe("bootstrap wizard helpers", () => {
   });
 
   it("checks printer connection config without claiming a real printer API connection", () => {
-    expect(getSafePrinterConnectionCheck({ internalIp: "192.168.10.125", controlApiUrl: "http://192.168.10.125/api" })).toEqual({
+    expect(getSafePrinterConnectionCheck({ internalIp: "192.168.10.125", controlApiUrl: "ws://192.168.10.125:3030/websocket" })).toEqual({
       ok: true,
       status: "READY_FOR_SUPERNODE",
-      message: "Address format looks valid. SuperPrint will wait for a signed SuperNode heartbeat before marking the printer online."
+      message: "Connection target looks valid. SuperPrint will test the printer endpoint before continuing."
     });
   });
 
-  it("performs a real non-control HTTP probe through the supplied fetcher", async () => {
+  it("performs a real non-control WebSocket probe through the supplied connector", async () => {
     const result = await probePrinterConnection(
-      { internalIp: "192.168.10.125", controlApiUrl: "http://192.168.10.125/api" },
+      { internalIp: "192.168.10.125", controlApiUrl: "ws://192.168.10.125:3030/websocket" },
       {
         timeoutMs: 100,
-        fetcher: async () => ({ status: 200, statusText: "OK" })
+        webSocketConnector: async () => undefined
       }
     );
 
     expect(result).toEqual({
       ok: true,
       status: "CONNECTED",
-      message: "Printer endpoint responded with HTTP 200 OK."
+      message: "Printer SDCP WebSocket endpoint accepted a connection."
+    });
+  });
+
+  it("does not accept HTTP 404 as a successful printer connection", async () => {
+    const result = await probePrinterConnection(
+      { internalIp: "192.168.10.125", controlApiUrl: "http://192.168.10.125/api" },
+      {
+        timeoutMs: 100,
+        fetcher: async () => ({ status: 404, statusText: "Not Found" })
+      }
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      status: "HTTP_NOT_OK",
+      message: "Printer endpoint responded with HTTP 404 Not Found. Use the Centauri Carbon SDCP endpoint ws://192.168.10.125:3030/websocket for control connectivity."
     });
   });
 
   it("reports unreachable printer endpoints without pretending setup is connected", async () => {
     const result = await probePrinterConnection(
-      { internalIp: "192.168.10.125", controlApiUrl: "http://192.168.10.125/api" },
+      { internalIp: "192.168.10.125", controlApiUrl: "ws://192.168.10.125:3030/websocket" },
       {
         timeoutMs: 100,
-        fetcher: async () => {
+        webSocketConnector: async () => {
           throw new Error("connect ECONNREFUSED");
         }
       }
