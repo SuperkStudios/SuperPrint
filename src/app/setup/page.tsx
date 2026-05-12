@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { SetupForm } from "@/components/setup-form";
 import { getBootstrapStatus, getStorageBootstrapChecks } from "@/lib/bootstrap";
+import { getDataRoot } from "@/lib/storage";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +20,7 @@ export default async function SetupPage() {
         and security acknowledgement. This route locks permanently after an owner or admin exists.
       </p>
       <div className="mt-8">
-        <SetupForm storageChecks={getStorageBootstrapChecks()} />
+        <SetupForm storageChecks={getStorageBootstrapChecks()} storageRoot={getDataRoot()} />
       </div>
     </main>
   );

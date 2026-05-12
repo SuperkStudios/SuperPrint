@@ -1,6 +1,6 @@
 import { hash } from "bcryptjs";
 import { Prisma } from "@prisma/client";
-import { createBootstrapOwner, type BootstrapInput } from "@/domain/bootstrap";
+import { createBootstrapOwner, type BootstrapInputDraft } from "@/domain/bootstrap";
 import { prisma } from "@/lib/prisma";
 import { getDataRoot, storageClasses } from "@/lib/storage";
 
@@ -20,7 +20,7 @@ export async function requireBootstrapComplete() {
   return status.isComplete;
 }
 
-export async function runOwnerBootstrap(input: BootstrapInput) {
+export async function runOwnerBootstrap(input: BootstrapInputDraft) {
   return createBootstrapOwner(input, {
     ownerOrAdminCount: async () =>
       prisma.user.count({

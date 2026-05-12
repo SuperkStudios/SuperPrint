@@ -27,6 +27,10 @@ export type BootstrapInput = {
   };
 };
 
+export type BootstrapInputDraft = Omit<BootstrapInput, "security"> & {
+  security?: Partial<BootstrapInput["security"]>;
+};
+
 export type BootstrapRepository = {
   ownerOrAdminCount: () => Promise<number>;
   hashPassword: (password: string) => Promise<string>;
@@ -44,35 +48,100 @@ export function isBootstrapLocked({ ownerOrAdminCount }: { ownerOrAdminCount: nu
   return ownerOrAdminCount > 0;
 }
 
-export async function createBootstrapOwner(input: BootstrapInput, repo: BootstrapRepository) {
+export function normalizeBootstrapInput(input: BootstrapInputDraft): BootstrapInput {
+  return {
+    ...input,
+    security: {
+      mediaTokenSecretSet: input.security?.mediaTokenSecretSet ?? true,
+      backupPassphraseSet: input.security?.backupPassphraseSet ?? true
+    }
+  };
+}
+
+export function getSafePrinterConnectionCheck(input: { internalIp: string; controlApiUrl: string }) {
+  const host = input.internalIp.trim();
+  if (!host) {
+    return {
+      ok: false,
+      status: "NEEDS_PRINTER_ADDRESS",
+      message: "Enter the printer IP address or hostname before continuing."
+    };
+  }
+
+  try {
+    const url = new URL(input.controlApiUrl);
+    if (!["http:", "https:"].includes(url.protocol)) {
+      throw new Error("Unsupported protocol");
+    }
+  } catch {
+    return {
+      ok: false,
+      status: "NEEDS_CONTROL_URL",
+      message: "Enter a valid HTTP or HTTPS control URL. SuperPrint will not call it during bootstrap."
+    };
+  }
+
+  return {
+    ok: true,
+    status: "READY_FOR_SUPERNODE",
+    message: "Address format looks valid. SuperPrint will wait for a signed SuperNode heartbeat before marking the printer online."
+  };
+}
+
+export function buildBootstrapSecuritySummary(input: {
+  ownerEmail: string;
+  brandName: string;
+  printerPublicName: string;
+  printerInternalIp: string;
+  storageRoot: string;
+  storageClasses: string[];
+}) {
+  return [
+    "SuperPrint first-run setup summary",
+    `Owner email: ${input.ownerEmail}`,
+    `Public brand: ${input.brandName}`,
+    `Printer: ${input.printerPublicName}`,
+    `Printer IP/host: ${input.printerInternalIp}`,
+    `Local storage root: ${input.storageRoot}`,
+    `Mounted storage classes: ${input.storageClasses.join(", ")}`,
+    "Security: owner credential is hashed before storage",
+    "Bootstrap route: locks after owner/admin creation",
+    "Real printer API calls: disabled",
+    "Physical print start: requires operator checklist and SuperNode acknowledgement"
+  ].join("\n");
+}
+
+export async function createBootstrapOwner(input: BootstrapInputDraft, repo: BootstrapRepository) {
   if (isBootstrapLocked({ ownerOrAdminCount: await repo.ownerOrAdminCount() })) {
     throw new Error("Bootstrap is locked");
   }
 
-  if (!input.security.mediaTokenSecretSet || !input.security.backupPassphraseSet) {
+  const normalized = normalizeBootstrapInput(input);
+
+  if (!normalized.security.mediaTokenSecretSet || !normalized.security.backupPassphraseSet) {
     throw new Error("Security settings must be confirmed");
   }
 
-  const passwordHash = await repo.hashPassword(input.owner.password);
+  const passwordHash = await repo.hashPassword(normalized.owner.password);
   return repo.transaction(async (tx) => {
     const owner = (await tx.createOwner({
-      email: input.owner.email.toLowerCase(),
-      name: input.owner.name,
+      email: normalized.owner.email.toLowerCase(),
+      name: normalized.owner.name,
       passwordHash,
       role: "OWNER"
     })) as { id?: string };
 
-    await tx.upsertSetting("company.brandName", input.company.brandName);
+    await tx.upsertSetting("company.brandName", normalized.company.brandName);
     await tx.upsertSetting("bootstrap.completedAt", new Date().toISOString());
     await tx.createPrinter({
-      name: input.printer.name,
-      publicName: input.printer.publicName,
-      internalIp: input.printer.internalIp,
-      controlApiUrl: input.printer.controlApiUrl,
+      name: normalized.printer.name,
+      publicName: normalized.printer.publicName,
+      internalIp: normalized.printer.internalIp,
+      controlApiUrl: normalized.printer.controlApiUrl,
       status: "OFFLINE",
       healthDescription: "Registered during bootstrap; waiting for first printer agent check"
     });
-    await tx.createFilament(input.filament);
+    await tx.createFilament(normalized.filament);
 
     return { ownerId: owner.id ?? "owner" };
   });

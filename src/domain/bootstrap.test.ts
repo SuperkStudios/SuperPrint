@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { createBootstrapOwner, isBootstrapLocked } from "./bootstrap";
+import {
+  buildBootstrapSecuritySummary,
+  createBootstrapOwner,
+  getSafePrinterConnectionCheck,
+  isBootstrapLocked,
+  normalizeBootstrapInput
+} from "./bootstrap";
 
 describe("bootstrap lockout", () => {
   it("locks setup when an owner or admin already exists", () => {
@@ -71,5 +77,42 @@ describe("createBootstrapOwner", () => {
         }
       )
     ).rejects.toThrow("Bootstrap is locked");
+  });
+});
+
+describe("bootstrap wizard helpers", () => {
+  it("auto-confirms bootstrap security settings when the wizard submits", () => {
+    const input = normalizeBootstrapInput({
+      owner: { name: "Riley", email: "owner@test.com", password: "correct-horse-battery-staple" },
+      company: { brandName: "SuperPrint" },
+      printer: { name: "forge", publicName: "Forge", internalIp: "192.168.10.125", controlApiUrl: "http://192.168.10.125/api" },
+      filament: { material: "PLA", color: "Black", brand: "Brand", remainingGrams: 1000, thresholdGrams: 100, location: "Rack" }
+    });
+
+    expect(input.security).toEqual({ mediaTokenSecretSet: true, backupPassphraseSet: true });
+  });
+
+  it("checks printer connection config without claiming a real printer API connection", () => {
+    expect(getSafePrinterConnectionCheck({ internalIp: "192.168.10.125", controlApiUrl: "http://192.168.10.125/api" })).toEqual({
+      ok: true,
+      status: "READY_FOR_SUPERNODE",
+      message: "Address format looks valid. SuperPrint will wait for a signed SuperNode heartbeat before marking the printer online."
+    });
+  });
+
+  it("builds a save-worthy security summary without secrets", () => {
+    const summary = buildBootstrapSecuritySummary({
+      ownerEmail: "owner@test.com",
+      brandName: "SuperPrint",
+      printerPublicName: "Forge",
+      printerInternalIp: "192.168.10.125",
+      storageRoot: "/data",
+      storageClasses: ["uploads", "videos"]
+    });
+
+    expect(summary).toContain("Owner email: owner@test.com");
+    expect(summary).toContain("Printer IP/host: 192.168.10.125");
+    expect(summary).toContain("Real printer API calls: disabled");
+    expect(summary).not.toContain("password");
   });
 });

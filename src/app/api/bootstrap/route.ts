@@ -28,7 +28,7 @@ const schema = z.object({
   security: z.object({
     mediaTokenSecretSet: z.boolean(),
     backupPassphraseSet: z.boolean()
-  })
+  }).optional()
 });
 
 export async function POST(request: Request) {
