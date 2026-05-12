@@ -16,6 +16,12 @@ export function TelemetryDashboard({ queue }: { queue: PublicQueue }) {
   const progressPercent = current?.progressPercent ?? telemetry?.progressPercent ?? 0;
   const printerStatus = livePrinter?.online ? centauriTelemetry?.machineStatusLabel ?? "Online" : current?.status ?? "IDLE";
   const health = livePrinter?.online ? livePrinter.health : printer?.healthDescription ?? "No printer online";
+  const activePrintTitle = current?.orderNumber ?? (centauriTelemetry?.machineStatus === 1 ? "Printer active outside SuperPrint queue" : "No active print");
+  const activePrintDetails = current?.filament
+    ? `${current.filament.color} ${current.filament.material} · ETA ${current.etaMinutes}m`
+    : centauriTelemetry?.machineStatus === 1
+      ? `Live printer job · ${formatRemaining(centauriTelemetry.remainingSeconds)} remaining`
+      : "Filament assignment pending · ETA 0m";
 
   return (
     <div className="grid gap-4">
@@ -27,10 +33,8 @@ export function TelemetryDashboard({ queue }: { queue: PublicQueue }) {
             {printerStatus}
           </span>
         </div>
-        <h3 className="mt-5 text-2xl font-semibold text-white">{current?.orderNumber ?? "No active print"}</h3>
-        <p className="mt-2 text-sm text-zinc-400">
-          {current?.filament ? `${current.filament.color} ${current.filament.material}` : "Filament assignment pending"} · ETA {current?.etaMinutes ?? 0}m
-        </p>
+        <h3 className="mt-5 text-2xl font-semibold text-white">{activePrintTitle}</h3>
+        <p className="mt-2 text-sm text-zinc-400">{activePrintDetails}</p>
         <div className="mt-5 h-2 overflow-hidden rounded-full bg-white/10">
           <motion.div
             className="h-full rounded-full bg-cyan-300 shadow-[0_0_22px_rgba(103,232,249,0.9)]"
@@ -44,7 +48,7 @@ export function TelemetryDashboard({ queue }: { queue: PublicQueue }) {
         <Tile icon={Layers3} label="Layer progress" value={telemetry?.progressPercent != null ? `${telemetry.progressPercent}%` : "No active layer"} />
         <Tile icon={Thermometer} label="Nozzle temp" value={formatTemp(telemetry?.nozzleTempC, centauriTelemetry?.nozzleTargetC)} />
         <Tile icon={Gauge} label="Bed temp" value={formatTemp(telemetry?.bedTempC, centauriTelemetry?.bedTargetC)} />
-        <Tile icon={Clock} label="Remaining" value={telemetry?.remainingSeconds != null ? `${Math.ceil(telemetry.remainingSeconds / 60)}m` : `${current?.etaMinutes ?? 0}m`} />
+        <Tile icon={Clock} label="Remaining" value={telemetry?.remainingSeconds != null ? formatRemaining(telemetry.remainingSeconds) : `${current?.etaMinutes ?? 0}m`} />
         <Tile icon={Cpu} label="Printer health" value={health} />
         <Tile icon={Activity} label="Runtime speed" value={centauriTelemetry?.printSpeedPercent != null ? `${centauriTelemetry.printSpeedPercent}%` : "Operator governed"} />
       </div>
@@ -71,7 +75,18 @@ export function TelemetryDashboard({ queue }: { queue: PublicQueue }) {
 
 function formatTemp(current?: number | null, target?: number | null) {
   if (current == null) return "Waiting for printer";
-  return target != null ? `${current}C / ${target}C` : `${current}C`;
+  const currentRounded = Math.round(current);
+  const targetRounded = target == null ? null : Math.round(target);
+  return targetRounded != null && targetRounded > 0 ? `${currentRounded}C / ${targetRounded}C` : `${currentRounded}C`;
+}
+
+function formatRemaining(seconds: number | null) {
+  if (seconds == null) return "Waiting";
+  const minutes = Math.max(0, Math.round(seconds / 60));
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  return remainder ? `${hours}h ${remainder}m` : `${hours}h`;
 }
 
 function Tile({ icon: Icon, label, value }: { icon: typeof Activity; label: string; value: string }) {

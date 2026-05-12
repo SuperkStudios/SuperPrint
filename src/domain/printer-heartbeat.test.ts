@@ -111,4 +111,37 @@ describe("printer heartbeat", () => {
     });
     expect(JSON.stringify(telemetry)).not.toContain("/private/path");
   });
+
+  it("rounds noisy live telemetry before it reaches the UI", () => {
+    const telemetry = parseCentauriStatusTelemetry(
+      {
+        Data: {
+          Status: {
+            CurrentStatus: 1,
+            TempOfNozzle: 210.08019002088122,
+            TempTargetNozzle: 210,
+            TempOfHotbed: 60.6679140884808,
+            TempTargetHotbed: 60,
+            PrintInfo: {
+              Status: 13,
+              CurrentLayer: 1,
+              TotalLayer: 295,
+              CurrentTicks: 143.52232402699974,
+              TotalTicks: 11344.477675973001
+            }
+          }
+        }
+      },
+      new Date("2026-05-12T15:37:46.423Z")
+    );
+
+    expect(telemetry).toMatchObject({
+      nozzleTempC: 210.1,
+      nozzleTargetC: 210,
+      bedTempC: 60.7,
+      bedTargetC: 60,
+      elapsedSeconds: 144,
+      remainingSeconds: 11201
+    });
+  });
 });

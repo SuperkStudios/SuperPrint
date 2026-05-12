@@ -87,8 +87,8 @@ export function parseCentauriStatusTelemetry(message: unknown, checkedAt = new D
   const printInfo = asRecord(status.PrintInfo);
   const currentTicks = readNumber(printInfo?.CurrentTicks);
   const totalTicks = readNumber(printInfo?.TotalTicks);
-  const elapsedSeconds = currentTicks;
-  const remainingSeconds = currentTicks != null && totalTicks != null ? Math.max(0, totalTicks - currentTicks) : null;
+  const elapsedSeconds = currentTicks == null ? null : Math.round(currentTicks);
+  const remainingSeconds = currentTicks != null && totalTicks != null ? Math.round(Math.max(0, totalTicks - currentTicks)) : null;
   const currentLayer = readNumber(printInfo?.CurrentLayer);
   const totalLayer = readNumber(printInfo?.TotalLayer);
   const progressFromTicks = currentTicks != null && totalTicks ? Math.round((currentTicks / totalTicks) * 100) : null;
@@ -103,12 +103,12 @@ export function parseCentauriStatusTelemetry(message: unknown, checkedAt = new D
     machineStatusLabel: machineStatusLabel(machineStatus),
     printStatus,
     printStatusLabel: printStatusLabel(printStatus),
-    nozzleTempC: readNumber(status.TempOfNozzle),
-    nozzleTargetC: readNumber(status.TempTargetNozzle),
-    bedTempC: readNumber(status.TempOfHotbed),
-    bedTargetC: readNumber(status.TempTargetHotbed),
-    chamberTempC: readNumber(status.TempOfBox),
-    chamberTargetC: readNumber(status.TempTargetBox),
+    nozzleTempC: roundOne(readNumber(status.TempOfNozzle)),
+    nozzleTargetC: roundOne(readNumber(status.TempTargetNozzle)),
+    bedTempC: roundOne(readNumber(status.TempOfHotbed)),
+    bedTargetC: roundOne(readNumber(status.TempTargetHotbed)),
+    chamberTempC: roundOne(readNumber(status.TempOfBox)),
+    chamberTargetC: roundOne(readNumber(status.TempTargetBox)),
     progressPercent: clampPercent(progressFromTicks ?? progressFromLayers),
     currentLayer,
     totalLayer,
@@ -142,6 +142,10 @@ function readNumber(value: unknown) {
     return Number.isFinite(parsed) ? parsed : null;
   }
   return null;
+}
+
+function roundOne(value: number | null) {
+  return value == null ? null : Math.round(value * 10) / 10;
 }
 
 function clampPercent(value: number | null) {
