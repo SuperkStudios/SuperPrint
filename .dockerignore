@@ -1,11 +1,11 @@
-node_modules
 .next
+node_modules
+npm-debug.log
+.env
+.env.local
 .git
 coverage
 dist
 *.log
-.env
-.env.local
-.env.*.local
-uploads
-prisma/dev.db
+Dockerfile
+docker-compose.yml

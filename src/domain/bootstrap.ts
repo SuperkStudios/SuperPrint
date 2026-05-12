@@ -17,8 +17,11 @@ export type BootstrapInput = {
     material: "PLA" | "PETG" | "ABS" | "TPU" | "NYLON" | "RESIN";
     color: string;
     brand: string;
+    startingGrams: number;
     remainingGrams: number;
     thresholdGrams: number;
+    rollCostCents: number;
+    assignedPrinterHistory: Array<{ id: string; name: string; gramsUsed: number; materialCostCents?: number; completedAt?: string }>;
     location: string;
   };
   security: {
@@ -27,7 +30,9 @@ export type BootstrapInput = {
   };
 };
 
-export type BootstrapInputDraft = Omit<BootstrapInput, "security"> & {
+export type BootstrapInputDraft = Omit<BootstrapInput, "security" | "filament"> & {
+  filament: Omit<BootstrapInput["filament"], "startingGrams" | "remainingGrams" | "rollCostCents" | "assignedPrinterHistory"> &
+    Partial<Pick<BootstrapInput["filament"], "startingGrams" | "remainingGrams" | "rollCostCents" | "assignedPrinterHistory">>;
   security?: Partial<BootstrapInput["security"]>;
 };
 
@@ -49,8 +54,16 @@ export function isBootstrapLocked({ ownerOrAdminCount }: { ownerOrAdminCount: nu
 }
 
 export function normalizeBootstrapInput(input: BootstrapInputDraft): BootstrapInput {
+  const startingGrams = input.filament.startingGrams ?? input.filament.remainingGrams ?? 1000;
   return {
     ...input,
+    filament: {
+      ...input.filament,
+      startingGrams,
+      remainingGrams: input.filament.remainingGrams ?? startingGrams,
+      rollCostCents: input.filament.rollCostCents ?? 0,
+      assignedPrinterHistory: input.filament.assignedPrinterHistory ?? []
+    },
     security: {
       mediaTokenSecretSet: input.security?.mediaTokenSecretSet ?? true,
       backupPassphraseSet: input.security?.backupPassphraseSet ?? true

@@ -21,8 +21,21 @@ const schema = z.object({
     material: z.enum(["PLA", "PETG", "ABS", "TPU", "NYLON", "RESIN"]),
     color: z.string().min(1),
     brand: z.string().min(1),
+    startingGrams: z.number().int().positive().optional(),
     remainingGrams: z.number().int().nonnegative(),
     thresholdGrams: z.number().int().nonnegative(),
+    rollCostCents: z.number().int().nonnegative().optional(),
+    assignedPrinterHistory: z
+      .array(
+        z.object({
+          id: z.string(),
+          name: z.string(),
+          gramsUsed: z.number().nonnegative(),
+          materialCostCents: z.number().int().nonnegative().optional(),
+          completedAt: z.string().optional()
+        })
+      )
+      .optional(),
     location: z.string().min(1)
   }),
   security: z.object({

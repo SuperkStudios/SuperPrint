@@ -369,8 +369,11 @@ model FilamentSpool {
   material       FilamentMaterial
   color          String
   brand          String
+  startingGrams  Int              @default(1000)
   remainingGrams Int
   thresholdGrams Int
+  rollCostCents  Int              @default(0)
+  assignedPrinterHistory Json     @default("[]")
   location       String
   printers       Printer[]
   jobs           PrintJob[]

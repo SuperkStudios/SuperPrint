@@ -2,18 +2,19 @@
 
 import { useMemo, useState } from "react";
 import { signIn } from "next-auth/react";
-import { ArrowLeft, ArrowRight, CheckCircle2, Printer, ShieldCheck } from "lucide-react";
+import { ArrowLeft, ArrowRight, Boxes, CheckCircle2, Printer, ShieldCheck } from "lucide-react";
 import {
   buildBootstrapSecuritySummary,
   type BootstrapInputDraft
 } from "@/domain/bootstrap";
+import { calculateFilamentRollUsage, type CompletedPrinterHistoryItem } from "@/domain/filament-usage";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 type StorageCheck = { storageClass: string; path: string; configured: boolean };
 
-const steps = ["Owner", "Brand", "Printer", "Security"];
+const steps = ["Owner", "Brand", "Printer", "Filament", "Security"];
 
 export function SetupForm({ storageChecks, storageRoot }: { storageChecks: StorageCheck[]; storageRoot: string }) {
   const [step, setStep] = useState(0);
@@ -21,6 +22,10 @@ export function SetupForm({ storageChecks, storageRoot }: { storageChecks: Stora
   const [connectionMessage, setConnectionMessage] = useState("Connection test has not run yet.");
   const [connectionOk, setConnectionOk] = useState(false);
   const [testingConnection, setTestingConnection] = useState(false);
+  const [historyMessage, setHistoryMessage] = useState("Printer history has not been pulled yet.");
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [completedPrints, setCompletedPrints] = useState<CompletedPrinterHistoryItem[]>([]);
+  const [assignedPrintIds, setAssignedPrintIds] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [draft, setDraft] = useState<BootstrapInputDraft>({
     owner: { name: "", email: "", password: "" },
@@ -35,10 +40,22 @@ export function SetupForm({ storageChecks, storageRoot }: { storageChecks: Stora
       material: "PLA",
       color: "",
       brand: "",
+      startingGrams: 1000,
       remainingGrams: 1000,
       thresholdGrams: 150,
+      rollCostCents: 0,
+      assignedPrinterHistory: [],
       location: ""
     }
+  });
+
+  const assignedPrints = completedPrints
+    .filter((print) => assignedPrintIds.includes(print.id) && typeof print.gramsUsed === "number")
+    .map((print) => ({ id: print.id, name: print.name, gramsUsed: print.gramsUsed ?? 0, completedAt: print.completedAt }));
+  const filamentUsage = calculateFilamentRollUsage({
+    startingGrams: draft.filament.startingGrams ?? 1000,
+    rollCostCents: draft.filament.rollCostCents ?? 0,
+    assignedPrints
   });
 
   const summary = useMemo(
@@ -89,12 +106,18 @@ export function SetupForm({ storageChecks, storageRoot }: { storageChecks: Stora
         setMessage("Complete the printer profile before continuing.");
         return false;
       }
-      if (!draft.filament.color.trim() || !draft.filament.brand.trim() || !draft.filament.location.trim()) {
-        setMessage("Add the first filament spool details before continuing.");
-        return false;
-      }
       if (!connectionOk) {
         setMessage("Run the printer connection test before continuing.");
+        return false;
+      }
+    }
+    if (step === 3) {
+      if (!draft.filament.color.trim() || !draft.filament.brand.trim() || !draft.filament.location.trim()) {
+        setMessage("Add the first filament roll details before continuing.");
+        return false;
+      }
+      if ((draft.filament.startingGrams ?? 0) <= 0) {
+        setMessage("Starting grams must be greater than zero.");
         return false;
       }
     }
@@ -140,20 +163,63 @@ export function SetupForm({ storageChecks, storageRoot }: { storageChecks: Stora
     }
   }
 
+  async function pullPrinterHistory() {
+    setHistoryLoading(true);
+    setHistoryMessage("Pulling completed print history...");
+    setMessage("");
+    try {
+      const response = await fetch("/api/bootstrap/printer-history", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ controlApiUrl: draft.printer.controlApiUrl })
+      });
+      const result = (await response.json().catch(() => ({}))) as {
+        ok?: boolean;
+        message?: string;
+        completedPrints?: CompletedPrinterHistoryItem[];
+      };
+      setCompletedPrints(result.completedPrints ?? []);
+      setHistoryMessage(result.message ?? "Printer history pull finished.");
+      setMessage(result.ok ? "" : result.message ?? "Could not pull printer history.");
+    } catch (error) {
+      setCompletedPrints([]);
+      setHistoryMessage(error instanceof Error ? error.message : "Could not pull printer history.");
+      setMessage(error instanceof Error ? error.message : "Could not pull printer history.");
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
+
+  function toggleAssignedPrint(printId: string) {
+    setAssignedPrintIds((current) => (current.includes(printId) ? current.filter((id) => id !== printId) : [...current, printId]));
+  }
+
   async function finish() {
     if (!validateStep()) return;
     setSubmitting(true);
     setMessage("");
+    const assignedPrinterHistory = assignedPrints.map((print) => ({
+      ...print,
+      materialCostCents: filamentUsage.assignedPrintCosts.find((cost) => cost.id === print.id)?.materialCostCents
+    }));
+    const payload: BootstrapInputDraft = {
+      ...draft,
+      filament: {
+        ...draft.filament,
+        remainingGrams: filamentUsage.remainingGrams,
+        assignedPrinterHistory
+      }
+    };
     const response = await fetch("/api/bootstrap", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(draft)
+      body: JSON.stringify(payload)
     });
     const result = await response.json().catch(() => ({}));
     if (response.ok) {
       await signIn("credentials", {
-        email: draft.owner.email,
-        password: draft.owner.password,
+        email: payload.owner.email,
+        password: payload.owner.password,
         callbackUrl: "/admin"
       });
       return;
@@ -164,7 +230,7 @@ export function SetupForm({ storageChecks, storageRoot }: { storageChecks: Stora
 
   return (
     <div className="grid gap-6">
-      <div className="grid gap-2 rounded-lg border bg-white p-4 md:grid-cols-4">
+      <div className="grid gap-2 rounded-lg border bg-white p-4 md:grid-cols-5">
         {steps.map((label, index) => (
           <div key={label} className={`rounded-md border p-3 text-sm ${index === step ? "border-primary bg-primary/5" : "bg-muted/30"}`}>
             <div className="flex items-center gap-2 font-medium">
@@ -201,30 +267,11 @@ export function SetupForm({ storageChecks, storageRoot }: { storageChecks: Stora
       ) : null}
 
       {step === 2 ? (
-        <Panel title="Printer setup and connection test" description="Register the first printer profile and first loaded filament spool. The test opens the Centauri Carbon SDCP WebSocket and then closes it without sending printer commands.">
+        <Panel title="Printer setup and connection test" description="Register the first printer profile. The test opens the Centauri Carbon SDCP WebSocket and then closes it without sending printer commands.">
           <Field label="Internal printer name" value={draft.printer.name} onChange={(value) => updatePrinter("name", value)} />
           <Field label="Public printer name" value={draft.printer.publicName} onChange={(value) => updatePrinter("publicName", value)} />
           <Field label="Internal IP or hostname" value={draft.printer.internalIp} onChange={(value) => updatePrinter("internalIp", value)} />
           <Field label="Control API URL" value={draft.printer.controlApiUrl} onChange={(value) => updatePrinter("controlApiUrl", value)} />
-
-          <div className="grid gap-2">
-            <Label htmlFor="filamentMaterial">Material</Label>
-            <select
-              id="filamentMaterial"
-              value={draft.filament.material}
-              onChange={(event) => updateFilament("material", event.target.value as BootstrapInputDraft["filament"]["material"])}
-              className="h-10 rounded-md border bg-white px-3 text-sm"
-            >
-              {["PLA", "PETG", "ABS", "TPU", "NYLON", "RESIN"].map((material) => (
-                <option key={material}>{material}</option>
-              ))}
-            </select>
-          </div>
-          <Field label="Filament color" value={draft.filament.color} onChange={(value) => updateFilament("color", value)} />
-          <Field label="Filament brand" value={draft.filament.brand} onChange={(value) => updateFilament("brand", value)} />
-          <Field label="Remaining grams" type="number" value={String(draft.filament.remainingGrams)} onChange={(value) => updateFilament("remainingGrams", Number(value))} />
-          <Field label="Low threshold grams" type="number" value={String(draft.filament.thresholdGrams)} onChange={(value) => updateFilament("thresholdGrams", Number(value))} />
-          <Field label="Storage location" value={draft.filament.location} onChange={(value) => updateFilament("location", value)} />
 
           <div className="md:col-span-2 rounded-md border p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -242,6 +289,65 @@ export function SetupForm({ storageChecks, storageRoot }: { storageChecks: Stora
       ) : null}
 
       {step === 3 ? (
+        <Panel title="Filament roll and completed prints" description="Add the first 1kg roll, pull completed printer history, and assign completed prints to calculate current remaining grams.">
+          <div className="grid gap-2">
+            <Label htmlFor="filamentMaterial">Material</Label>
+            <select
+              id="filamentMaterial"
+              value={draft.filament.material}
+              onChange={(event) => updateFilament("material", event.target.value as BootstrapInputDraft["filament"]["material"])}
+              className="h-10 rounded-md border bg-white px-3 text-sm"
+            >
+              {["PLA", "PETG", "ABS", "TPU", "NYLON", "RESIN"].map((material) => (
+                <option key={material}>{material}</option>
+              ))}
+            </select>
+          </div>
+          <Field label="Filament color" value={draft.filament.color} onChange={(value) => updateFilament("color", value)} />
+          <Field label="Filament brand" value={draft.filament.brand} onChange={(value) => updateFilament("brand", value)} />
+          <Field label="Roll cost dollars" type="number" value={String(((draft.filament.rollCostCents ?? 0) / 100).toFixed(2))} onChange={(value) => updateFilament("rollCostCents", Math.round(Number(value) * 100))} />
+          <Field label="Starting grams" type="number" value={String(draft.filament.startingGrams ?? 1000)} onChange={(value) => updateFilament("startingGrams", Number(value))} />
+          <Field label="Low threshold grams" type="number" value={String(draft.filament.thresholdGrams)} onChange={(value) => updateFilament("thresholdGrams", Number(value))} />
+          <Field label="Storage location" value={draft.filament.location} onChange={(value) => updateFilament("location", value)} />
+
+          <div className="md:col-span-2 rounded-md border p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <Boxes className="size-4 text-primary" />
+                <p className="font-medium">Completed printer history</p>
+              </div>
+              <Button type="button" variant="secondary" onClick={pullPrinterHistory} disabled={historyLoading || !connectionOk}>
+                {historyLoading ? "Pulling..." : "Pull completed prints"}
+              </Button>
+            </div>
+            <p className="mt-3 text-sm text-muted-foreground">{historyMessage}</p>
+            <div className="mt-4 grid gap-2">
+              {completedPrints.length ? (
+                completedPrints.map((print) => (
+                  <label key={print.id} className="flex items-center justify-between gap-3 rounded border p-3 text-sm">
+                    <span>
+                      <span className="font-medium">{print.name}</span>
+                      <span className="ml-2 text-muted-foreground">{print.gramsUsed ?? 0}g</span>
+                    </span>
+                    <input type="checkbox" checked={assignedPrintIds.includes(print.id)} onChange={() => toggleAssignedPrint(print.id)} />
+                  </label>
+                ))
+              ) : (
+                <p className="rounded border border-dashed p-3 text-sm text-muted-foreground">No completed prints with material usage loaded yet.</p>
+              )}
+            </div>
+          </div>
+
+          <div className="md:col-span-2 grid gap-3 rounded-md border bg-muted/30 p-4 text-sm md:grid-cols-4">
+            <Metric label="Starting" value={`${draft.filament.startingGrams ?? 1000}g`} />
+            <Metric label="Assigned used" value={`${filamentUsage.assignedGrams}g`} />
+            <Metric label="Remaining" value={`${filamentUsage.remainingGrams}g`} />
+            <Metric label="Cost / gram" value={`$${(filamentUsage.costPerGramCents / 100).toFixed(3)}`} />
+          </div>
+        </Panel>
+      ) : null}
+
+      {step === 4 ? (
         <Panel title="Security summary" description="SuperPrint will hash the owner password, lock bootstrap after setup, and keep physical printer control behind the operator/SuperNode gate.">
           <div className="md:col-span-2 rounded-md border bg-muted/30 p-4">
             <div className="mb-3 flex items-center gap-2">
@@ -307,6 +413,15 @@ function Field({
     <div className="grid gap-2">
       <Label htmlFor={id}>{label}</Label>
       <Input id={id} type={type} value={value} onChange={(event) => onChange(event.target.value)} required />
+    </div>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="text-muted-foreground">{label}</p>
+      <p className="mt-1 font-semibold">{value}</p>
     </div>
   );
 }
