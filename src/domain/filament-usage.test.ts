@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calculateFilamentRollUsage, filterCompletedPrinterHistory, planCompletedPrintAssignments } from "./filament-usage";
+import { calculateFilamentRollUsage, filterCompletedPrinterHistory, planCompletedPrintAssignments, planFilamentStockAssignments } from "./filament-usage";
 import { buildCentauriHistoryDetailRequest, extractCompletedCentauriHistory, parseGcodeFilamentGrams } from "./centauri-history";
 
 describe("filament roll usage", () => {
@@ -48,6 +48,28 @@ describe("filament roll usage", () => {
     expect(plan.assignedPrints).toEqual([{ id: "real-job", name: "customer.gcode", gramsUsed: 44 }]);
     expect(plan.ignoredPrints).toEqual([{ id: "test-job", name: "sample pla plus.gcode", gramsUsed: 30 }]);
     expect(plan.usage.remainingGrams).toBe(956);
+  });
+
+  it("assigns completed prints to separate 1kg stock rolls", () => {
+    const stock = planFilamentStockAssignments({
+      spools: [
+        { localId: "spool-red", material: "PLA", color: "Red", brand: "Bambu", rollCostCents: 2400 },
+        { localId: "spool-black", material: "PETG", color: "Black", brand: "Polymaker", rollCostCents: 3000 }
+      ],
+      completedPrints: [
+        { id: "dragon", name: "dragon.gcode", status: "COMPLETED", gramsUsed: 120 },
+        { id: "fixture", name: "fixture.gcode", status: "COMPLETED", gramsUsed: 80 },
+        { id: "test", name: "test.gcode", status: "COMPLETED", gramsUsed: 40 }
+      ],
+      assignments: { dragon: "spool-red", fixture: "spool-black" },
+      ignoredIds: ["test"]
+    });
+
+    expect(stock.spools.map((spool) => ({ localId: spool.localId, remainingGrams: spool.usage.remainingGrams }))).toEqual([
+      { localId: "spool-red", remainingGrams: 880 },
+      { localId: "spool-black", remainingGrams: 920 }
+    ]);
+    expect(stock.ignoredPrints).toEqual([{ id: "test", name: "test.gcode", gramsUsed: 40 }]);
   });
 });
 

@@ -2,6 +2,36 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { runOwnerBootstrap } from "@/lib/bootstrap";
 
+const filamentSchema = z.object({
+  material: z.enum(["PLA", "PETG", "ABS", "TPU", "NYLON", "RESIN"]),
+  color: z.string().min(1),
+  brand: z.string().min(1),
+  startingGrams: z.number().int().positive().optional(),
+  remainingGrams: z.number().int().nonnegative(),
+  rollCostCents: z.number().int().nonnegative().optional(),
+  assignedPrinterHistory: z
+    .array(
+      z.object({
+        id: z.string(),
+        name: z.string(),
+        gramsUsed: z.number().nonnegative(),
+        materialCostCents: z.number().int().nonnegative().optional(),
+        completedAt: z.string().optional()
+      })
+    )
+    .optional(),
+  ignoredPrinterHistory: z
+    .array(
+      z.object({
+        id: z.string(),
+        name: z.string(),
+        gramsUsed: z.number().nonnegative(),
+        completedAt: z.string().optional()
+      })
+    )
+    .optional()
+});
+
 const schema = z.object({
   owner: z.object({
     name: z.string().min(1),
@@ -19,35 +49,8 @@ const schema = z.object({
     internalIp: z.string().min(1),
     controlApiUrl: z.string().url()
   }),
-  filament: z.object({
-    material: z.enum(["PLA", "PETG", "ABS", "TPU", "NYLON", "RESIN"]),
-    color: z.string().min(1),
-    brand: z.string().min(1),
-    startingGrams: z.number().int().positive().optional(),
-    remainingGrams: z.number().int().nonnegative(),
-    rollCostCents: z.number().int().nonnegative().optional(),
-    assignedPrinterHistory: z
-      .array(
-        z.object({
-          id: z.string(),
-          name: z.string(),
-          gramsUsed: z.number().nonnegative(),
-          materialCostCents: z.number().int().nonnegative().optional(),
-          completedAt: z.string().optional()
-        })
-      )
-      .optional(),
-    ignoredPrinterHistory: z
-      .array(
-        z.object({
-          id: z.string(),
-          name: z.string(),
-          gramsUsed: z.number().nonnegative(),
-          completedAt: z.string().optional()
-        })
-      )
-      .optional()
-  }),
+  filament: filamentSchema,
+  filaments: z.array(filamentSchema).min(1).optional(),
   security: z.object({
     mediaTokenSecretSet: z.boolean(),
     backupPassphraseSet: z.boolean()

@@ -5,20 +5,39 @@ import { signIn } from "next-auth/react";
 import { ArrowLeft, ArrowRight, Boxes, CheckCircle2, Printer, ShieldCheck } from "lucide-react";
 import {
   buildBootstrapSecuritySummary,
+  type BootstrapFilamentInput,
   type BootstrapInputDraft
 } from "@/domain/bootstrap";
-import { DEFAULT_FILAMENT_ROLL_GRAMS, planCompletedPrintAssignments, type CompletedPrinterHistoryItem } from "@/domain/filament-usage";
+import { DEFAULT_FILAMENT_ROLL_GRAMS, planFilamentStockAssignments, type CompletedPrinterHistoryItem } from "@/domain/filament-usage";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-type StorageCheck = { storageClass: string; path: string; configured: boolean };
-
 const steps = ["Owner", "Brand", "Printer", "Filament", "Prints", "Security"];
 
-export function SetupForm({ storageChecks: _storageChecks, storageRoot: _storageRoot }: { storageChecks: StorageCheck[]; storageRoot: string }) {
-  void _storageChecks;
-  void _storageRoot;
+type FilamentStockDraft = Omit<BootstrapFilamentInput, "startingGrams" | "remainingGrams" | "assignedPrinterHistory" | "ignoredPrinterHistory"> & {
+  localId: string;
+  startingGrams?: number;
+  remainingGrams?: number;
+  assignedPrinterHistory?: BootstrapFilamentInput["assignedPrinterHistory"];
+  ignoredPrinterHistory?: BootstrapFilamentInput["ignoredPrinterHistory"];
+};
+
+function createEmptySpool(index: number): FilamentStockDraft {
+  return {
+    localId: `spool-${Date.now()}-${index}`,
+    material: "PLA",
+    color: "",
+    brand: "",
+    startingGrams: DEFAULT_FILAMENT_ROLL_GRAMS,
+    remainingGrams: DEFAULT_FILAMENT_ROLL_GRAMS,
+    rollCostCents: 0,
+    assignedPrinterHistory: [],
+    ignoredPrinterHistory: []
+  };
+}
+
+export function SetupForm() {
   const [step, setStep] = useState(0);
   const [message, setMessage] = useState("");
   const [connectionMessage, setConnectionMessage] = useState("Connection test has not run yet.");
@@ -27,8 +46,9 @@ export function SetupForm({ storageChecks: _storageChecks, storageRoot: _storage
   const [historyMessage, setHistoryMessage] = useState("Printer history has not been pulled yet.");
   const [historyLoading, setHistoryLoading] = useState(false);
   const [completedPrints, setCompletedPrints] = useState<CompletedPrinterHistoryItem[]>([]);
-  const [assignedPrintIds, setAssignedPrintIds] = useState<string[]>([]);
+  const [printAssignments, setPrintAssignments] = useState<Record<string, string>>({});
   const [ignoredPrintIds, setIgnoredPrintIds] = useState<string[]>([]);
+  const [stockSpools, setStockSpools] = useState<FilamentStockDraft[]>([createEmptySpool(0)]);
   const [submitting, setSubmitting] = useState(false);
   const [draft, setDraft] = useState<BootstrapInputDraft>({
     owner: { name: "", email: "", password: "" },
@@ -51,15 +71,16 @@ export function SetupForm({ storageChecks: _storageChecks, storageRoot: _storage
     }
   });
 
-  const assignmentPlan = planCompletedPrintAssignments({
-    rollCostCents: draft.filament.rollCostCents ?? 0,
+  const assignmentPlan = planFilamentStockAssignments({
+    spools: stockSpools,
     completedPrints,
-    assignedIds: assignedPrintIds,
+    assignments: printAssignments,
     ignoredIds: ignoredPrintIds
   });
-  const assignedPrints = assignmentPlan.assignedPrints;
   const ignoredPrints = assignmentPlan.ignoredPrints;
-  const filamentUsage = assignmentPlan.usage;
+  const totalAssignedPrintCount = assignmentPlan.spools.reduce((total, spool) => total + spool.assignedPrints.length, 0);
+  const totalRemainingGrams = assignmentPlan.spools.reduce((total, spool) => total + spool.usage.remainingGrams, 0);
+  const totalAssignedGrams = assignmentPlan.spools.reduce((total, spool) => total + spool.usage.assignedGrams, 0);
 
   const summary = useMemo(
     () =>
@@ -70,20 +91,20 @@ export function SetupForm({ storageChecks: _storageChecks, storageRoot: _storage
         lowFilamentThresholdGrams: draft.company.lowFilamentThresholdGrams,
         printerPublicName: draft.printer.publicName || "not set",
         printerInternalIp: draft.printer.internalIp || "not set",
-        assignedPrintCount: assignedPrints.length,
+        assignedPrintCount: totalAssignedPrintCount,
         ignoredPrintCount: ignoredPrints.length,
-        remainingGrams: filamentUsage.remainingGrams
+        remainingGrams: totalRemainingGrams
       }),
     [
-      assignedPrints.length,
       draft.company.brandName,
       draft.company.lowFilamentThresholdGrams,
       draft.company.primaryColor,
       draft.owner.email,
       draft.printer.internalIp,
       draft.printer.publicName,
-      filamentUsage.remainingGrams,
-      ignoredPrints.length
+      ignoredPrints.length,
+      totalAssignedPrintCount,
+      totalRemainingGrams
     ]
   );
 
@@ -101,8 +122,20 @@ export function SetupForm({ storageChecks: _storageChecks, storageRoot: _storage
     setDraft((current) => ({ ...current, printer: { ...current.printer, [field]: value } }));
   }
 
-  function updateFilament(field: keyof BootstrapInputDraft["filament"], value: string | number) {
-    setDraft((current) => ({ ...current, filament: { ...current.filament, [field]: value } }));
+  function updateSpool(localId: string, field: keyof FilamentStockDraft, value: string | number) {
+    setStockSpools((current) => current.map((spool) => (spool.localId === localId ? { ...spool, [field]: value } : spool)));
+  }
+
+  function addSpool() {
+    setStockSpools((current) => [...current, createEmptySpool(current.length)]);
+  }
+
+  function removeSpool(localId: string) {
+    if (stockSpools.length === 1) return;
+    setStockSpools((current) => current.filter((spool) => spool.localId !== localId));
+    setPrintAssignments((current) =>
+      Object.fromEntries(Object.entries(current).filter(([, assignedSpoolId]) => assignedSpoolId !== localId))
+    );
   }
 
   function validateStep() {
@@ -128,8 +161,8 @@ export function SetupForm({ storageChecks: _storageChecks, storageRoot: _storage
       }
     }
     if (step === 3) {
-      if (!draft.filament.color.trim() || !draft.filament.brand.trim()) {
-        setMessage("Add the first filament roll details before continuing.");
+      if (!stockSpools.length || stockSpools.some((spool) => !spool.color.trim() || !spool.brand.trim())) {
+        setMessage("Add material, color, brand, and cost for each filament roll before continuing.");
         return false;
       }
     }
@@ -202,33 +235,49 @@ export function SetupForm({ storageChecks: _storageChecks, storageRoot: _storage
     }
   }
 
-  function toggleAssignedPrint(printId: string) {
-    setIgnoredPrintIds((current) => current.filter((id) => id !== printId));
-    setAssignedPrintIds((current) => (current.includes(printId) ? current.filter((id) => id !== printId) : [...current, printId]));
+  function toggleIgnoredPrint(printId: string) {
+    setPrintAssignments((current) => {
+      const next = { ...current };
+      delete next[printId];
+      return next;
+    });
+    setIgnoredPrintIds((current) => (current.includes(printId) ? current.filter((id) => id !== printId) : [...current, printId]));
   }
 
-  function toggleIgnoredPrint(printId: string) {
-    setAssignedPrintIds((current) => current.filter((id) => id !== printId));
-    setIgnoredPrintIds((current) => (current.includes(printId) ? current.filter((id) => id !== printId) : [...current, printId]));
+  function assignPrintToSpool(printId: string, spoolId: string) {
+    setIgnoredPrintIds((current) => current.filter((id) => id !== printId));
+    setPrintAssignments((current) => {
+      const next = { ...current };
+      if (spoolId) {
+        next[printId] = spoolId;
+      } else {
+        delete next[printId];
+      }
+      return next;
+    });
   }
 
   async function finish() {
     if (!validateStep()) return;
     setSubmitting(true);
     setMessage("");
-    const assignedPrinterHistory = assignedPrints.map((print) => ({
-      ...print,
-      materialCostCents: filamentUsage.assignedPrintCosts.find((cost) => cost.id === print.id)?.materialCostCents
+    const filaments = assignmentPlan.spools.map((plannedSpool) => ({
+      material: plannedSpool.material as BootstrapFilamentInput["material"],
+      color: plannedSpool.color,
+      brand: plannedSpool.brand,
+      startingGrams: DEFAULT_FILAMENT_ROLL_GRAMS,
+      remainingGrams: plannedSpool.usage.remainingGrams,
+      rollCostCents: plannedSpool.rollCostCents ?? 0,
+      assignedPrinterHistory: plannedSpool.assignedPrints.map((print) => ({
+        ...print,
+        materialCostCents: plannedSpool.usage.assignedPrintCosts.find((cost) => cost.id === print.id)?.materialCostCents
+      })),
+      ignoredPrinterHistory: ignoredPrints
     }));
     const payload: BootstrapInputDraft = {
       ...draft,
-      filament: {
-        ...draft.filament,
-        startingGrams: DEFAULT_FILAMENT_ROLL_GRAMS,
-        remainingGrams: filamentUsage.remainingGrams,
-        assignedPrinterHistory,
-        ignoredPrinterHistory: ignoredPrints
-      }
+      filament: filaments[0],
+      filaments
     };
     const response = await fetch("/api/bootstrap", {
       method: "POST",
@@ -311,32 +360,54 @@ export function SetupForm({ storageChecks: _storageChecks, storageRoot: _storage
       ) : null}
 
       {step === 3 ? (
-        <Panel title="Filament roll" description="Add the first roll. New rolls start at 1kg; completed prints are assigned on the next step.">
-          <div className="grid gap-2">
-            <Label htmlFor="filamentMaterial">Material</Label>
-            <select
-              id="filamentMaterial"
-              value={draft.filament.material}
-              onChange={(event) => updateFilament("material", event.target.value as BootstrapInputDraft["filament"]["material"])}
-              className="h-10 rounded-md border bg-white px-3 text-sm"
-            >
-              {["PLA", "PETG", "ABS", "TPU", "NYLON", "RESIN"].map((material) => (
-                <option key={material}>{material}</option>
-              ))}
-            </select>
-          </div>
-          <Field label="Filament color" value={draft.filament.color} onChange={(value) => updateFilament("color", value)} />
-          <Field label="Filament brand" value={draft.filament.brand} onChange={(value) => updateFilament("brand", value)} />
-          <Field label="Roll cost dollars" type="number" value={String(((draft.filament.rollCostCents ?? 0) / 100).toFixed(2))} onChange={(value) => updateFilament("rollCostCents", Math.round(Number(value) * 100))} />
-          <div className="rounded-md border bg-muted/30 p-4 text-sm">
-            <p className="text-muted-foreground">Starting weight</p>
-            <p className="mt-1 text-lg font-semibold">{DEFAULT_FILAMENT_ROLL_GRAMS}g</p>
+        <Panel title="Filament stock" description="Add every roll currently in stock. New rolls start at 1kg; completed prints are assigned on the next step.">
+          <div className="md:col-span-2 grid gap-3">
+            {stockSpools.map((spool, index) => (
+              <div key={spool.localId} className="grid gap-3 rounded-md border bg-muted/20 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="font-medium">Roll {index + 1}</p>
+                    <p className="text-sm text-muted-foreground">Starting weight {DEFAULT_FILAMENT_ROLL_GRAMS}g</p>
+                  </div>
+                  <Button type="button" variant="outline" size="sm" onClick={() => removeSpool(spool.localId)} disabled={stockSpools.length === 1}>
+                    Remove
+                  </Button>
+                </div>
+                <div className="grid gap-3 md:grid-cols-4">
+                  <div className="grid gap-2">
+                    <Label htmlFor={`filamentMaterial-${spool.localId}`}>Material</Label>
+                    <select
+                      id={`filamentMaterial-${spool.localId}`}
+                      value={spool.material}
+                      onChange={(event) => updateSpool(spool.localId, "material", event.target.value)}
+                      className="h-10 rounded-md border bg-white px-3 text-sm"
+                    >
+                      {["PLA", "PETG", "ABS", "TPU", "NYLON", "RESIN"].map((material) => (
+                        <option key={material}>{material}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <InlineField id={`color-${spool.localId}`} label="Color" value={spool.color} onChange={(value) => updateSpool(spool.localId, "color", value)} />
+                  <InlineField id={`brand-${spool.localId}`} label="Brand" value={spool.brand} onChange={(value) => updateSpool(spool.localId, "brand", value)} />
+                  <InlineField
+                    id={`cost-${spool.localId}`}
+                    label="Cost dollars"
+                    type="number"
+                    value={String(((spool.rollCostCents ?? 0) / 100).toFixed(2))}
+                    onChange={(value) => updateSpool(spool.localId, "rollCostCents", Math.round(Number(value) * 100))}
+                  />
+                </div>
+              </div>
+            ))}
+            <Button type="button" variant="secondary" onClick={addSpool} className="w-fit">
+              Add another roll
+            </Button>
           </div>
         </Panel>
       ) : null}
 
       {step === 4 ? (
-        <Panel title="Assign completed prints" description="Pull completed printer history, assign prints to this roll, or ignore test prints you do not want tracked.">
+        <Panel title="Assign completed prints" description="Pull completed printer history, choose which roll each completed print used, or ignore test prints you do not want tracked.">
           <div className="md:col-span-2 rounded-md border p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2">
@@ -351,19 +422,31 @@ export function SetupForm({ storageChecks: _storageChecks, storageRoot: _storage
             <div className="mt-4 grid gap-2">
               {completedPrints.length ? (
                 completedPrints.map((print) => (
-                  <div key={print.id} className="grid gap-3 rounded border p-3 text-sm md:grid-cols-[1fr_auto] md:items-center">
-                    <span>
-                      <span className="font-medium">{print.name}</span>
-                      <span className="ml-2 text-muted-foreground">{print.gramsUsed ?? 0}g</span>
-                    </span>
-                    <span className="flex items-center gap-2">
-                      <Button type="button" size="sm" variant={assignedPrintIds.includes(print.id) ? "default" : "outline"} onClick={() => toggleAssignedPrint(print.id)}>
-                        Assign
-                      </Button>
+                  <div key={print.id} className="grid min-w-0 gap-3 rounded border p-3 text-sm lg:grid-cols-[minmax(0,1fr)_minmax(12rem,18rem)_auto] lg:items-center">
+                    <div className="min-w-0">
+                      <p className="truncate font-medium" title={print.name}>
+                        {print.name}
+                      </p>
+                      <p className="mt-1 text-muted-foreground">{print.gramsUsed ?? 0}g</p>
+                    </div>
+                    <select
+                      value={ignoredPrintIds.includes(print.id) ? "" : printAssignments[print.id] ?? ""}
+                      onChange={(event) => assignPrintToSpool(print.id, event.target.value)}
+                      disabled={ignoredPrintIds.includes(print.id)}
+                      className="h-10 min-w-0 rounded-md border bg-white px-3 text-sm"
+                    >
+                      <option value="">Leave unassigned</option>
+                      {stockSpools.map((spool, index) => (
+                        <option key={spool.localId} value={spool.localId}>
+                          Roll {index + 1}: {spool.color || "color"} {spool.material} {spool.brand || "brand"}
+                        </option>
+                      ))}
+                    </select>
+                    <div className="flex justify-start lg:justify-end">
                       <Button type="button" size="sm" variant={ignoredPrintIds.includes(print.id) ? "secondary" : "outline"} onClick={() => toggleIgnoredPrint(print.id)}>
                         Ignore
                       </Button>
-                    </span>
+                    </div>
                   </div>
                 ))
               ) : (
@@ -372,11 +455,13 @@ export function SetupForm({ storageChecks: _storageChecks, storageRoot: _storage
             </div>
           </div>
 
-          <div className="md:col-span-2 grid gap-3 rounded-md border bg-muted/30 p-4 text-sm md:grid-cols-4">
-            <Metric label="Starting" value={`${draft.filament.startingGrams ?? 1000}g`} />
-            <Metric label="Assigned used" value={`${filamentUsage.assignedGrams}g`} />
-            <Metric label="Remaining" value={`${filamentUsage.remainingGrams}g`} />
-            <Metric label="Cost / gram" value={`$${(filamentUsage.costPerGramCents / 100).toFixed(3)}`} />
+          <div className="md:col-span-2 grid gap-3 rounded-md border bg-muted/30 p-4 text-sm md:grid-cols-3">
+            <Metric label="Stock rolls" value={String(stockSpools.length)} />
+            <Metric label="Assigned used" value={`${totalAssignedGrams}g`} />
+            <Metric label="Remaining" value={`${totalRemainingGrams}g`} />
+            {assignmentPlan.spools.map((spool, index) => (
+              <Metric key={spool.localId} label={`Roll ${index + 1}`} value={`${spool.usage.remainingGrams}g left`} />
+            ))}
           </div>
         </Panel>
       ) : null}
@@ -443,6 +528,27 @@ function Field({
   type?: string;
 }) {
   const id = label.toLowerCase().replaceAll(" ", "-");
+  return (
+    <div className="grid gap-2">
+      <Label htmlFor={id}>{label}</Label>
+      <Input id={id} type={type} value={value} onChange={(event) => onChange(event.target.value)} required />
+    </div>
+  );
+}
+
+function InlineField({
+  id,
+  label,
+  value,
+  onChange,
+  type = "text"
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  type?: string;
+}) {
   return (
     <div className="grid gap-2">
       <Label htmlFor={id}>{label}</Label>

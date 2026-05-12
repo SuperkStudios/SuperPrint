@@ -18,6 +18,7 @@ describe("bootstrap lockout", () => {
 describe("createBootstrapOwner", () => {
   it("creates owner, company setting, printer, and filament in one transaction", async () => {
     const calls: string[] = [];
+    const createdFilaments: Record<string, unknown>[] = [];
     const result = await createBootstrapOwner(
       {
         owner: {
@@ -53,7 +54,10 @@ describe("createBootstrapOwner", () => {
             createOwner: async () => ({ id: "owner_1" }),
             upsertSetting: async () => ({}),
             createPrinter: async () => ({}),
-            createFilament: async () => ({})
+            createFilament: async (data) => {
+              createdFilaments.push(data);
+              return {};
+            }
           });
         }
       }
@@ -61,6 +65,79 @@ describe("createBootstrapOwner", () => {
 
     expect(result).toEqual({ ownerId: "owner_1" });
     expect(calls).toEqual(["transaction"]);
+    expect(createdFilaments).toHaveLength(1);
+  });
+
+  it("creates every bootstrap stock spool with the platform low threshold", async () => {
+    const createdFilaments: Record<string, unknown>[] = [];
+
+    await createBootstrapOwner(
+      {
+        owner: {
+          name: "Riley Owner",
+          email: "owner@superprint.test",
+          password: "correct-horse-battery-staple"
+        },
+        company: { brandName: "SuperPrint Denver", primaryColor: "#117766", lowFilamentThresholdGrams: 90 },
+        printer: {
+          name: "forge-alpha",
+          publicName: "Forge Alpha",
+          internalIp: "10.0.0.12",
+          controlApiUrl: "http://10.0.0.12/api"
+        },
+        filament: {
+          material: "PLA",
+          color: "Matte Black",
+          brand: "Polymaker",
+          startingGrams: 1000,
+          remainingGrams: 950,
+          rollCostCents: 2499,
+          assignedPrinterHistory: [{ id: "done-1", name: "dragon.gcode", gramsUsed: 50 }],
+          ignoredPrinterHistory: []
+        },
+        filaments: [
+          {
+            material: "PLA",
+            color: "Matte Black",
+            brand: "Polymaker",
+            startingGrams: 1000,
+            remainingGrams: 950,
+            rollCostCents: 2499,
+            assignedPrinterHistory: [{ id: "done-1", name: "dragon.gcode", gramsUsed: 50 }],
+            ignoredPrinterHistory: []
+          },
+          {
+            material: "PETG",
+            color: "Clear",
+            brand: "Overture",
+            startingGrams: 1000,
+            remainingGrams: 1000,
+            rollCostCents: 1999,
+            assignedPrinterHistory: [],
+            ignoredPrinterHistory: [{ id: "test-1", name: "test.gcode", gramsUsed: 10 }]
+          }
+        ],
+        security: { mediaTokenSecretSet: true, backupPassphraseSet: true }
+      },
+      {
+        ownerOrAdminCount: async () => 0,
+        hashPassword: async () => "hashed-password",
+        transaction: async (callback) =>
+          callback({
+            createOwner: async () => ({ id: "owner_1" }),
+            upsertSetting: async () => ({}),
+            createPrinter: async () => ({}),
+            createFilament: async (data) => {
+              createdFilaments.push(data);
+              return {};
+            }
+          })
+      }
+    );
+
+    expect(createdFilaments).toHaveLength(2);
+    expect(createdFilaments.map((spool) => spool.thresholdGrams)).toEqual([90, 90]);
+    expect(createdFilaments.map((spool) => spool.color)).toEqual(["Matte Black", "Clear"]);
   });
 
   it("rejects bootstrap after an owner or admin exists", async () => {

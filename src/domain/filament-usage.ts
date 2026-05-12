@@ -13,6 +13,14 @@ export type AssignedFilamentPrint = {
   completedAt?: string;
 };
 
+export type FilamentStockRoll = {
+  localId: string;
+  material: string;
+  color: string;
+  brand: string;
+  rollCostCents?: number;
+};
+
 export const DEFAULT_FILAMENT_ROLL_GRAMS = 1000;
 
 export function calculateFilamentRollUsage(input: {
@@ -63,5 +71,36 @@ export function planCompletedPrintAssignments(input: {
       rollCostCents: input.rollCostCents,
       assignedPrints
     })
+  };
+}
+
+export function planFilamentStockAssignments(input: {
+  spools: FilamentStockRoll[];
+  completedPrints: CompletedPrinterHistoryItem[];
+  assignments: Record<string, string | undefined>;
+  ignoredIds: string[];
+}) {
+  const completed = filterCompletedPrinterHistory(input.completedPrints);
+  const ignoredPrints = completed
+    .filter((print) => input.ignoredIds.includes(print.id))
+    .map((print) => ({ id: print.id, name: print.name, gramsUsed: print.gramsUsed, completedAt: print.completedAt }));
+
+  return {
+    spools: input.spools.map((spool) => {
+      const assignedPrints = completed
+        .filter((print) => input.assignments[print.id] === spool.localId && !input.ignoredIds.includes(print.id))
+        .map((print) => ({ id: print.id, name: print.name, gramsUsed: print.gramsUsed, completedAt: print.completedAt }));
+
+      return {
+        ...spool,
+        assignedPrints,
+        usage: calculateFilamentRollUsage({
+          startingGrams: DEFAULT_FILAMENT_ROLL_GRAMS,
+          rollCostCents: spool.rollCostCents ?? 0,
+          assignedPrints
+        })
+      };
+    }),
+    ignoredPrints
   };
 }

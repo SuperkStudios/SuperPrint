@@ -1,3 +1,14 @@
+export type BootstrapFilamentInput = {
+  material: "PLA" | "PETG" | "ABS" | "TPU" | "NYLON" | "RESIN";
+  color: string;
+  brand: string;
+  startingGrams: number;
+  remainingGrams: number;
+  rollCostCents: number;
+  assignedPrinterHistory: Array<{ id: string; name: string; gramsUsed: number; materialCostCents?: number; completedAt?: string }>;
+  ignoredPrinterHistory: Array<{ id: string; name: string; gramsUsed: number; completedAt?: string }>;
+};
+
 export type BootstrapInput = {
   owner: {
     name: string;
@@ -15,26 +26,22 @@ export type BootstrapInput = {
     internalIp: string;
     controlApiUrl: string;
   };
-  filament: {
-    material: "PLA" | "PETG" | "ABS" | "TPU" | "NYLON" | "RESIN";
-    color: string;
-    brand: string;
-    startingGrams: number;
-    remainingGrams: number;
-    rollCostCents: number;
-    assignedPrinterHistory: Array<{ id: string; name: string; gramsUsed: number; materialCostCents?: number; completedAt?: string }>;
-    ignoredPrinterHistory: Array<{ id: string; name: string; gramsUsed: number; completedAt?: string }>;
-  };
+  filament: BootstrapFilamentInput;
+  filaments: BootstrapFilamentInput[];
   security: {
     mediaTokenSecretSet: boolean;
     backupPassphraseSet: boolean;
   };
 };
 
-export type BootstrapInputDraft = Omit<BootstrapInput, "security" | "company" | "filament"> & {
+export type BootstrapInputDraft = Omit<BootstrapInput, "security" | "company" | "filament" | "filaments"> & {
   company: Pick<BootstrapInput["company"], "brandName"> & Partial<Omit<BootstrapInput["company"], "brandName">>;
   filament: Omit<BootstrapInput["filament"], "startingGrams" | "remainingGrams" | "rollCostCents" | "assignedPrinterHistory" | "ignoredPrinterHistory"> &
     Partial<Pick<BootstrapInput["filament"], "startingGrams" | "remainingGrams" | "rollCostCents" | "assignedPrinterHistory" | "ignoredPrinterHistory">>;
+  filaments?: Array<
+    Omit<BootstrapInput["filament"], "startingGrams" | "remainingGrams" | "rollCostCents" | "assignedPrinterHistory" | "ignoredPrinterHistory"> &
+      Partial<Pick<BootstrapInput["filament"], "startingGrams" | "remainingGrams" | "rollCostCents" | "assignedPrinterHistory" | "ignoredPrinterHistory">>
+  >;
   security?: Partial<BootstrapInput["security"]>;
 };
 
@@ -56,7 +63,18 @@ export function isBootstrapLocked({ ownerOrAdminCount }: { ownerOrAdminCount: nu
 }
 
 export function normalizeBootstrapInput(input: BootstrapInputDraft): BootstrapInput {
-  const startingGrams = input.filament.startingGrams ?? input.filament.remainingGrams ?? 1000;
+  const normalizeFilament = (filament: BootstrapInputDraft["filament"]): BootstrapFilamentInput => {
+    const startingGrams = filament.startingGrams ?? filament.remainingGrams ?? 1000;
+    return {
+      ...filament,
+      startingGrams,
+      remainingGrams: filament.remainingGrams ?? startingGrams,
+      rollCostCents: filament.rollCostCents ?? 0,
+      assignedPrinterHistory: filament.assignedPrinterHistory ?? [],
+      ignoredPrinterHistory: filament.ignoredPrinterHistory ?? []
+    };
+  };
+  const filaments = (input.filaments?.length ? input.filaments : [input.filament]).map(normalizeFilament);
   return {
     ...input,
     company: {
@@ -64,14 +82,8 @@ export function normalizeBootstrapInput(input: BootstrapInputDraft): BootstrapIn
       primaryColor: input.company.primaryColor ?? "#0f8f7f",
       lowFilamentThresholdGrams: input.company.lowFilamentThresholdGrams ?? 150
     },
-    filament: {
-      ...input.filament,
-      startingGrams,
-      remainingGrams: input.filament.remainingGrams ?? startingGrams,
-      rollCostCents: input.filament.rollCostCents ?? 0,
-      assignedPrinterHistory: input.filament.assignedPrinterHistory ?? [],
-      ignoredPrinterHistory: input.filament.ignoredPrinterHistory ?? []
-    },
+    filament: filaments[0],
+    filaments,
     security: {
       mediaTokenSecretSet: input.security?.mediaTokenSecretSet ?? true,
       backupPassphraseSet: input.security?.backupPassphraseSet ?? true
@@ -288,11 +300,13 @@ export async function createBootstrapOwner(input: BootstrapInputDraft, repo: Boo
       status: "OFFLINE",
       healthDescription: "Registered during bootstrap; waiting for first printer agent check"
     });
-    await tx.createFilament({
-      ...normalized.filament,
-      thresholdGrams: normalized.company.lowFilamentThresholdGrams,
-      location: "bootstrap"
-    });
+    for (const filament of normalized.filaments) {
+      await tx.createFilament({
+        ...filament,
+        thresholdGrams: normalized.company.lowFilamentThresholdGrams,
+        location: "bootstrap"
+      });
+    }
 
     return { ownerId: owner.id ?? "owner" };
   });

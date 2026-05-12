@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
 import { SetupForm } from "@/components/setup-form";
-import { getBootstrapStatus, getStorageBootstrapChecks } from "@/lib/bootstrap";
-import { getDataRoot } from "@/lib/storage";
+import { getBootstrapStatus } from "@/lib/bootstrap";
 
 export const dynamic = "force-dynamic";
 
@@ -16,11 +15,11 @@ export default async function SetupPage() {
       <p className="text-sm font-medium text-primary">First-run setup</p>
       <h1 className="mt-1 text-3xl font-semibold tracking-tight">Bootstrap SuperPrint</h1>
       <p className="mt-3 max-w-3xl text-muted-foreground">
-        Create the owner account, company identity, storage confirmation, first printer profile, first filament spool,
-        and security acknowledgement. This route locks permanently after an owner or admin exists.
+        Create the owner account, company identity, first printer profile, opening filament stock, completed-print
+        assignments, and security acknowledgement. This route locks permanently after an owner or admin exists.
       </p>
       <div className="mt-8">
-        <SetupForm storageChecks={getStorageBootstrapChecks()} storageRoot={getDataRoot()} />
+        <SetupForm />
       </div>
     </main>
   );
