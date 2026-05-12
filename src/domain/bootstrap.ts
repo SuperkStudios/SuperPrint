@@ -88,6 +88,46 @@ export function getSafePrinterConnectionCheck(input: { internalIp: string; contr
   };
 }
 
+export async function probePrinterConnection(
+  input: { internalIp: string; controlApiUrl: string },
+  options?: {
+    timeoutMs?: number;
+    fetcher?: (url: string, init: { method: "GET"; signal?: AbortSignal; cache: "no-store" }) => Promise<{ status: number; statusText: string }>;
+  }
+) {
+  const shapeCheck = getSafePrinterConnectionCheck(input);
+  if (!shapeCheck.ok) return shapeCheck;
+
+  const timeoutMs = options?.timeoutMs ?? 3000;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await (options?.fetcher ?? fetch)(input.controlApiUrl, {
+      method: "GET",
+      signal: controller.signal,
+      cache: "no-store"
+    });
+    const statusText = response.statusText ? ` ${response.statusText}` : "";
+    return {
+      ok: true,
+      status: "CONNECTED",
+      message: `Printer endpoint responded with HTTP ${response.status}${statusText}.`
+    };
+  } catch (error) {
+    const isTimeout = error instanceof Error && error.name === "AbortError";
+    return {
+      ok: false,
+      status: isTimeout ? "TIMEOUT" : "UNREACHABLE",
+      message: isTimeout
+        ? `Printer endpoint did not respond within ${timeoutMs}ms.`
+        : `Could not reach printer endpoint: ${error instanceof Error ? error.message : "network request failed"}.`
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 export function buildBootstrapSecuritySummary(input: {
   ownerEmail: string;
   brandName: string;

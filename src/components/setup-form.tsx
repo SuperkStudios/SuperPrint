@@ -5,7 +5,6 @@ import { signIn } from "next-auth/react";
 import { ArrowLeft, ArrowRight, CheckCircle2, Printer, ShieldCheck } from "lucide-react";
 import {
   buildBootstrapSecuritySummary,
-  getSafePrinterConnectionCheck,
   type BootstrapInputDraft
 } from "@/domain/bootstrap";
 import { Button } from "@/components/ui/button";
@@ -21,6 +20,7 @@ export function SetupForm({ storageChecks, storageRoot }: { storageChecks: Stora
   const [message, setMessage] = useState("");
   const [connectionMessage, setConnectionMessage] = useState("Connection test has not run yet.");
   const [connectionOk, setConnectionOk] = useState(false);
+  const [testingConnection, setTestingConnection] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [draft, setDraft] = useState<BootstrapInputDraft>({
     owner: { name: "", email: "", password: "" },
@@ -94,7 +94,7 @@ export function SetupForm({ storageChecks, storageRoot }: { storageChecks: Stora
         return false;
       }
       if (!connectionOk) {
-        setMessage("Run the safe connection test before continuing.");
+        setMessage("Run the printer connection test before continuing.");
         return false;
       }
     }
@@ -112,11 +112,32 @@ export function SetupForm({ storageChecks, storageRoot }: { storageChecks: Stora
     setStep((current) => Math.max(current - 1, 0));
   }
 
-  function testConnection() {
-    const result = getSafePrinterConnectionCheck(draft.printer);
-    setConnectionOk(result.ok);
-    setConnectionMessage(result.message);
-    setMessage(result.ok ? "" : result.message);
+  async function testConnection() {
+    setTestingConnection(true);
+    setConnectionOk(false);
+    setConnectionMessage("Testing printer endpoint...");
+    setMessage("");
+
+    try {
+      const response = await fetch("/api/bootstrap/printer-test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          internalIp: draft.printer.internalIp,
+          controlApiUrl: draft.printer.controlApiUrl
+        })
+      });
+      const result = (await response.json().catch(() => ({}))) as { ok?: boolean; message?: string };
+      setConnectionOk(Boolean(result.ok));
+      setConnectionMessage(result.message ?? "Printer connection test failed.");
+      setMessage(result.ok ? "" : result.message ?? "Printer connection test failed.");
+    } catch (error) {
+      setConnectionOk(false);
+      setConnectionMessage(error instanceof Error ? error.message : "Printer connection test failed.");
+      setMessage(error instanceof Error ? error.message : "Printer connection test failed.");
+    } finally {
+      setTestingConnection(false);
+    }
   }
 
   async function finish() {
@@ -180,7 +201,7 @@ export function SetupForm({ storageChecks, storageRoot }: { storageChecks: Stora
       ) : null}
 
       {step === 2 ? (
-        <Panel title="Printer setup and connection test" description="Register the first printer profile and first loaded filament spool. The test is safe and does not call printer APIs.">
+        <Panel title="Printer setup and connection test" description="Register the first printer profile and first loaded filament spool. The test makes a real non-control HTTP request to the printer URL.">
           <Field label="Internal printer name" value={draft.printer.name} onChange={(value) => updatePrinter("name", value)} />
           <Field label="Public printer name" value={draft.printer.publicName} onChange={(value) => updatePrinter("publicName", value)} />
           <Field label="Internal IP or hostname" value={draft.printer.internalIp} onChange={(value) => updatePrinter("internalIp", value)} />
@@ -209,10 +230,10 @@ export function SetupForm({ storageChecks, storageRoot }: { storageChecks: Stora
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <Printer className="size-4 text-primary" />
-                <p className="font-medium">Safe connection test</p>
+                <p className="font-medium">Printer connection test</p>
               </div>
-              <Button type="button" variant="secondary" onClick={testConnection}>
-                Test connection
+              <Button type="button" variant="secondary" onClick={testConnection} disabled={testingConnection}>
+                {testingConnection ? "Testing..." : "Test connection"}
               </Button>
             </div>
             <p className={`mt-3 text-sm ${connectionOk ? "text-primary" : "text-muted-foreground"}`}>{connectionMessage}</p>

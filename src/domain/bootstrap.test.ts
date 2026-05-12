@@ -3,6 +3,7 @@ import {
   buildBootstrapSecuritySummary,
   createBootstrapOwner,
   getSafePrinterConnectionCheck,
+  probePrinterConnection,
   isBootstrapLocked,
   normalizeBootstrapInput
 } from "./bootstrap";
@@ -98,6 +99,38 @@ describe("bootstrap wizard helpers", () => {
       status: "READY_FOR_SUPERNODE",
       message: "Address format looks valid. SuperPrint will wait for a signed SuperNode heartbeat before marking the printer online."
     });
+  });
+
+  it("performs a real non-control HTTP probe through the supplied fetcher", async () => {
+    const result = await probePrinterConnection(
+      { internalIp: "192.168.10.125", controlApiUrl: "http://192.168.10.125/api" },
+      {
+        timeoutMs: 100,
+        fetcher: async () => ({ status: 200, statusText: "OK" })
+      }
+    );
+
+    expect(result).toEqual({
+      ok: true,
+      status: "CONNECTED",
+      message: "Printer endpoint responded with HTTP 200 OK."
+    });
+  });
+
+  it("reports unreachable printer endpoints without pretending setup is connected", async () => {
+    const result = await probePrinterConnection(
+      { internalIp: "192.168.10.125", controlApiUrl: "http://192.168.10.125/api" },
+      {
+        timeoutMs: 100,
+        fetcher: async () => {
+          throw new Error("connect ECONNREFUSED");
+        }
+      }
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.status).toBe("UNREACHABLE");
+    expect(result.message).toContain("Could not reach printer endpoint");
   });
 
   it("builds a save-worthy security summary without secrets", () => {
