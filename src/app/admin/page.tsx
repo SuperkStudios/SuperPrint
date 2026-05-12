@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { listPublicEvents } from "@/services/events";
 import { getAdminQueueState } from "@/services/queue";
 import { getDataRoot } from "@/lib/storage";
+import { refreshAllPrinterHeartbeats } from "@/services/printer-heartbeat";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +13,7 @@ export default async function AdminDashboardPage() {
   const [orders, uploads, printers, maintenance, jobs, events, filament, products, media] = await Promise.all([
     prisma.order.count(),
     prisma.modelUpload.findMany({ where: { status: "PENDING" }, include: { customer: true }, orderBy: { createdAt: "desc" }, take: 4 }),
-    prisma.printer.findMany({ include: { currentFilament: true }, orderBy: { publicName: "asc" } }),
+    refreshAllPrinterHeartbeats(),
     prisma.maintenanceTask.findMany({ where: { status: { not: "COMPLETED" } }, include: { printer: true }, orderBy: { dueAt: "asc" }, take: 4 }),
     getAdminQueueState(),
     listPublicEvents(8),
@@ -84,7 +85,9 @@ export default async function AdminDashboardPage() {
             <div key={printer.id} className="rounded border p-4">
               <div className="flex items-center justify-between">
                 <p className="font-medium">{printer.publicName}</p>
-                <span className="text-sm text-muted-foreground">{printer.status}</span>
+                <span className={printer.heartbeatStatus === "ONLINE" ? "text-sm text-emerald-600" : "text-sm text-muted-foreground"}>
+                  {printer.heartbeatStatus === "ONLINE" ? "Online" : "Offline"}
+                </span>
               </div>
               <p className="mt-2 text-sm text-muted-foreground">{printer.healthDescription}</p>
               <p className="mt-3 text-sm">

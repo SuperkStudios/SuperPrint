@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
 export function LiveBedFeed({
-  streamUrl = "/api/live/printer/main.m3u8",
+  streamUrl = "/api/printer-feed/stream",
   printerName,
   currentPrint
 }: {
@@ -17,6 +17,7 @@ export function LiveBedFeed({
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [state, setState] = useState<"loading" | "online" | "offline">("loading");
+  const isMjpeg = !streamUrl.endsWith(".m3u8");
 
   useEffect(() => {
     let destroyed = false;
@@ -24,7 +25,7 @@ export function LiveBedFeed({
 
     async function connect() {
       const video = videoRef.current;
-      if (!video) return;
+      if (!video || isMjpeg) return;
       setState("loading");
       try {
         if (video.canPlayType("application/vnd.apple.mpegurl")) {
@@ -53,24 +54,37 @@ export function LiveBedFeed({
       clearInterval(retry);
       hls?.destroy();
     };
-  }, [streamUrl, state]);
+  }, [streamUrl, state, isMjpeg]);
 
   async function fullscreen() {
-    await videoRef.current?.requestFullscreen?.();
+    const element = videoRef.current ?? document.querySelector<HTMLImageElement>("[data-live-bed-feed]");
+    await element?.requestFullscreen?.();
   }
 
   return (
     <div className="relative overflow-hidden rounded-[1rem] border border-cyan-300/20 bg-black shadow-[0_0_120px_rgba(34,211,238,0.18)]">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_10%,rgba(34,211,238,0.18),transparent_38%),linear-gradient(135deg,rgba(255,255,255,0.06),transparent_40%)]" />
-      <video
-        ref={videoRef}
-        muted
-        autoPlay
-        playsInline
-        controls={false}
-        className={`relative aspect-video w-full bg-zinc-950 object-cover ${state === "online" ? "opacity-100" : "opacity-0"}`}
-      />
-      {state !== "online" ? (
+      {isMjpeg ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          data-live-bed-feed
+          src={streamUrl}
+          alt={`${printerName} live print bed`}
+          className="relative aspect-video w-full bg-zinc-950 object-cover"
+          onLoad={() => setState("online")}
+          onError={() => setState("offline")}
+        />
+      ) : (
+        <video
+          ref={videoRef}
+          muted
+          autoPlay
+          playsInline
+          controls={false}
+          className={`relative aspect-video w-full bg-zinc-950 object-cover ${state === "online" ? "opacity-100" : "opacity-0"}`}
+        />
+      )}
+      {!isMjpeg && state !== "online" ? (
         <div className="absolute inset-0 grid place-items-center bg-zinc-950">
           <div className="absolute inset-0 animate-pulse bg-[linear-gradient(110deg,transparent,rgba(34,211,238,0.12),transparent)]" />
           <div className="relative text-center">

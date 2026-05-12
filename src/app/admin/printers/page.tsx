@@ -2,15 +2,12 @@ import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { prisma } from "@/lib/prisma";
+import { refreshAllPrinterHeartbeats } from "@/services/printer-heartbeat";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminPrintersPage() {
-  const printers = await prisma.printer.findMany({
-    include: { currentFilament: true },
-    orderBy: { publicName: "asc" }
-  });
+  const printers = await refreshAllPrinterHeartbeats();
 
   return (
     <div className="space-y-4">
@@ -37,7 +34,9 @@ export default async function AdminPrintersPage() {
                   <CardTitle>{printer.publicName}</CardTitle>
                   <p className="text-sm text-muted-foreground">{printer.modelName}</p>
                 </div>
-                <Badge>{printer.heartbeatStatus}</Badge>
+                <Badge className={printer.heartbeatStatus === "ONLINE" ? "bg-emerald-600" : "bg-zinc-500"}>
+                  {printer.heartbeatStatus === "ONLINE" ? "Online" : "Offline"}
+                </Badge>
               </CardHeader>
               <CardContent className="space-y-3 text-sm">
                 <div className="grid grid-cols-2 gap-3">
@@ -45,6 +44,8 @@ export default async function AdminPrintersPage() {
                   <Metric label="Build volume" value={`${printer.buildVolumeXmm} x ${printer.buildVolumeYmm} x ${printer.buildVolumeZmm}mm`} />
                   <Metric label="Runtime" value={`${printer.totalRuntimeMinutes}m`} />
                   <Metric label="Completed" value={String(printer.completedPrintCount)} />
+                  <Metric label="Heartbeat" value={printer.lastHeartbeatAt ? new Date(printer.lastHeartbeatAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "Not checked"} />
+                  <Metric label="Latency" value={printer.heartbeatLatencyMs != null ? `${printer.heartbeatLatencyMs}ms` : "n/a"} />
                 </div>
                 <p className="text-muted-foreground">{printer.healthDescription}</p>
                 <p>

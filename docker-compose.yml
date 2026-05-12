@@ -111,6 +111,8 @@ services:
       SUPERNODE_ID: supernode-local
       SUPERNODE_SECRET: change-me-after-registration
       SUPERNODE_PRINTER_ID: ""
+      SUPERNODE_PRINTER_CONTROL_URL: ws://192.168.10.125:3030/websocket
+      SUPERNODE_PRINTER_CAMERA_URL: http://192.168.10.125:3031/video
       SUPERNODE_UPLOADS_PATH: /data/uploads
       SUPERNODE_SLICED_PATH: /data/sliced
       SUPERNODE_VIDEOS_PATH: /data/videos
