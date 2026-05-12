@@ -249,7 +249,12 @@ export function buildBootstrapSecuritySummary(input: {
   assignedPrintCount?: number;
   ignoredPrintCount?: number;
   remainingGrams?: number;
+  filamentStock?: Array<{ label: string; remainingGrams: number }>;
 }) {
+  const filamentLines = input.filamentStock?.length
+    ? ["Filament stock remaining:", ...input.filamentStock.map((spool) => `- ${spool.label}: ${formatGrams(spool.remainingGrams)}g`)]
+    : [`Calculated remaining filament: ${formatGrams(input.remainingGrams ?? 1000)}g`];
+
   return [
     "SuperPrint first-run setup summary",
     `Owner email: ${input.ownerEmail}`,
@@ -260,12 +265,16 @@ export function buildBootstrapSecuritySummary(input: {
     `Printer IP/host: ${input.printerInternalIp}`,
     `Assigned completed prints: ${input.assignedPrintCount ?? 0}`,
     `Ignored completed prints: ${input.ignoredPrintCount ?? 0}`,
-    `Calculated remaining filament: ${input.remainingGrams ?? 1000}g`,
+    ...filamentLines,
     "Security: owner credential is hashed before storage",
     "Bootstrap route: locks after owner/admin creation",
-    "Real printer API calls: disabled",
-    "Physical print start: requires operator checklist and SuperNode acknowledgement"
+    "Printer control: operator-gated through SuperNode",
+    "Physical print start: enabled after operator checklist and SuperNode acknowledgement"
   ].join("\n");
+}
+
+function formatGrams(value: number) {
+  return Number.isInteger(value) ? String(value) : value.toFixed(2).replace(/\.?0+$/, "");
 }
 
 export async function createBootstrapOwner(input: BootstrapInputDraft, repo: BootstrapRepository) {

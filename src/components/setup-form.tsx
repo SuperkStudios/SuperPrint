@@ -101,7 +101,10 @@ export function SetupForm() {
         printerInternalIp: draft.printer.internalIp || "not set",
         assignedPrintCount: totalAssignedPrintCount,
         ignoredPrintCount: ignoredPrints.length,
-        remainingGrams: totalRemainingGrams
+        filamentStock: assignmentPlan.spools.map((spool, index) => ({
+          label: `Roll ${index + 1}: ${spool.color || "Uncolored"} ${spool.material} ${spool.brand || "Unbranded"}`,
+          remainingGrams: spool.usage.remainingGrams
+        }))
       }),
     [
       draft.company.brandName,
@@ -112,7 +115,8 @@ export function SetupForm() {
       draft.printer.publicName,
       ignoredPrints.length,
       totalAssignedPrintCount,
-      totalRemainingGrams
+      totalRemainingGrams,
+      assignmentPlan.spools
     ]
   );
 
@@ -274,7 +278,7 @@ export function SetupForm() {
       color: plannedSpool.color,
       brand: plannedSpool.brand,
       startingGrams: DEFAULT_FILAMENT_ROLL_GRAMS,
-      remainingGrams: plannedSpool.usage.remainingGrams,
+      remainingGrams: Math.round(plannedSpool.usage.remainingGrams),
       rollCostCents: plannedSpool.rollCostCents ?? 0,
       assignedPrinterHistory: plannedSpool.assignedPrints.map((print) => ({
         ...print,

@@ -264,14 +264,22 @@ describe("bootstrap wizard helpers", () => {
       printerInternalIp: "192.168.10.125",
       assignedPrintCount: 2,
       ignoredPrintCount: 1,
-      remainingGrams: 950
+      filamentStock: [
+        { label: "Roll 1: Black PLA Polymaker", remainingGrams: 950.31 },
+        { label: "Roll 2: Blue PETG Overture", remainingGrams: 1000 }
+      ]
     });
 
     expect(summary).toContain("Owner email: owner@test.com");
     expect(summary).toContain("Printer IP/host: 192.168.10.125");
     expect(summary).toContain("Primary color: #0f8f7f");
     expect(summary).toContain("Ignored completed prints: 1");
-    expect(summary).toContain("Real printer API calls: disabled");
+    expect(summary).toContain("Filament stock remaining:");
+    expect(summary).toContain("- Roll 1: Black PLA Polymaker: 950.31g");
+    expect(summary).toContain("- Roll 2: Blue PETG Overture: 1000g");
+    expect(summary).toContain("Printer control: operator-gated through SuperNode");
+    expect(summary).toContain("Physical print start: enabled after operator checklist and SuperNode acknowledgement");
+    expect(summary).not.toContain("Real printer API calls: disabled");
     expect(summary).not.toContain("password");
   });
 });
