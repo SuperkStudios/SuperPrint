@@ -15,6 +15,7 @@ export function buildUserNavigation(role?: string | null): NavItem[] {
     return [
       { href: "/admin", label: "Admin" },
       { href: "/admin/uploads", label: "Uploads" },
+      { href: "/admin/products", label: "Products" },
       { href: "/admin/queue", label: "Queue" },
       { href: "/admin/filament", label: "Filament" },
       { href: "/admin/settings", label: "Settings" }
@@ -25,7 +26,8 @@ export function buildUserNavigation(role?: string | null): NavItem[] {
     return [
       { href: "/store", label: "Store" },
       { href: "/upload", label: "Upload STL" },
-      { href: "/orders", label: "Orders" }
+      { href: "/orders", label: "Orders" },
+      { href: "/profile", label: "Profile" }
     ];
   }
 

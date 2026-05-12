@@ -1,13 +1,13 @@
-import { getServerSession } from "next-auth";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { authOptions, hasAdminRole } from "@/lib/auth";
+import { getCurrentSession, hasAdminRole } from "@/lib/auth";
 import { getBootstrapStatus } from "@/lib/bootstrap";
 
 const adminNav = [
   { href: "/admin", label: "Dashboard" },
   { href: "/admin/printers", label: "Printers" },
   { href: "/admin/uploads", label: "Uploads" },
+  { href: "/admin/products", label: "Products" },
   { href: "/admin/queue", label: "Queue" },
   { href: "/admin/filament", label: "Filament" },
   { href: "/admin/maintenance", label: "Maintenance" },
@@ -18,7 +18,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   if (!(await getBootstrapStatus()).isComplete) {
     redirect("/setup");
   }
-  const session = await getServerSession(authOptions);
+  const session = await getCurrentSession();
   if (!hasAdminRole(session?.user.role)) {
     redirect("/login");
   }

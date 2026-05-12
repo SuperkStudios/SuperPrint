@@ -1,60 +1,85 @@
-import { compare } from "bcryptjs";
-import type { NextAuthOptions } from "next-auth";
-import CredentialsProvider from "next-auth/providers/credentials";
+import { headers } from "next/headers";
+import { compare, hash } from "bcryptjs";
+import { betterAuth } from "better-auth";
+import { prismaAdapter } from "better-auth/adapters/prisma";
+import { nextCookies } from "better-auth/next-js";
 import { prisma } from "./prisma";
 
-export const authOptions: NextAuthOptions = {
-  session: {
-    strategy: "jwt"
-  },
-  pages: {
-    signIn: "/login"
-  },
-  providers: [
-    CredentialsProvider({
-      name: "Email and password",
-      credentials: {
-        email: { label: "Email", type: "email" },
-        password: { label: "Password", type: "password" }
-      },
-      async authorize(credentials) {
-        if (!credentials?.email || !credentials.password) {
-          return null;
+const socialProviders = {
+  ...(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
+    ? {
+        google: {
+          clientId: process.env.GOOGLE_CLIENT_ID,
+          clientSecret: process.env.GOOGLE_CLIENT_SECRET
         }
-
-        const user = await prisma.user.findUnique({
-          where: { email: credentials.email.toLowerCase() }
-        });
-
-        if (!user || !(await compare(credentials.password, user.passwordHash))) {
-          return null;
+      }
+    : {}),
+  ...(process.env.APPLE_CLIENT_ID && process.env.APPLE_CLIENT_SECRET
+    ? {
+        apple: {
+          clientId: process.env.APPLE_CLIENT_ID,
+          clientSecret: process.env.APPLE_CLIENT_SECRET
         }
-
-        return {
-          id: user.id,
-          name: user.name,
-          email: user.email,
-          role: user.role
-        };
       }
-    })
-  ],
-  callbacks: {
-    jwt({ token, user }) {
-      if (user) {
-        token.role = user.role;
-      }
-      return token;
-    },
-    session({ session, token }) {
-      if (session.user) {
-        session.user.id = token.sub ?? "";
-        session.user.role = token.role as string;
-      }
-      return session;
-    }
-  }
+    : {})
 };
+
+export const auth = betterAuth({
+  appName: "SuperPrint",
+  baseURL: process.env.BETTER_AUTH_URL ?? process.env.NEXTAUTH_URL ?? "http://localhost:3000",
+  secret: process.env.BETTER_AUTH_SECRET ?? process.env.NEXTAUTH_SECRET ?? "dev-secret-change-me",
+  database: prismaAdapter(prisma, {
+    provider: "postgresql"
+  }),
+  emailAndPassword: {
+    enabled: true,
+    minPasswordLength: 8,
+    password: {
+      hash: (password) => hash(password, 10),
+      verify: ({ hash: storedHash, password }) => compare(password, storedHash)
+    }
+  },
+  socialProviders,
+  user: {
+    additionalFields: {
+      role: {
+        type: "string",
+        input: false,
+        defaultValue: "CUSTOMER"
+      },
+      username: {
+        type: "string",
+        required: false,
+        input: true
+      },
+      bio: {
+        type: "string",
+        required: false,
+        input: true
+      }
+    }
+  },
+  plugins: [nextCookies()]
+});
+
+export type AppSession = {
+  session: { id: string; userId: string };
+  user: {
+    id: string;
+    email: string;
+    name: string;
+    image?: string | null;
+    role?: string | null;
+    username?: string | null;
+    bio?: string | null;
+  };
+} | null;
+
+export async function getCurrentSession(): Promise<AppSession> {
+  return (await auth.api.getSession({
+    headers: await headers()
+  })) as AppSession;
+}
 
 export function hasAdminRole(role?: string | null) {
   return role === "ADMIN" || role === "OWNER";

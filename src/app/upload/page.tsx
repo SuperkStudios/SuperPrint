@@ -1,8 +1,7 @@
-import { getServerSession } from "next-auth";
 import { UploadForm } from "@/components/upload-form";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { AuthRequired } from "@/components/auth-required";
-import { authOptions } from "@/lib/auth";
+import { getCurrentSession } from "@/lib/auth";
 import { getBootstrapStatus } from "@/lib/bootstrap";
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
@@ -13,7 +12,7 @@ export default async function UploadPage() {
   if (!(await getBootstrapStatus()).isComplete) {
     redirect("/setup");
   }
-  const session = await getServerSession(authOptions);
+  const session = await getCurrentSession();
   if (!session?.user.id) {
     return (
       <AuthRequired

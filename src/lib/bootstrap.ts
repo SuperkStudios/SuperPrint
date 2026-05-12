@@ -31,6 +31,7 @@ export async function runOwnerBootstrap(input: BootstrapInputDraft) {
       prisma.$transaction(async (tx) =>
         callback({
           createOwner: (data) => tx.user.create({ data: data as Prisma.UserCreateInput }),
+          createAuthAccount: (data) => tx.account.create({ data: data as Prisma.AccountUncheckedCreateInput }),
           upsertSetting: (key, value) =>
             tx.systemSetting.upsert({
               where: { key },

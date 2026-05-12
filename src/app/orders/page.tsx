@@ -1,6 +1,5 @@
-import { getServerSession } from "next-auth";
 import Link from "next/link";
-import { authOptions } from "@/lib/auth";
+import { getCurrentSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { money } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -17,7 +16,7 @@ export default async function OrdersPage() {
   if (!(await getBootstrapStatus()).isComplete) {
     redirect("/setup");
   }
-  const session = await getServerSession(authOptions);
+  const session = await getCurrentSession();
   if (!session?.user.id) {
     return <AuthRequired title="Sign in to view orders" copy="Order history, private queue status, and local media downloads are only available to the signed-in customer." />;
   }

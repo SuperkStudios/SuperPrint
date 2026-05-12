@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { signIn } from "next-auth/react";
 import { ArrowLeft, ArrowRight, Boxes, CheckCircle2, Printer, ShieldCheck } from "lucide-react";
 import {
   buildBootstrapSecuritySummary,
@@ -298,11 +297,16 @@ export function SetupForm() {
     });
     const result = await response.json().catch(() => ({}));
     if (response.ok) {
-      await signIn("credentials", {
-        email: payload.owner.email,
-        password: payload.owner.password,
-        callbackUrl: "/admin"
+      await fetch("/api/auth/sign-in/email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: payload.owner.email,
+          password: payload.owner.password,
+          callbackURL: "/admin"
+        })
       });
+      window.location.href = "/admin";
       return;
     }
     setSubmitting(false);

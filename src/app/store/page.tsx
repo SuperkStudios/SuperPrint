@@ -1,10 +1,10 @@
-import { ShoppingCart } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { money } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { getBootstrapStatus } from "@/lib/bootstrap";
 import { redirect } from "next/navigation";
+import { getCurrentSession } from "@/lib/auth";
+import { StoreBuyButton } from "@/components/store-buy-button";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +12,10 @@ export default async function StorePage() {
   if (!(await getBootstrapStatus()).isComplete) {
     redirect("/setup");
   }
-  const products = await prisma.product.findMany({ where: { status: "ACTIVE" }, orderBy: { name: "asc" } });
+  const [products, session] = await Promise.all([
+    prisma.product.findMany({ where: { status: "ACTIVE" }, orderBy: { name: "asc" } }),
+    getCurrentSession().catch(() => null)
+  ]);
 
   return (
     <main className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
@@ -36,12 +39,7 @@ export default async function StorePage() {
                 <p className="font-semibold">{money(product.priceCents)}</p>
                 <p className="text-sm text-muted-foreground">{product.estimatedPrintMinutes} min · {product.defaultMaterial}</p>
               </div>
-              <Button size="sm" asChild>
-                <a href="/login">
-                <ShoppingCart className="size-4" />
-                Checkout
-                </a>
-              </Button>
+              <StoreBuyButton productId={product.id} signedIn={Boolean(session?.user.id)} />
             </CardContent>
           </Card>
         )) : (

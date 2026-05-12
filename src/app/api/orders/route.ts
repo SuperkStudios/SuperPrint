@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { requireCustomer } from "@/lib/http";
 import { recordPlatformEvent } from "@/services/events";
 import { getBootstrapStatus } from "@/lib/bootstrap";
+import { createProductCheckout } from "@/services/checkout";
 
 const createOrderSchema = z.object({
   productId: z.string().optional(),
@@ -33,6 +34,14 @@ export async function POST(request: Request) {
   if (response) return response;
 
   const body = createOrderSchema.parse(await request.json());
+  if (body.productId) {
+    const checkout = await createProductCheckout({
+      productId: body.productId,
+      customerId: session!.user.id,
+      customerEmail: session!.user.email
+    });
+    return NextResponse.json(checkout, { status: 201 });
+  }
   const product = body.productId ? await prisma.product.findUnique({ where: { id: body.productId } }) : null;
   const upload = body.uploadId ? await prisma.modelUpload.findUnique({ where: { id: body.uploadId } }) : null;
   const totalCents = product?.priceCents ?? upload?.estimatedPriceCents ?? 0;

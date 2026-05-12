@@ -52,6 +52,7 @@ describe("createBootstrapOwner", () => {
           calls.push("transaction");
           return callback({
             createOwner: async () => ({ id: "owner_1" }),
+            createAuthAccount: async () => ({}),
             upsertSetting: async () => ({}),
             createPrinter: async () => ({}),
             createFilament: async (data) => {
@@ -125,6 +126,7 @@ describe("createBootstrapOwner", () => {
         transaction: async (callback) =>
           callback({
             createOwner: async () => ({ id: "owner_1" }),
+            createAuthAccount: async () => ({}),
             upsertSetting: async () => ({}),
             createPrinter: async () => ({}),
             createFilament: async (data) => {

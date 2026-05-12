@@ -53,6 +53,7 @@ export type BootstrapRepository = {
 
 export type BootstrapTransaction = {
   createOwner: (data: Record<string, unknown>) => Promise<unknown>;
+  createAuthAccount: (data: Record<string, unknown>) => Promise<unknown>;
   upsertSetting: (key: string, value: unknown) => Promise<unknown>;
   createPrinter: (data: Record<string, unknown>) => Promise<unknown>;
   createFilament: (data: Record<string, unknown>) => Promise<unknown>;
@@ -294,8 +295,15 @@ export async function createBootstrapOwner(input: BootstrapInputDraft, repo: Boo
       email: normalized.owner.email.toLowerCase(),
       name: normalized.owner.name,
       passwordHash,
+      emailVerified: true,
       role: "OWNER"
     })) as { id?: string };
+    await tx.createAuthAccount({
+      accountId: normalized.owner.email.toLowerCase(),
+      providerId: "credential",
+      userId: owner.id,
+      password: passwordHash
+    });
 
     await tx.upsertSetting("company.brandName", normalized.company.brandName);
     await tx.upsertSetting("company.primaryColor", normalized.company.primaryColor);

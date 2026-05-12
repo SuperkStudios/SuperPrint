@@ -1,9 +1,8 @@
-import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
-import { authOptions, hasAdminRole } from "./auth";
+import { getCurrentSession, hasAdminRole } from "./auth";
 
 export async function requireAdmin() {
-  const session = await getServerSession(authOptions);
+  const session = await getCurrentSession();
   if (!hasAdminRole(session?.user.role)) {
     return {
       session: null,
@@ -15,7 +14,7 @@ export async function requireAdmin() {
 }
 
 export async function requireCustomer() {
-  const session = await getServerSession(authOptions);
+  const session = await getCurrentSession();
   if (!session?.user.id) {
     return {
       session: null,

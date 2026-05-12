@@ -1,9 +1,8 @@
 import type { Metadata } from "next";
-import { getServerSession } from "next-auth";
 import Link from "next/link";
 import "./globals.css";
 import { mainNavigation, buildUserNavigation } from "@/domain/navigation";
-import { authOptions } from "@/lib/auth";
+import { getCurrentSession } from "@/lib/auth";
 import { getPlatformTheme } from "@/lib/platform-theme";
 
 export const metadata: Metadata = {
@@ -12,7 +11,7 @@ export const metadata: Metadata = {
 };
 
 export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  const [theme, session] = await Promise.all([getPlatformTheme().catch(() => null), getServerSession(authOptions)]);
+  const [theme, session] = await Promise.all([getPlatformTheme().catch(() => null), getCurrentSession().catch(() => null)]);
   const userNavigation = buildUserNavigation(session?.user.role);
 
   return (
