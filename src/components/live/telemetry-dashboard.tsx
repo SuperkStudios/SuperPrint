@@ -1,0 +1,73 @@
+"use client";
+
+import { Activity, Clock, Cpu, Gauge, Layers3, Thermometer, Zap } from "lucide-react";
+import { motion } from "framer-motion";
+import { Badge } from "@/components/ui/badge";
+
+type PublicQueue = Awaited<ReturnType<typeof import("@/services/queue").getPublicQueueState>>;
+
+export function TelemetryDashboard({ queue }: { queue: PublicQueue }) {
+  const current = queue.current;
+  const printer = current?.printer ?? queue.printers[0] ?? null;
+
+  return (
+    <div className="grid gap-4">
+      <motion.div initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} className="rounded-2xl border border-white/10 bg-white/[0.06] p-5 backdrop-blur">
+        <div className="flex items-center justify-between">
+          <Badge className="border-cyan-300/30 bg-cyan-300/10 text-cyan-100">NOW PRINTING</Badge>
+          <span className="flex items-center gap-2 text-sm text-emerald-200">
+            <span className="size-2 rounded-full bg-emerald-300 shadow-[0_0_18px_rgba(110,231,183,0.9)]" />
+            {current?.status ?? "IDLE"}
+          </span>
+        </div>
+        <h3 className="mt-5 text-2xl font-semibold text-white">{current?.orderNumber ?? "No active print"}</h3>
+        <p className="mt-2 text-sm text-zinc-400">
+          {current?.filament ? `${current.filament.color} ${current.filament.material}` : "Filament assignment pending"} · ETA {current?.etaMinutes ?? 0}m
+        </p>
+        <div className="mt-5 h-2 overflow-hidden rounded-full bg-white/10">
+          <motion.div
+            className="h-full rounded-full bg-cyan-300 shadow-[0_0_22px_rgba(103,232,249,0.9)]"
+            initial={{ width: 0 }}
+            animate={{ width: `${current?.progressPercent ?? 0}%` }}
+          />
+        </div>
+      </motion.div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Tile icon={Layers3} label="Layer progress" value={current?.progressPercent != null ? `${current.progressPercent}%` : "Waiting"} />
+        <Tile icon={Thermometer} label="Nozzle temp" value={current?.telemetry.nozzleTempC != null ? `${current.telemetry.nozzleTempC}C` : "Telemetry pending"} />
+        <Tile icon={Gauge} label="Bed temp" value={current?.telemetry.bedTempC != null ? `${current.telemetry.bedTempC}C` : "Telemetry pending"} />
+        <Tile icon={Clock} label="Remaining" value={current?.telemetry.remainingSeconds ? `${Math.ceil(current.telemetry.remainingSeconds / 60)}m` : `${current?.etaMinutes ?? 0}m`} />
+        <Tile icon={Cpu} label="Printer health" value={printer?.healthDescription ?? "No printer online"} />
+        <Tile icon={Activity} label="Runtime speed" value="Operator governed" />
+      </div>
+
+      <motion.div layout className="rounded-2xl border border-white/10 bg-black/35 p-5">
+        <div className="flex items-center justify-between">
+          <h3 className="font-semibold text-white">Next in queue</h3>
+          <Zap className="size-4 text-orange-200" />
+        </div>
+        <div className="mt-4 space-y-3">
+          {queue.nextJobs.length ? queue.nextJobs.slice(0, 3).map((job) => (
+            <motion.div key={job.id} layout className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.04] p-3 text-sm">
+              <span className="font-medium text-zinc-100">{job.orderNumber}</span>
+              <span className="text-zinc-400">#{job.queuePosition ?? "?"} · {job.etaMinutes}m</span>
+            </motion.div>
+          )) : (
+            <div className="rounded-xl border border-dashed border-white/10 p-4 text-sm text-zinc-400">Queue is clear. New approved jobs will appear here.</div>
+          )}
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+function Tile({ icon: Icon, label, value }: { icon: typeof Activity; label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.05] p-4 backdrop-blur">
+      <Icon className="size-4 text-cyan-200" />
+      <p className="mt-3 text-xs uppercase tracking-[0.22em] text-zinc-500">{label}</p>
+      <p className="mt-1 text-sm font-medium text-zinc-100">{value}</p>
+    </div>
+  );
+}
