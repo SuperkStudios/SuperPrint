@@ -92,7 +92,10 @@ export async function probePrinterConnection(
   input: { internalIp: string; controlApiUrl: string },
   options?: {
     timeoutMs?: number;
-    fetcher?: (url: string, init: { method: "GET"; signal?: AbortSignal; cache: "no-store" }) => Promise<{ status: number; statusText: string }>;
+    fetcher?: (
+      url: string,
+      init: { method: "GET"; signal?: AbortSignal; cache: "no-store" }
+    ) => Promise<{ status: number; statusText: string; text?: () => Promise<string> }>;
     webSocketConnector?: (url: string, timeoutMs: number) => Promise<void>;
   }
 ) {
@@ -103,12 +106,18 @@ export async function probePrinterConnection(
   try {
     const url = new URL(input.controlApiUrl);
     if (["ws:", "wss:"].includes(url.protocol)) {
-      await (options?.webSocketConnector ?? connectWebSocket)(input.controlApiUrl, timeoutMs);
-      return {
-        ok: true,
-        status: "CONNECTED",
-        message: "Printer SDCP WebSocket endpoint accepted a connection."
-      };
+      try {
+        await (options?.webSocketConnector ?? connectWebSocket)(input.controlApiUrl, timeoutMs);
+        return {
+          ok: true,
+          status: "CONNECTED",
+          message: "Printer SDCP WebSocket endpoint accepted a connection."
+        };
+      } catch (error) {
+        const upgradeProbe = await probeWebSocketUpgradeEndpoint(input.controlApiUrl, timeoutMs, options?.fetcher);
+        if (upgradeProbe.ok) return upgradeProbe;
+        throw error;
+      }
     }
 
     const controller = new AbortController();
@@ -141,6 +150,40 @@ export async function probePrinterConnection(
         : `Could not reach printer endpoint: ${error instanceof Error ? error.message : "network request failed"}.`
     };
   }
+}
+
+async function probeWebSocketUpgradeEndpoint(
+  controlApiUrl: string,
+  timeoutMs: number,
+  fetcher?: (
+    url: string,
+    init: { method: "GET"; signal?: AbortSignal; cache: "no-store" }
+  ) => Promise<{ status: number; statusText: string; text?: () => Promise<string> }>
+) {
+  const httpUrl = new URL(controlApiUrl);
+  httpUrl.protocol = httpUrl.protocol === "wss:" ? "https:" : "http:";
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  const response = await (fetcher ?? fetch)(httpUrl.toString(), {
+    method: "GET",
+    signal: controller.signal,
+    cache: "no-store"
+  }).finally(() => clearTimeout(timeout));
+  const body = response.text ? await response.text().catch(() => "") : "";
+
+  if (response.status === 426 && body.toLowerCase().includes("ws upgrade expected")) {
+    return {
+      ok: true,
+      status: "CONNECTED",
+      message: "Printer SDCP endpoint is reachable and requested a WebSocket upgrade."
+    };
+  }
+
+  return {
+    ok: false,
+    status: "UPGRADE_NOT_CONFIRMED",
+    message: `Printer SDCP upgrade probe returned HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ""}.`
+  };
 }
 
 function connectWebSocket(url: string, timeoutMs: number) {

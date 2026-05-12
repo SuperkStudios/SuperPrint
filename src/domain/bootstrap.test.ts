@@ -140,6 +140,9 @@ describe("bootstrap wizard helpers", () => {
         timeoutMs: 100,
         webSocketConnector: async () => {
           throw new Error("connect ECONNREFUSED");
+        },
+        fetcher: async () => {
+          throw new Error("connect ECONNREFUSED");
         }
       }
     );
@@ -147,6 +150,29 @@ describe("bootstrap wizard helpers", () => {
     expect(result.ok).toBe(false);
     expect(result.status).toBe("UNREACHABLE");
     expect(result.message).toContain("Could not reach printer endpoint");
+  });
+
+  it("accepts the Centauri SDCP upgrade response when native WebSocket handshake is flaky", async () => {
+    const result = await probePrinterConnection(
+      { internalIp: "192.168.10.125", controlApiUrl: "ws://192.168.10.125:3030/websocket" },
+      {
+        timeoutMs: 100,
+        webSocketConnector: async () => {
+          throw new Error("Printer WebSocket handshake failed.");
+        },
+        fetcher: async () => ({
+          status: 426,
+          statusText: "Upgrade Required",
+          text: async () => "WS upgrade expected"
+        })
+      }
+    );
+
+    expect(result).toEqual({
+      ok: true,
+      status: "CONNECTED",
+      message: "Printer SDCP endpoint is reachable and requested a WebSocket upgrade."
+    });
   });
 
   it("builds a save-worthy security summary without secrets", () => {
