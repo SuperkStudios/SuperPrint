@@ -24,6 +24,7 @@ export function buildUserNavigation(role?: string | null): NavItem[] {
 
   if (role) {
     return [
+      { href: "/dashboard", label: "Dashboard" },
       { href: "/store", label: "Store" },
       { href: "/upload", label: "Upload STL" },
       { href: "/orders", label: "Orders" },

@@ -8,13 +8,23 @@ import { Label } from "@/components/ui/label";
 export function LoginForm() {
   const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [name, setName] = useState("");
+  const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [message, setMessage] = useState("");
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setMessage("");
+    if (mode === "signup" && password !== confirmPassword) {
+      setMessage("Passwords do not match.");
+      return;
+    }
+    if (mode === "signup" && username.trim().length < 3) {
+      setMessage("Choose a username with at least 3 characters.");
+      return;
+    }
     const endpoint = mode === "signin" ? "/api/auth/sign-in/email" : "/api/auth/sign-up/email";
     const response = await fetch(endpoint, {
       method: "POST",
@@ -22,12 +32,13 @@ export function LoginForm() {
       body: JSON.stringify({
         email,
         password,
-        name: name || email.split("@")[0],
-        callbackURL: "/orders"
+        name: name || username || email.split("@")[0],
+        username,
+        callbackURL: "/dashboard"
       })
     });
     if (response.ok) {
-      window.location.href = "/orders";
+      window.location.href = "/dashboard";
       return;
     }
     const body = await response.json().catch(() => null);
@@ -38,7 +49,7 @@ export function LoginForm() {
     const response = await fetch("/api/auth/sign-in/social", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ provider, callbackURL: "/orders" })
+      body: JSON.stringify({ provider, callbackURL: "/dashboard" })
     });
     const body = await response.json().catch(() => null);
     if (body?.url) {
@@ -60,10 +71,16 @@ export function LoginForm() {
       </div>
       <form onSubmit={submit} className="space-y-4">
         {mode === "signup" ? (
-          <div className="space-y-2">
-            <Label htmlFor="name">Name</Label>
-            <Input id="name" value={name} onChange={(event) => setName(event.target.value)} />
-          </div>
+          <>
+            <div className="space-y-2">
+              <Label htmlFor="username">Username</Label>
+              <Input id="username" value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="name">Display name</Label>
+              <Input id="name" value={name} onChange={(event) => setName(event.target.value)} />
+            </div>
+          </>
         ) : null}
         <div className="space-y-2">
           <Label htmlFor="email">Email</Label>
@@ -73,6 +90,12 @@ export function LoginForm() {
           <Label htmlFor="password">Password</Label>
           <Input id="password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
         </div>
+        {mode === "signup" ? (
+          <div className="space-y-2">
+            <Label htmlFor="confirm-password">Confirm password</Label>
+            <Input id="confirm-password" type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} />
+          </div>
+        ) : null}
         <Button type="submit" className="w-full">{mode === "signin" ? "Sign in" : "Create account"}</Button>
         {message ? <p className="text-sm text-muted-foreground">{message}</p> : null}
       </form>

@@ -8,7 +8,7 @@ describe("user navigation", () => {
   });
 
   it("shows customer workspace links for signed-in customers", () => {
-    expect(buildUserNavigation("CUSTOMER").map((item) => item.label)).toEqual(["Store", "Upload STL", "Orders", "Profile"]);
+    expect(buildUserNavigation("CUSTOMER").map((item) => item.label)).toEqual(["Dashboard", "Store", "Upload STL", "Orders", "Profile"]);
   });
 
   it("shows sign-in when no user is present", () => {
