@@ -7,7 +7,7 @@ type HistoryPrint = {
   id: string;
   name: string;
   status: string;
-  gramsUsed: number;
+  gramsUsed?: number;
   completedAt?: string;
 };
 
@@ -19,6 +19,7 @@ type Spool = {
 export function AdminPrinterHistoryPanel({ spools }: { spools: Spool[] }) {
   const [prints, setPrints] = useState<HistoryPrint[]>([]);
   const [assignments, setAssignments] = useState<Record<string, string>>({});
+  const [manualGrams, setManualGrams] = useState<Record<string, string>>({});
   const [message, setMessage] = useState("Pull printer history to review completed prints.");
   const [loading, setLoading] = useState(false);
 
@@ -26,7 +27,7 @@ export function AdminPrinterHistoryPanel({ spools }: { spools: Spool[] }) {
     setLoading(true);
     setMessage("Pulling printer history...");
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 20000);
+    const timeout = setTimeout(() => controller.abort(), 50000);
     try {
       const response = await fetch("/api/admin/printer-history", { method: "POST", signal: controller.signal });
       const body = await response.json().catch(() => null);
@@ -46,14 +47,19 @@ export function AdminPrinterHistoryPanel({ spools }: { spools: Spool[] }) {
 
   async function act(action: "assign" | "ignore" | "importCompleted", print: HistoryPrint) {
     const spoolId = assignments[print.id];
+    const gramsUsed = Number(manualGrams[print.id] ?? print.gramsUsed ?? 0);
     if ((action === "assign" || action === "importCompleted") && !spoolId) {
       setMessage("Choose a filament roll first.");
+      return;
+    }
+    if ((action === "assign" || action === "importCompleted") && (!Number.isFinite(gramsUsed) || gramsUsed <= 0)) {
+      setMessage("Enter grams used before assigning this print.");
       return;
     }
     const response = await fetch("/api/admin/printer-history", {
       method: "PATCH",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ action, print, spoolId })
+      body: JSON.stringify({ action, print: { ...print, gramsUsed }, spoolId })
     });
     const body = await response.json().catch(() => null);
     setMessage(response.ok ? body?.message ?? "Saved." : body?.error ?? "Action failed.");
@@ -68,19 +74,27 @@ export function AdminPrinterHistoryPanel({ spools }: { spools: Spool[] }) {
         </Button>
       </div>
       <div className="overflow-hidden rounded border">
-        <div className="grid grid-cols-[1fr_110px_180px_230px] bg-muted px-3 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        <div className="grid grid-cols-[1fr_130px_180px_230px] bg-muted px-3 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
           <span>Print file</span>
           <span>Grams</span>
           <span>Filament roll</span>
           <span>Actions</span>
         </div>
         {prints.length ? prints.map((print) => (
-          <div key={print.id} className="grid grid-cols-[1fr_110px_180px_230px] items-center gap-3 border-t px-3 py-3 text-sm">
+          <div key={print.id} className="grid grid-cols-[1fr_130px_180px_230px] items-center gap-3 border-t px-3 py-3 text-sm">
             <div className="min-w-0">
               <p className="truncate font-medium">{print.name}</p>
               <p className="text-xs text-muted-foreground">{print.completedAt ? new Date(print.completedAt).toLocaleString() : "Completed time unknown"}</p>
             </div>
-            <span>{print.gramsUsed}g</span>
+            <input
+              value={manualGrams[print.id] ?? (print.gramsUsed ? String(print.gramsUsed) : "")}
+              onChange={(event) => setManualGrams((current) => ({ ...current, [print.id]: event.target.value }))}
+              placeholder="grams"
+              type="number"
+              min="0.01"
+              step="0.01"
+              className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+            />
             <select
               value={assignments[print.id] ?? ""}
               onChange={(event) => setAssignments((current) => ({ ...current, [print.id]: event.target.value }))}

@@ -109,6 +109,27 @@ describe("Centauri history parsing", () => {
     ]);
   });
 
+  it("accepts Centauri completed status strings and alternate material fields", () => {
+    const result = extractCompletedCentauriHistory([
+      {
+        TaskID: "task-c",
+        FileName: "fixture.gcode",
+        TaskStatus: "Completed",
+        TotalFilamentWeight: "37.5"
+      }
+    ]);
+
+    expect(result).toEqual([
+      {
+        id: "task-c",
+        name: "fixture.gcode",
+        status: "COMPLETED",
+        gramsUsed: 37.5,
+        completedAt: undefined
+      }
+    ]);
+  });
+
   it("parses OrcaSlicer filament grams from completed gcode", () => {
     expect(parseGcodeFilamentGrams("; filament used [g] = 5.69\n; total filament used [g] = 5.69")).toBe(5.69);
   });

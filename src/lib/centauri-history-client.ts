@@ -9,16 +9,23 @@ import {
 } from "@/domain/centauri-history";
 import { filterCompletedPrinterHistory } from "@/domain/filament-usage";
 
-export async function fetchCentauriCompletedHistory(input: { controlApiUrl: string; mainboardId?: string; timeoutMs?: number; gcodeTimeoutMs?: number }) {
+export async function fetchCentauriCompletedHistory(input: {
+  controlApiUrl: string;
+  mainboardId?: string;
+  timeoutMs?: number;
+  gcodeTimeoutMs?: number;
+  includeMissingGrams?: boolean;
+  enrichGcode?: boolean;
+}) {
   const mainboardId = input.mainboardId ?? "0000000000000000";
-  const timeoutMs = input.timeoutMs ?? 5000;
-  const gcodeTimeoutMs = input.gcodeTimeoutMs ?? 1200;
+  const timeoutMs = input.timeoutMs ?? 15000;
+  const gcodeTimeoutMs = input.gcodeTimeoutMs ?? 8000;
   const messages = await collectSdcpMessages({
     controlApiUrl: input.controlApiUrl,
     timeoutMs,
     requests: [buildCentauriHistoryListRequest(mainboardId)]
   });
-  const taskIds = extractCentauriTaskIds(messages).slice(0, 25);
+  const taskIds = extractCentauriTaskIds(messages).slice(0, 10);
 
   const detailMessages = taskIds.length
     ? await collectSdcpMessages({
@@ -29,18 +36,18 @@ export async function fetchCentauriCompletedHistory(input: { controlApiUrl: stri
     : [];
 
   const printerBaseUrl = toPrinterBaseUrl(input.controlApiUrl);
-  const completed = extractCentauriTasks(detailMessages)
+  const completed = extractCentauriTasks([...messages, ...detailMessages])
     .map((task, index) => normalizeCentauriTask(task, index))
     .filter((task) => task.status === "COMPLETED");
 
   const enriched = await Promise.all(
     completed.map(async (task) => ({
       ...task,
-      gramsUsed: task.gramsUsed ?? (await fetchGcodeFilamentGrams(printerBaseUrl, task.name, gcodeTimeoutMs))
+      gramsUsed: task.gramsUsed ?? (input.enrichGcode === false ? undefined : await fetchGcodeFilamentGrams(printerBaseUrl, task.name, gcodeTimeoutMs))
     }))
   );
 
-  return filterCompletedPrinterHistory(enriched);
+  return input.includeMissingGrams ? enriched : filterCompletedPrinterHistory(enriched);
 }
 
 function findMainboardId(messages: unknown[]) {
@@ -89,11 +96,23 @@ function collectSdcpMessages(input: { controlApiUrl: string; timeoutMs: number; 
     const expectedCmds = new Set(input.requests.map(readRequestCmd).filter((cmd): cmd is number => typeof cmd === "number"));
     const seenCmds = new Set<number>();
     let settled = false;
-    const timeout = setTimeout(() => {
+    const settle = (callback: () => void) => {
+      if (settled) return;
       settled = true;
-      socket.close();
-      resolve(messages);
+      try {
+        socket.terminate();
+      } catch {
+        // Ignore socket cleanup errors; the history response is already settled.
+      }
+      callback();
+    };
+    const timeout = setTimeout(() => {
+      settle(() => resolve(messages));
     }, input.timeoutMs);
+    const finish = (callback: () => void) => {
+      clearTimeout(timeout);
+      settle(callback);
+    };
 
     socket.on("open", () => {
       for (const request of input.requests) {
@@ -108,38 +127,32 @@ function collectSdcpMessages(input: { controlApiUrl: string; timeoutMs: number; 
         const cmd = readResponseCmd(message);
         if (typeof cmd === "number") seenCmds.add(cmd);
         if (expectedCmds.size > 0 && [...expectedCmds].every((expected) => seenCmds.has(expected))) {
-          settled = true;
-          clearTimeout(timeout);
-          socket.close();
-          resolve(messages);
+          finish(() => resolve(messages));
         }
       } catch {
         messages.push(text);
       }
     });
     socket.on("error", (error) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeout);
-      reject(error);
+      finish(() => reject(error));
     });
     socket.on("close", () => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeout);
-      resolve(messages);
+      finish(() => resolve(messages));
     });
   });
 }
 
 function readRequestCmd(value: unknown) {
-  if (!isRecord(value)) return undefined;
-  const data = isRecord(value.Data) ? value.Data : undefined;
-  return typeof data?.Cmd === "number" ? data.Cmd : undefined;
+  return readNestedCmd(value);
 }
 
 function readResponseCmd(value: unknown) {
+  return readNestedCmd(value);
+}
+
+function readNestedCmd(value: unknown) {
   if (!isRecord(value)) return undefined;
-  const data = isRecord(value.Data) ? value.Data : undefined;
-  return typeof data?.Cmd === "number" ? data.Cmd : undefined;
+  const data = value.Data;
+  if (isRecord(data) && typeof data.Cmd === "number") return data.Cmd;
+  return undefined;
 }

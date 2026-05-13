@@ -9,11 +9,27 @@ export function extractCompletedCentauriHistory(tasks: CentauriTask[]): Complete
 
 export function normalizeCentauriTask(task: CentauriTask, index = 0): CompletedPrinterHistoryItem {
   const statusCode = readNumber(task, ["Status", "TaskStatus", "status", "taskStatus"]);
+  const statusText = readString(task, ["Status", "TaskStatus", "PrintStatus", "Result", "status", "taskStatus", "printStatus", "result"]);
   return {
     id: readString(task, ["Id", "TaskId", "TaskID", "id", "taskId"]) ?? `centauri-task-${index}`,
     name: readString(task, ["TaskName", "FileName", "Name", "taskName", "fileName", "name"]) ?? "Completed print",
-    status: statusCode === 1 ? "COMPLETED" : "OTHER",
-    gramsUsed: readNumber(task, ["FilamentUsed", "FilamentWeight", "MaterialUsed", "filamentUsed", "filamentWeight", "materialUsed"]),
+    status: statusCode === 1 || isCompletedStatus(statusText) ? "COMPLETED" : "OTHER",
+    gramsUsed: readNumber(task, [
+      "FilamentUsed",
+      "FilamentWeight",
+      "MaterialUsed",
+      "TotalFilamentUsed",
+      "TotalFilamentWeight",
+      "FilamentUsage",
+      "ConsumeMaterial",
+      "filamentUsed",
+      "filamentWeight",
+      "materialUsed",
+      "totalFilamentUsed",
+      "totalFilamentWeight",
+      "filamentUsage",
+      "consumeMaterial"
+    ]),
     completedAt: readCompletedAt(task)
   };
 }
@@ -68,6 +84,11 @@ export function extractCentauriTasks(messages: unknown[]) {
   const tasks: CentauriTask[] = [];
   for (const message of messages) {
     for (const value of walk(message)) {
+      if (isRecord(value) && Array.isArray(value.HistoryDetailList)) {
+        for (const task of value.HistoryDetailList) {
+          if (isRecord(task)) tasks.push(task);
+        }
+      }
       if (isRecord(value) && hasAnyKey(value, ["Status", "TaskStatus", "TaskName", "FileName", "FilamentUsed", "MaterialUsed", "TaskId"])) {
         tasks.push(value);
       }
@@ -115,6 +136,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function hasAnyKey(value: Record<string, unknown>, keys: string[]) {
   return keys.some((key) => key in value);
+}
+
+function isCompletedStatus(status?: string) {
+  return Boolean(status && /complete|completed|success|finished|done/i.test(status));
 }
 
 export function parseGcodeFilamentGrams(gcode: string) {

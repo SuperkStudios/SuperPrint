@@ -31,12 +31,15 @@ export async function POST() {
   }
   try {
     const completedPrints = await withTimeout(
-      fetchCentauriCompletedHistory({ controlApiUrl: printer.controlApiUrl, timeoutMs: 5000, gcodeTimeoutMs: 1200 }),
-      15000
+      fetchCentauriCompletedHistory({ controlApiUrl: printer.controlApiUrl, timeoutMs: 15000, includeMissingGrams: true, enrichGcode: false }),
+      45000
     );
+    const withGrams = completedPrints.filter((print) => typeof print.gramsUsed === "number" && print.gramsUsed > 0).length;
     return NextResponse.json({
       completedPrints,
-      message: completedPrints.length ? `Found ${completedPrints.length} completed print(s).` : "No completed printer-history entries with material usage were found."
+      message: completedPrints.length
+        ? `Found ${completedPrints.length} completed print(s). ${withGrams} include material usage; enter grams manually for the rest before assigning.`
+        : "No completed printer-history entries were found."
     });
   } catch (error) {
     return NextResponse.json({ completedPrints: [], message: error instanceof Error ? error.message : "Could not read printer history." }, { status: 400 });
