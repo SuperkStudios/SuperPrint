@@ -173,7 +173,8 @@ function collectHistorySession(input: { controlApiUrl: string; mainboardId?: str
     const messages: unknown[] = [];
     let mainboardId = input.mainboardId;
     let listRequested = false;
-    let detailRequested = false;
+    const pendingDetailRequestIds = new Set<string>();
+    const detailRequestIds = new Set<string>();
     let settled = false;
     const settle = (callback: () => void) => {
       if (settled) return;
@@ -198,9 +199,13 @@ function collectHistorySession(input: { controlApiUrl: string; mainboardId?: str
       socket.send(JSON.stringify(buildCentauriHistoryListRequest(mainboardId ?? "0000000000000000")));
     };
     const requestDetails = (taskIds: string[]) => {
-      if (settled || detailRequested || taskIds.length === 0) return;
-      detailRequested = true;
-      socket.send(JSON.stringify(buildCentauriHistoryDetailRequest(mainboardId ?? "0000000000000000", taskIds.slice(0, 10))));
+      if (settled || pendingDetailRequestIds.size > 0 || taskIds.length === 0) return;
+      for (const batch of chunk(taskIds, 10)) {
+        const request = buildCentauriHistoryDetailRequest(mainboardId ?? "0000000000000000", batch);
+        detailRequestIds.add(request.Data.RequestID);
+        pendingDetailRequestIds.add(request.Data.RequestID);
+        socket.send(JSON.stringify(request));
+      }
     };
 
     socket.on("open", () => {
@@ -219,7 +224,11 @@ function collectHistorySession(input: { controlApiUrl: string; mainboardId?: str
         if (mainboardId) requestList();
         const cmd = readResponseCmd(message);
         if (cmd === 320) requestDetails(extractCentauriTaskIds(messages));
-        if (cmd === 321 && extractCentauriTasks(messages).length > 0) {
+        if (cmd === 321) {
+          const requestId = readResponseRequestId(message);
+          if (requestId) pendingDetailRequestIds.delete(requestId);
+        }
+        if (detailRequestIds.size > 0 && pendingDetailRequestIds.size === 0 && extractCentauriTasks(messages).length > 0) {
           finish(() => resolve(messages));
         }
       } catch {
@@ -235,8 +244,23 @@ function collectHistorySession(input: { controlApiUrl: string; mainboardId?: str
   });
 }
 
+function chunk<T>(items: T[], size: number) {
+  const chunks: T[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+  return chunks;
+}
+
 function readResponseCmd(value: unknown) {
   return readNestedCmd(value);
+}
+
+function readResponseRequestId(value: unknown) {
+  if (!isRecord(value)) return undefined;
+  const data = value.Data;
+  const requestId = isRecord(data) ? data.RequestID : undefined;
+  return typeof requestId === "string" ? requestId : undefined;
 }
 
 function readNestedCmd(value: unknown) {
