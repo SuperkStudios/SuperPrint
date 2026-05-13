@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { CyberHomepage, type HomepageFilament, type HomepageStats } from "@/components/homepage/cyber-homepage";
+import { calculateHomepageStats } from "@/domain/factory-stats";
 import { getBootstrapStatus } from "@/lib/bootstrap";
 import { prisma } from "@/lib/prisma";
 import { listPublicEvents } from "@/services/events";
@@ -12,26 +13,24 @@ export default async function HomePage() {
     redirect("/setup");
   }
 
-  const [queue, events, completedPrints, failedPrints, printers, filament] = await Promise.all([
+  const [queue, events, completedPrints, failedPrints, stoppedPrints, printers, filament] = await Promise.all([
     getPublicQueueState(),
     listPublicEvents(10),
     prisma.printJob.count({ where: { status: "COMPLETED" } }),
     prisma.printJob.count({ where: { status: "FAILED" } }),
+    prisma.printJob.count({ where: { status: "STOPPED" } }),
     prisma.printer.findMany({ include: { currentFilament: true }, orderBy: { publicName: "asc" } }),
     prisma.filamentSpool.findMany({ orderBy: { remainingGrams: "asc" }, take: 8 })
   ]);
 
-  const runtimeHours = Math.round(printers.reduce((total, printer) => total + printer.totalRuntimeMinutes, 0) / 60);
-  const totalFinished = completedPrints + failedPrints;
-  const successRate = totalFinished > 0 ? Math.round((completedPrints / totalFinished) * 100) : 100;
-  const filamentKg = Number((filament.reduce((total, spool) => total + (spool.startingGrams - spool.remainingGrams), 0) / 1000).toFixed(1));
-  const stats: HomepageStats = {
+  const stats: HomepageStats = calculateHomepageStats({
     completedPrints,
-    runtimeHours,
-    successRate,
-    filamentKg,
+    failedPrints,
+    stoppedPrints,
+    runtimeMinutes: printers.reduce((total, printer) => total + printer.totalRuntimeMinutes, 0),
+    filamentGramsUsed: filament.reduce((total, spool) => total + (spool.startingGrams - spool.remainingGrams), 0),
     activeQueueJobs: queue.nextJobs.length + (queue.current ? 1 : 0)
-  };
+  });
   const activeSpoolIds = new Set(printers.map((printer) => printer.currentFilamentId).filter(Boolean));
   const liveFilament: HomepageFilament[] = filament.map((spool) => ({
     id: spool.id,
