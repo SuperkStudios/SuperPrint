@@ -35,3 +35,18 @@ export function failPrintingJobAccounting(input: {
     failedPrintIncrement: 1
   };
 }
+
+export function stopPrintingJobAccounting(input: {
+  status: string;
+  reservedFilamentGrams?: number | null;
+  elapsedSeconds?: number | null;
+}) {
+  if (input.status !== "PRINTING") {
+    throw new Error("Only printing jobs can be stopped");
+  }
+  return {
+    consumedFilamentGrams: input.reservedFilamentGrams ?? 0,
+    runtimeMinutes: Math.max(0, Math.round((input.elapsedSeconds ?? 0) / 60)),
+    stoppedPrintIncrement: 1
+  };
+}

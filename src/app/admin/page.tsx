@@ -25,7 +25,8 @@ export default async function AdminDashboardPage() {
   const activeJob = jobs.find((job) => job.status === "PRINTING");
   const queuedJobs = jobs.filter((job) => job.status === "QUEUED");
   const completedJobs = jobs.filter((job) => job.status === "COMPLETED").length;
-  const stoppedJobs = jobs.filter((job) => ["FAILED", "PAUSED", "CANCELED"].includes(job.status)).length;
+  const stoppedJobs = jobs.filter((job) => job.status === "STOPPED").length;
+  const failedJobs = jobs.filter((job) => job.status === "FAILED").length;
   const accountedGrams = consumed._sum.consumedFilamentGrams ?? 0;
 
   return (
@@ -36,6 +37,7 @@ export default async function AdminDashboardPage() {
       <Metric icon={ClipboardCheck} label="Open maintenance" value={maintenance.length.toString()} />
       <Metric icon={ClipboardCheck} label="Completed prints" value={completedJobs.toString()} />
       <Metric icon={AlertTriangle} label="Stopped jobs" value={stoppedJobs.toString()} />
+      <Metric icon={AlertTriangle} label="Failed prints" value={failedJobs.toString()} />
       <Metric icon={Boxes} label="Accounted material" value={`${accountedGrams}g`} />
       <Metric icon={DatabaseBackup} label="Media records" value={media.toString()} />
 

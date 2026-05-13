@@ -8,11 +8,12 @@ import {
   pausePrintJob,
   approvePhysicalPrintStart,
   requeuePrintJob,
-  reorderPrintQueue
+  reorderPrintQueue,
+  stopPrintJob
 } from "@/services/queue";
 
 const actionSchema = z.object({
-  action: z.enum(["reorder", "approvePhysicalStart", "pause", "complete", "fail", "requeue"]),
+  action: z.enum(["reorder", "approvePhysicalStart", "pause", "complete", "stop", "fail", "requeue"]),
   printJobId: z.string().optional(),
   orderedIds: z.array(z.string()).optional(),
   checklist: z
@@ -60,6 +61,9 @@ export async function POST(request: Request) {
   }
   if (body.action === "pause") {
     return NextResponse.json({ job: await pausePrintJob(body.printJobId, session!.user.id) });
+  }
+  if (body.action === "stop") {
+    return NextResponse.json({ job: await stopPrintJob(body.printJobId, session!.user.id) });
   }
   if (body.action === "requeue") {
     return NextResponse.json({ job: await requeuePrintJob(body.printJobId, session!.user.id) });

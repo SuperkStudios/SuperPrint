@@ -36,6 +36,9 @@ export default async function AdminQueuePage() {
             <AdminActionButton endpoint="/api/admin/queue" payload={{ action: "complete", printJobId: job.id }} confirm={`Mark ${job.order.orderNumber} complete?`}>
               Complete
             </AdminActionButton>
+            <AdminActionButton endpoint="/api/admin/queue" payload={{ action: "stop", printJobId: job.id }} confirm={`Stop ${job.order.orderNumber} without counting it as failed? Material/runtime will still be accounted.`}>
+              Stop
+            </AdminActionButton>
             <AdminActionButton endpoint="/api/admin/queue" payload={{ action: "fail", printJobId: job.id, reason: "Operator marked failed" }} confirm={`Fail ${job.order.orderNumber}? This will be visible in the event audit.`}>
               Fail
             </AdminActionButton>

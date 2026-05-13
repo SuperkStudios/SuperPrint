@@ -7,6 +7,7 @@ export type PrintJobStatus =
   | "PRINTING"
   | "PAUSED"
   | "COMPLETED"
+  | "STOPPED"
   | "FAILED"
   | "CANCELED";
 
@@ -96,9 +97,22 @@ export function markPrintPaused<T extends QueueJob>(job: T, completedAt = new Da
   };
 }
 
+export function markPrintStopped<T extends QueueJob>(job: T, completedAt = new Date()): T {
+  if (job.status !== "PRINTING") {
+    throw new Error("Only printing jobs can be stopped");
+  }
+
+  return {
+    ...job,
+    status: "STOPPED",
+    completedAt,
+    queuePosition: null
+  };
+}
+
 export function markPrintRequeued<T extends QueueJob>(job: T, queuePosition: number): T {
-  if (job.status !== "PAUSED" && job.status !== "FAILED") {
-    throw new Error("Only paused or failed jobs can be requeued");
+  if (job.status !== "PAUSED" && job.status !== "FAILED" && job.status !== "STOPPED") {
+    throw new Error("Only paused, stopped, or failed jobs can be requeued");
   }
 
   return {

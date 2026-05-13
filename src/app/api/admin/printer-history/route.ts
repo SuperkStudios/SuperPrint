@@ -45,11 +45,12 @@ export async function POST() {
     }
     const fallbackPrints = enrichedPrints.length ? enrichedPrints : await readCachedPrinterHistory();
     const withGrams = fallbackPrints.filter((print) => typeof print.gramsUsed === "number" && print.gramsUsed > 0).length;
-    const interrupted = fallbackPrints.filter((print) => ["FAILED", "STOPPED"].includes(print.status)).length;
+    const stopped = fallbackPrints.filter((print) => print.status === "STOPPED").length;
+    const failed = fallbackPrints.filter((print) => print.status === "FAILED").length;
     return NextResponse.json({
       completedPrints: fallbackPrints,
       message: fallbackPrints.length
-        ? `${enrichedPrints.length ? "Found" : "Using last pulled"} ${fallbackPrints.length} printer-history row(s), including ${interrupted} stopped/failed. ${withGrams} include material usage.`
+        ? `${enrichedPrints.length ? "Found" : "Using last pulled"} ${fallbackPrints.length} printer-history row(s), including ${stopped} stopped and ${failed} failed. ${withGrams} include material usage.`
         : "No printer-history entries were found."
     });
   } catch (error) {
@@ -76,7 +77,7 @@ export async function PATCH(request: Request) {
   const result = await prisma.$transaction(async (tx) => {
     const spool = await assignPrintToSpool(body.spoolId!, body.print, tx);
     const printStatus = toPrintJobStatus(body.print.status);
-    const orderStatus = printStatus === "COMPLETED" ? "COMPLETED" : "FAILED";
+    const orderStatus = printStatus === "FAILED" ? "FAILED" : printStatus === "STOPPED" ? "STOPPED" : "COMPLETED";
     const order = await tx.order.create({
       data: {
         orderNumber: `SP-HIST-${Date.now().toString().slice(-6)}`,
@@ -93,7 +94,7 @@ export async function PATCH(request: Request) {
         status: printStatus,
         etaMinutes: 0,
         completedAt: body.print.completedAt ? new Date(body.print.completedAt) : new Date(),
-        failureReason: printStatus === "FAILED" ? `Imported ${body.print.status.toLowerCase()} printer-history entry` : undefined,
+        failureReason: printStatus === "FAILED" ? `Imported failed printer-history entry` : undefined,
         consumedFilamentGrams: Math.round(body.print.gramsUsed)
       }
     });
@@ -101,7 +102,7 @@ export async function PATCH(request: Request) {
   });
 
   await recordPlatformEvent({
-    type: result.job.status === "COMPLETED" ? "PRINT_COMPLETED" : "PRINT_FAILED",
+    type: result.job.status === "FAILED" ? "PRINT_FAILED" : result.job.status === "STOPPED" ? "PRINT_STOPPED" : "PRINT_COMPLETED",
     actorId: session!.user.id,
     payload: {
       orderNumber: result.order.orderNumber,
@@ -110,11 +111,13 @@ export async function PATCH(request: Request) {
       consumedFilamentGrams: Math.round(body.print.gramsUsed)
     }
   });
-  return NextResponse.json({ message: `Past ${body.print.status.toLowerCase()} print imported into platform stats.`, job: result.job });
+  return NextResponse.json({ message: `Past ${body.print.status.toLowerCase()} print imported into platform stats without changing failure counts unless it truly failed.`, job: result.job });
 }
 
 function toPrintJobStatus(status: string) {
-  return status === "COMPLETED" ? "COMPLETED" : "FAILED";
+  if (status === "FAILED") return "FAILED";
+  if (status === "STOPPED") return "STOPPED";
+  return "COMPLETED";
 }
 
 async function enrichFromAssignedHistory(prints: CompletedPrinterHistoryItem[]) {

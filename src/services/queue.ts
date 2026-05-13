@@ -6,11 +6,12 @@ import {
   markPrintPaused,
   markPrintRequeued,
   markPrintStarted,
+  markPrintStopped,
   publicQueueJob,
   reorderQueue
 } from "../domain/queue";
 import { approveOperatorPrintStart, type OperatorStartChecklist } from "../domain/operator-start";
-import { completePrintingJobAccounting, failPrintingJobAccounting } from "../domain/print-completion";
+import { completePrintingJobAccounting, failPrintingJobAccounting, stopPrintingJobAccounting } from "../domain/print-completion";
 import { assignQueuedJobToPrinter } from "../domain/queue-preparation";
 import { enqueuePrintJob } from "../lib/queue-broker";
 import { prisma } from "../lib/prisma";
@@ -223,6 +224,50 @@ export async function failPrintJob(printJobId: string, reason: string, actorId?:
       runtimeMinutes: accounting.runtimeMinutes,
       failureReason: accounting.failureReason,
       adminNotes: "Review printer logs before requeue"
+    }
+  });
+
+  return updated;
+}
+
+export async function stopPrintJob(printJobId: string, actorId?: string) {
+  const job = await prisma.printJob.findUniqueOrThrow({ where: { id: printJobId }, include: { order: true, printer: true } });
+  const accounting = stopPrintingJobAccounting({
+    status: job.status,
+    reservedFilamentGrams: job.reservedFilamentGrams,
+    elapsedSeconds: job.elapsedSeconds
+  });
+  const next = markPrintStopped(job);
+
+  const updated = await prisma.printJob.update({
+    where: { id: printJobId },
+    data: {
+      status: next.status,
+      completedAt: next.completedAt,
+      queuePosition: next.queuePosition,
+      consumedFilamentGrams: accounting.consumedFilamentGrams,
+      printer: job.printerId
+        ? {
+            update: {
+              totalRuntimeMinutes: { increment: accounting.runtimeMinutes }
+            }
+          }
+        : undefined,
+      order: { update: { status: "STOPPED" } }
+    },
+    include: { order: true, printer: true }
+  });
+
+  await recordPlatformEvent({
+    type: "PRINT_STOPPED",
+    actorId,
+    payload: {
+      orderNumber: updated.order.orderNumber,
+      printerName: updated.printer?.publicName,
+      status: "STOPPED",
+      consumedFilamentGrams: accounting.consumedFilamentGrams,
+      runtimeMinutes: accounting.runtimeMinutes,
+      adminNotes: "Stopped by operator; counted as interrupted, not failed"
     }
   });
 

@@ -9,12 +9,13 @@ export default async function StatsPage() {
     redirect("/setup");
   }
 
-  const [orders, uploads, jobs, completedJobs, stoppedJobs, consumed] = await Promise.all([
+  const [orders, uploads, jobs, completedJobs, stoppedJobs, failedJobs, consumed] = await Promise.all([
     prisma.order.count(),
     prisma.modelUpload.count(),
     prisma.printJob.count(),
     prisma.printJob.count({ where: { status: "COMPLETED" } }),
-    prisma.printJob.count({ where: { status: { in: ["FAILED", "PAUSED", "CANCELED"] } } }),
+    prisma.printJob.count({ where: { status: "STOPPED" } }),
+    prisma.printJob.count({ where: { status: "FAILED" } }),
     prisma.printJob.aggregate({ _sum: { consumedFilamentGrams: true } })
   ]);
   const consumedGrams = consumed._sum.consumedFilamentGrams ?? 0;
@@ -32,6 +33,7 @@ export default async function StatsPage() {
         <Stat label="Print jobs" value={jobs} />
         <Stat label="Completed prints" value={completedJobs} />
         <Stat label="Stopped jobs" value={stoppedJobs} />
+        <Stat label="Failed prints" value={failedJobs} />
         <Stat label="Accounted grams" value={consumedGrams} suffix="g" />
       </div>
     </main>

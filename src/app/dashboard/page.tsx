@@ -36,7 +36,7 @@ export default async function DashboardPage() {
 
   const activePrints = orders.flatMap((order) =>
     order.printJobs
-      .filter((job) => !["COMPLETED", "FAILED", "CANCELED"].includes(job.status))
+      .filter((job) => !["COMPLETED", "STOPPED", "FAILED", "CANCELED"].includes(job.status))
       .map((job) => ({ job, order }))
   );
   const completedMedia = orders.flatMap((order) => order.videos.map((video) => ({ video, order })));

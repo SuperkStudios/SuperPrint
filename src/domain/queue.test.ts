@@ -4,6 +4,7 @@ import {
   markPrintFailed,
   markPrintPaused,
   markPrintRequeued,
+  markPrintStopped,
   markPrintStarted,
   publicQueueJob,
   reorderQueue
@@ -47,11 +48,13 @@ describe("queue transitions", () => {
     });
   });
 
-  it("pauses and requeues printing or failed jobs with guardrails", () => {
+  it("pauses, stops, and requeues interrupted jobs with guardrails", () => {
     const started = markPrintStarted({ ...jobs[0], status: "AWAITING_OPERATOR_START" as const }, new Date("2026-05-01T10:00:00.000Z"));
     const paused = markPrintPaused(started, new Date("2026-05-01T10:15:00.000Z"));
+    const stopped = markPrintStopped(started, new Date("2026-05-01T10:20:00.000Z"));
 
     expect(paused).toMatchObject({ id: "job_1", status: "PAUSED" });
+    expect(stopped).toMatchObject({ id: "job_1", status: "STOPPED", completedAt: new Date("2026-05-01T10:20:00.000Z") });
     expect(markPrintRequeued(paused, 4)).toMatchObject({
       id: "job_1",
       status: "QUEUED",
@@ -59,9 +62,8 @@ describe("queue transitions", () => {
       failureReason: null
     });
     expect(() => markPrintPaused(jobs[0])).toThrow("Only printing jobs can be paused");
-    expect(() => markPrintRequeued({ ...jobs[0], status: "COMPLETED" as const }, 4)).toThrow(
-      "Only paused or failed jobs can be requeued"
-    );
+    expect(markPrintRequeued(stopped, 5)).toMatchObject({ id: "job_1", status: "QUEUED", queuePosition: 5 });
+    expect(() => markPrintRequeued({ ...jobs[0], status: "COMPLETED" as const }, 4)).toThrow("Only paused, stopped, or failed jobs can be requeued");
   });
 
   it("sanitizes public queue jobs without internal printer data or filesystem paths", () => {
