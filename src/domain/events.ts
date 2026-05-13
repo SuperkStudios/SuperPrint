@@ -13,6 +13,7 @@ export const platformEventTypes = [
   "PRINT_STARTED",
   "PRINT_PAUSED",
   "PRINT_REQUEUED",
+  "MANUAL_PRINT_DETECTED",
   "PRINT_COMPLETED",
   "PRINT_FAILED",
   "FILAMENT_LOW",

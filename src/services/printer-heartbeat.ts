@@ -10,6 +10,7 @@ import {
 } from "@/domain/printer-heartbeat";
 import { probePrinterConnection } from "@/domain/bootstrap";
 import { prisma } from "@/lib/prisma";
+import { recordPlatformEvent } from "@/services/events";
 
 export async function refreshPrinterHeartbeat(printerId: string) {
   const printer = await prisma.printer.findUniqueOrThrow({ where: { id: printerId } });
@@ -46,7 +47,61 @@ export async function refreshAllPrinterHeartbeats() {
 export async function readPrinterTelemetry(printerId: string): Promise<PublicPrinterTelemetry | null> {
   const printer = await prisma.printer.findUniqueOrThrow({ where: { id: printerId } });
   if (!printer.controlApiUrl.startsWith("ws")) return null;
-  return readCentauriTelemetry(printer.controlApiUrl, 3500);
+  const telemetry = await readCentauriTelemetry(printer.controlApiUrl, 3500);
+  if (telemetry) {
+    await recordManualPrintDetection(printer.id, telemetry).catch(() => undefined);
+  }
+  return telemetry;
+}
+
+export async function recordManualPrintDetection(printerId: string, telemetry: PublicPrinterTelemetry) {
+  if (telemetry.machineStatus !== 1 || !telemetry.currentFileName) return;
+  const activeQueuedJob = await prisma.printJob.findFirst({
+    where: { printerId, status: { in: ["PRINTING", "AWAITING_OPERATOR_START", "READY_ON_NODE"] } },
+    select: { id: true }
+  });
+  if (activeQueuedJob) return;
+
+  const key = `manualPrint.active.${printerId}`;
+  const current = await prisma.systemSetting.findUnique({ where: { key } });
+  if (isSameManualPrint(current?.value, telemetry.currentFileName)) return;
+
+  await prisma.systemSetting.upsert({
+    where: { key },
+    update: {
+      value: {
+        fileName: telemetry.currentFileName,
+        firstSeenAt: telemetry.updatedAt,
+        progressPercent: telemetry.progressPercent,
+        currentLayer: telemetry.currentLayer,
+        totalLayer: telemetry.totalLayer
+      }
+    },
+    create: {
+      key,
+      value: {
+        fileName: telemetry.currentFileName,
+        firstSeenAt: telemetry.updatedAt,
+        progressPercent: telemetry.progressPercent,
+        currentLayer: telemetry.currentLayer,
+        totalLayer: telemetry.totalLayer
+      }
+    }
+  });
+
+  await recordPlatformEvent({
+    type: "MANUAL_PRINT_DETECTED",
+    payload: {
+      fileName: telemetry.currentFileName,
+      progressPercent: telemetry.progressPercent,
+      currentLayer: telemetry.currentLayer,
+      totalLayer: telemetry.totalLayer
+    }
+  });
+}
+
+export function isSameManualPrint(value: unknown, fileName: string) {
+  return Boolean(value && typeof value === "object" && "fileName" in value && value.fileName === fileName);
 }
 
 function readCentauriTelemetry(controlApiUrl: string, timeoutMs: number) {

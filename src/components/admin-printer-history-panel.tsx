@@ -66,6 +66,9 @@ export function AdminPrinterHistoryPanel({ spools }: { spools: Spool[] }) {
       body: JSON.stringify({ action, print: { ...print, gramsUsed }, spoolId })
     });
     const body = await response.json().catch(() => null);
+    if (response.ok) {
+      setPrints((current) => current.filter((item) => item.id !== print.id));
+    }
     setMessage(response.ok ? body?.message ?? "Saved." : body?.error ?? "Action failed.");
   }
 
@@ -114,8 +117,8 @@ export function AdminPrinterHistoryPanel({ spools }: { spools: Spool[] }) {
               {spools.map((spool) => <option key={spool.id} value={spool.id}>{spool.label}</option>)}
             </select>
             <div className="flex flex-wrap gap-2">
-              <Button type="button" size="sm" variant="outline" onClick={() => act("assign", print)}>Assign</Button>
-              <Button type="button" size="sm" variant="outline" onClick={() => act("importCompleted", print)}>Import</Button>
+              <Button type="button" size="sm" variant="outline" onClick={() => act("assign", print)}>Save usage</Button>
+              <Button type="button" size="sm" variant="outline" onClick={() => act("importCompleted", print)}>Import stats</Button>
               <Button type="button" size="sm" variant="ghost" onClick={() => act("ignore", print)}>Ignore</Button>
             </div>
           </div>

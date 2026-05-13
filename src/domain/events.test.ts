@@ -31,4 +31,28 @@ describe("sanitizePlatformEvent", () => {
       }
     });
   });
+
+  it("allows manual print detection events without private printer data", () => {
+    const event = sanitizePlatformEvent({
+      id: "evt_2",
+      type: "MANUAL_PRINT_DETECTED",
+      actorRole: "SYSTEM",
+      createdAt: new Date("2026-05-12T10:00:00.000Z"),
+      payload: {
+        fileName: "benchy_tpu.gcode",
+        progressPercent: 3,
+        printerInternalIp: "192.168.10.125"
+      }
+    });
+
+    expect(event).toEqual({
+      id: "evt_2",
+      type: "MANUAL_PRINT_DETECTED",
+      createdAt: "2026-05-12T10:00:00.000Z",
+      payload: {
+        fileName: "benchy_tpu.gcode",
+        progressPercent: 3
+      }
+    });
+  });
 });

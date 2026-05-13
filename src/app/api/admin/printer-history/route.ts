@@ -14,7 +14,11 @@ const printSchema = z.object({
   name: z.string(),
   status: z.string(),
   gramsUsed: z.number().positive(),
-  completedAt: z.string().optional()
+  completedAt: z.string().optional(),
+  gramsSource: z.string().optional(),
+  printedLayers: z.number().optional(),
+  totalLayers: z.number().optional(),
+  material: z.string().optional()
 });
 
 const actionSchema = z.object({
@@ -59,7 +63,7 @@ export async function PATCH(request: Request) {
   const body = actionSchema.parse(await request.json());
   if (body.action === "ignore") {
     await appendIgnoredPrint(body.print);
-    return NextResponse.json({ message: "Print ignored." });
+    return NextResponse.json({ message: "Printer-history row ignored and saved." });
   }
   if (!body.spoolId) {
     return NextResponse.json({ error: "spoolId is required" }, { status: 400 });
@@ -71,12 +75,14 @@ export async function PATCH(request: Request) {
 
   const result = await prisma.$transaction(async (tx) => {
     const spool = await assignPrintToSpool(body.spoolId!, body.print, tx);
+    const printStatus = toPrintJobStatus(body.print.status);
+    const orderStatus = printStatus === "COMPLETED" ? "COMPLETED" : "FAILED";
     const order = await tx.order.create({
       data: {
         orderNumber: `SP-HIST-${Date.now().toString().slice(-6)}`,
         customerId: session!.user.id,
         totalCents: 0,
-        status: "COMPLETED",
+        status: orderStatus,
         paymentStatus: "PAST_PRINT"
       }
     });
@@ -84,9 +90,10 @@ export async function PATCH(request: Request) {
       data: {
         orderId: order.id,
         filamentId: spool.id,
-        status: "COMPLETED",
+        status: printStatus,
         etaMinutes: 0,
         completedAt: body.print.completedAt ? new Date(body.print.completedAt) : new Date(),
+        failureReason: printStatus === "FAILED" ? `Imported ${body.print.status.toLowerCase()} printer-history entry` : undefined,
         consumedFilamentGrams: Math.round(body.print.gramsUsed)
       }
     });
@@ -94,7 +101,7 @@ export async function PATCH(request: Request) {
   });
 
   await recordPlatformEvent({
-    type: "PRINT_COMPLETED",
+    type: result.job.status === "COMPLETED" ? "PRINT_COMPLETED" : "PRINT_FAILED",
     actorId: session!.user.id,
     payload: {
       orderNumber: result.order.orderNumber,
@@ -103,7 +110,11 @@ export async function PATCH(request: Request) {
       consumedFilamentGrams: Math.round(body.print.gramsUsed)
     }
   });
-  return NextResponse.json({ message: "Past print imported as a completed job.", job: result.job });
+  return NextResponse.json({ message: `Past ${body.print.status.toLowerCase()} print imported into platform stats.`, job: result.job });
+}
+
+function toPrintJobStatus(status: string) {
+  return status === "COMPLETED" ? "COMPLETED" : "FAILED";
 }
 
 async function enrichFromAssignedHistory(prints: CompletedPrinterHistoryItem[]) {
@@ -194,12 +205,17 @@ function compactPrint(print: z.infer<typeof printSchema>) {
     id: print.id,
     name: print.name,
     gramsUsed: Math.round(print.gramsUsed),
-    completedAt: print.completedAt
+    completedAt: print.completedAt,
+    status: print.status,
+    gramsSource: print.gramsSource,
+    printedLayers: print.printedLayers,
+    totalLayers: print.totalLayers,
+    material: print.material
   };
 }
 
-function readHistory(value: unknown): Array<{ id: string; name: string; gramsUsed: number; completedAt?: string }> {
-  return Array.isArray(value) ? value.filter((item): item is { id: string; name: string; gramsUsed: number; completedAt?: string } => Boolean(item && typeof item === "object" && "id" in item)) : [];
+function readHistory(value: unknown): Array<{ id: string; name: string; gramsUsed: number; completedAt?: string; status?: string }> {
+  return Array.isArray(value) ? value.filter((item): item is { id: string; name: string; gramsUsed: number; completedAt?: string; status?: string } => Boolean(item && typeof item === "object" && "id" in item)) : [];
 }
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number) {
