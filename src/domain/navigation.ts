@@ -17,6 +17,7 @@ export function buildUserNavigation(role?: string | null): NavItem[] {
       { href: "/admin/uploads", label: "Uploads" },
       { href: "/admin/products", label: "Products" },
       { href: "/admin/queue", label: "Queue" },
+      { href: "/admin/history", label: "History" },
       { href: "/admin/filament", label: "Filament" },
       { href: "/admin/settings", label: "Settings" }
     ];

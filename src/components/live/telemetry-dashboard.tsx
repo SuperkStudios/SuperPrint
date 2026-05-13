@@ -16,7 +16,7 @@ export function TelemetryDashboard({ queue }: { queue: PublicQueue }) {
   const progressPercent = current?.progressPercent ?? telemetry?.progressPercent ?? 0;
   const printerStatus = livePrinter?.online ? centauriTelemetry?.machineStatusLabel ?? "Online" : current?.status ?? "IDLE";
   const health = livePrinter?.online ? livePrinter.health : printer?.healthDescription ?? "No printer online";
-  const activePrintTitle = current?.orderNumber ?? (centauriTelemetry?.machineStatus === 1 ? "Printer active outside SuperPrint queue" : "No active print");
+  const activePrintTitle = current?.orderNumber ?? (centauriTelemetry?.machineStatus === 1 ? (centauriTelemetry.currentFileName ?? "Printer active outside SuperPrint queue") : "No active print");
   const activePrintDetails = current?.filament
     ? `${current.filament.color} ${current.filament.material} · ETA ${current.etaMinutes}m`
     : centauriTelemetry?.machineStatus === 1

@@ -6,6 +6,7 @@ import { requireAdmin } from "@/lib/http";
 import { prisma } from "@/lib/prisma";
 import { buildLocalStorageKey, resolveLocalStoragePath } from "@/lib/storage";
 import { upsertProduct } from "@/services/products";
+import { calculateProductMaterialCostCents, parseProductPrintFileEstimates } from "@/domain/products";
 
 const schema = z.object({
   id: z.string().optional(),
@@ -32,15 +33,16 @@ export async function POST(request: Request) {
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Invalid product input" }, { status: 400 });
   }
-  if (body.id && !body.imageUrl && !body.imageStorageKey) {
+  if (body.id && !body.imageStorageKey) {
     const existing = await prisma.product.findUnique({ where: { id: body.id } });
     body.imageUrl = existing?.imageUrl;
     body.imageStorageKey = existing?.imageStorageKey ?? undefined;
     body.productFileStorageKey = body.productFileStorageKey ?? existing?.productFileStorageKey ?? undefined;
   }
-  if (!body.imageUrl && !body.imageStorageKey) {
-    return NextResponse.json({ error: "Product image URL or uploaded image is required" }, { status: 400 });
+  if (!body.imageStorageKey) {
+    return NextResponse.json({ error: "Product image upload is required" }, { status: 400 });
   }
+  body.imageUrl = body.imageUrl ?? "__LOCAL_IMAGE__";
   return NextResponse.json({ product: await upsertProduct({ ...body, imageUrl: body.imageUrl ?? "__LOCAL_IMAGE__" }, session!.user.id) });
 }
 
@@ -52,22 +54,24 @@ async function readProductRequest(request: Request) {
   const imageFile = formData.get("imageFile");
   const printFile = formData.get("printFile");
   const imageStorageKey = imageFile instanceof File && imageFile.size > 0 ? await storeProductFile(imageFile, "thumbnails", ["image/png", "image/jpeg", "image/webp"]) : undefined;
-  const productFileStorageKey = printFile instanceof File && printFile.size > 0 ? await storeProductFile(printFile, "uploads", ["model/stl", "application/octet-stream", "text/plain", ""]) : undefined;
+  const parsedPrintFile = printFile instanceof File && printFile.size > 0 ? await storeProductPrintFile(printFile) : undefined;
+  const material = String(formData.get("defaultMaterial") ?? "PLA");
+  const estimatedGrams = parsedPrintFile?.estimatedGrams ?? Number(formData.get("estimatedGrams") ?? 0);
+  const spool = await prisma.filamentSpool.findFirst({ where: { material: material as never }, orderBy: { rollCostCents: "desc" } });
 
-  const imageUrl = String(formData.get("imageUrl") ?? "").trim();
   return {
     id: stringValue(formData.get("id")),
     name: String(formData.get("name") ?? ""),
     slug: stringValue(formData.get("slug")),
     description: String(formData.get("description") ?? ""),
-    imageUrl: imageStorageKey ? "__LOCAL_IMAGE__" : imageUrl,
+    imageUrl: imageStorageKey ? "__LOCAL_IMAGE__" : undefined,
     imageStorageKey,
-    productFileStorageKey,
+    productFileStorageKey: parsedPrintFile?.storageKey,
     priceCents: Number(formData.get("priceCents") ?? 0),
-    estimatedPrintMinutes: Number(formData.get("estimatedPrintMinutes") ?? 0),
-    estimatedGrams: Number(formData.get("estimatedGrams") ?? 0),
-    materialCostCents: Number(formData.get("materialCostCents") ?? 0),
-    defaultMaterial: String(formData.get("defaultMaterial") ?? "PLA"),
+    estimatedPrintMinutes: parsedPrintFile?.estimatedPrintMinutes ?? Number(formData.get("estimatedPrintMinutes") ?? 0),
+    estimatedGrams,
+    materialCostCents: calculateProductMaterialCostCents({ estimatedGrams, rollCostCents: spool?.rollCostCents ?? 0 }),
+    defaultMaterial: material,
     status: String(formData.get("status") ?? "ACTIVE")
   };
 }
@@ -84,7 +88,7 @@ async function storeProductFile(file: File, storageClass: "uploads" | "thumbnail
   if (!acceptedTypes.includes((file.type ?? "").toLowerCase())) {
     throw new Error("Unsupported product file type");
   }
-  if (storageClass === "uploads" && !/\.(stl|gcode|3mf)$/i.test(file.name)) {
+  if (storageClass === "uploads" && !/\.(stl|gcode|gco|g|3mf)$/i.test(file.name)) {
     throw new Error("Product print file must be STL, G-code, or 3MF");
   }
   if (storageClass === "thumbnails" && !/\.(png|jpe?g|webp)$/i.test(file.name)) {
@@ -95,4 +99,18 @@ async function storeProductFile(file: File, storageClass: "uploads" | "thumbnail
   await mkdir(localPath.slice(0, localPath.lastIndexOf("/")), { recursive: true });
   await writeFile(localPath, Buffer.from(await file.arrayBuffer()));
   return key;
+}
+
+async function storeProductPrintFile(file: File) {
+  const storageKey = await storeProductFile(file, "uploads", ["model/stl", "application/octet-stream", "text/plain", "application/vnd.ms-pki.stl", ""]);
+  if (!/\.(gcode|gco|g)$/i.test(file.name)) return { storageKey };
+  const localPath = resolveLocalStoragePath(storageKey);
+  const text = Buffer.from(await file.arrayBuffer()).toString("utf8");
+  await writeFile(localPath, text);
+  const estimates = parseProductPrintFileEstimates(text);
+  return {
+    storageKey,
+    estimatedGrams: estimates.estimatedGrams ?? undefined,
+    estimatedPrintMinutes: estimates.estimatedPrintMinutes ?? undefined
+  };
 }

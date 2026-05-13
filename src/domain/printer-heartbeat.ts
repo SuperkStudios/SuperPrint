@@ -78,6 +78,7 @@ export type PublicPrinterTelemetry = {
   elapsedSeconds: number | null;
   remainingSeconds: number | null;
   printSpeedPercent: number | null;
+  currentFileName: string | null;
   updatedAt: string;
 };
 
@@ -115,6 +116,7 @@ export function parseCentauriStatusTelemetry(message: unknown, checkedAt = new D
     elapsedSeconds,
     remainingSeconds,
     printSpeedPercent: readNumber(printInfo?.PrintSpeed) ?? readNumber(status.PrintSpeed),
+    currentFileName: safeFileName(readString(printInfo, ["Filename", "FileName", "TaskName", "Name", "filename", "fileName", "taskName"])),
     updatedAt: checkedAt.toISOString()
   };
 }
@@ -142,6 +144,21 @@ function readNumber(value: unknown) {
     return Number.isFinite(parsed) ? parsed : null;
   }
   return null;
+}
+
+function readString(record: SdcpRecord | null, keys: string[]) {
+  if (!record) return null;
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) return value;
+  }
+  return null;
+}
+
+function safeFileName(value: string | null) {
+  if (!value) return null;
+  const clean = value.split(/[\\/]/).filter(Boolean).pop()?.trim();
+  return clean || null;
 }
 
 function roundOne(value: number | null) {

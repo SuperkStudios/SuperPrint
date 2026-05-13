@@ -7,7 +7,7 @@ export const productInputSchema = z.object({
   imageUrl: z
     .string()
     .trim()
-    .refine((value) => value === "__LOCAL_IMAGE__" || value.startsWith("/api/products/") || /^https?:\/\//.test(value), "Invalid product image"),
+    .refine((value) => value === "__LOCAL_IMAGE__" || value.startsWith("/api/products/"), "Product images must be uploaded locally"),
   imageStorageKey: z.string().trim().optional(),
   productFileStorageKey: z.string().trim().optional(),
   priceCents: z.number().int().positive(),
@@ -44,4 +44,32 @@ export function calculateProductMaterialCostCents(input: {
   const rollGrams = input.rollGrams ?? 1000;
   if (input.estimatedGrams <= 0 || input.rollCostCents <= 0 || rollGrams <= 0) return 0;
   return Math.round((input.estimatedGrams / rollGrams) * input.rollCostCents);
+}
+
+export function parseProductPrintFileEstimates(text: string) {
+  const grams = parseGcodeGrams(text);
+  const minutes = parseGcodeMinutes(text);
+  return {
+    estimatedPrintMinutes: minutes,
+    estimatedGrams: grams == null ? null : Math.max(1, Math.round(grams))
+  };
+}
+
+function parseGcodeGrams(text: string) {
+  const direct = text.match(/;\s*(?:total\s+)?filament used \[g\]\s*[=:]\s*([0-9.]+)/i);
+  if (direct) return Number(direct[1]);
+  const orca = text.match(/filament used \[g\]:\s*([0-9.]+)/i);
+  return orca ? Number(orca[1]) : null;
+}
+
+function parseGcodeMinutes(text: string) {
+  const line = text.match(/;\s*estimated printing time\s*[:=]\s*([^\n\r]+)/i) ?? text.match(/estimated printing time:\s*([^\n\r]+)/i);
+  if (!line) return null;
+  const value = line[1].trim();
+  const days = Number(value.match(/(\d+(?:\.\d+)?)\s*d/i)?.[1] ?? 0);
+  const hours = Number(value.match(/(\d+(?:\.\d+)?)\s*h/i)?.[1] ?? 0);
+  const minutes = Number(value.match(/(\d+(?:\.\d+)?)\s*m/i)?.[1] ?? 0);
+  const seconds = Number(value.match(/(\d+(?:\.\d+)?)\s*s/i)?.[1] ?? 0);
+  const total = days * 1440 + hours * 60 + minutes + seconds / 60;
+  return total > 0 ? Math.max(1, Math.round(total)) : null;
 }

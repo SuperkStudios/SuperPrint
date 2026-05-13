@@ -7,7 +7,11 @@ import { prisma } from "@/lib/prisma";
 export const dynamic = "force-dynamic";
 
 export default async function AdminProductsPage() {
-  const products = await prisma.product.findMany({ orderBy: { createdAt: "desc" } });
+  const [products, spools] = await Promise.all([
+    prisma.product.findMany({ orderBy: { createdAt: "desc" } }),
+    prisma.filamentSpool.findMany({ orderBy: [{ material: "asc" }, { remainingGrams: "desc" }] })
+  ]);
+  const materials = [...new Map(spools.map((spool) => [spool.material, { material: spool.material, rollCostCents: spool.rollCostCents }])).values()];
 
   return (
     <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
@@ -15,7 +19,7 @@ export default async function AdminProductsPage() {
         <h2 className="text-2xl font-semibold tracking-tight">Add product</h2>
         <p className="mt-2 text-sm text-muted-foreground">Create products customers can buy into the live manufacturing queue.</p>
         <div className="mt-4">
-          <AdminProductForm />
+          <AdminProductForm materials={materials} />
         </div>
       </div>
       <div className="grid gap-4">
@@ -38,7 +42,7 @@ export default async function AdminProductsPage() {
                   Material cost {money(product.materialCostCents)}
                   {product.productFileStorageKey ? " · print file attached" : " · no print file yet"}
                 </p>
-                <AdminProductForm product={product} />
+                <AdminProductForm product={product} materials={materials} />
               </div>
             </CardContent>
           </Card>

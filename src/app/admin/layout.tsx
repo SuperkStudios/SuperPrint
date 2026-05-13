@@ -9,6 +9,7 @@ const adminNav = [
   { href: "/admin/uploads", label: "Uploads" },
   { href: "/admin/products", label: "Products" },
   { href: "/admin/queue", label: "Queue" },
+  { href: "/admin/history", label: "History" },
   { href: "/admin/filament", label: "Filament" },
   { href: "/admin/maintenance", label: "Maintenance" },
   { href: "/admin/settings", label: "Settings" }

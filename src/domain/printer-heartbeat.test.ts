@@ -107,6 +107,7 @@ describe("printer heartbeat", () => {
       elapsedSeconds: 120,
       remainingSeconds: 480,
       printSpeedPercent: 100,
+      currentFileName: "model.gcode",
       updatedAt: "2026-05-12T14:30:00.000Z"
     });
     expect(JSON.stringify(telemetry)).not.toContain("/private/path");
