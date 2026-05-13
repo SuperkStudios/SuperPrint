@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { LoginForm } from "@/components/login-form";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { getBootstrapStatus } from "@/lib/bootstrap";
+import { PageShell } from "@/components/cyber-page";
 
 export const dynamic = "force-dynamic";
 
@@ -11,7 +12,8 @@ export default async function LoginPage() {
   }
 
   return (
-    <main className="mx-auto max-w-md px-4 py-12">
+    <PageShell className="flex items-start justify-center">
+      <div className="w-full max-w-md">
       <Card>
         <CardHeader>
           <CardTitle>Sign in</CardTitle>
@@ -23,6 +25,7 @@ export default async function LoginPage() {
           <LoginForm />
         </CardContent>
       </Card>
-    </main>
+      </div>
+    </PageShell>
   );
 }

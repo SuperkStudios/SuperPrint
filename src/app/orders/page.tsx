@@ -9,6 +9,7 @@ import { createMediaToken } from "@/lib/media-token";
 import { AuthRequired } from "@/components/auth-required";
 import { getBootstrapStatus } from "@/lib/bootstrap";
 import { redirect } from "next/navigation";
+import { EmptyState, PageHero, PageSection, PageShell } from "@/components/cyber-page";
 
 export const dynamic = "force-dynamic";
 
@@ -28,10 +29,13 @@ export default async function OrdersPage() {
   });
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-12 sm:px-6 lg:px-8">
-      <p className="text-sm font-medium text-primary">Customer workspace</p>
-      <h1 className="mt-1 text-3xl font-semibold tracking-tight">Order history</h1>
-      <p className="mt-3 max-w-2xl text-muted-foreground">Track production status and retrieve finished print videos, timelapses, and thumbnails.</p>
+    <PageShell>
+      <PageSection className="max-w-6xl">
+      <PageHero
+        eyebrow="Customer workspace"
+        title="Order history"
+        copy="Track production status and retrieve finished print videos, timelapses, and thumbnails."
+      />
       <div className="mt-8 grid gap-4">
         {orders.length ? orders.map((order) => (
           <Card key={order.id}>
@@ -67,13 +71,10 @@ export default async function OrdersPage() {
             </CardContent>
           </Card>
         )) : (
-          <Card>
-            <CardContent className="p-8 text-center text-muted-foreground">
-              No orders yet. Browse the store or upload a model to start a transparent print.
-            </CardContent>
-          </Card>
+          <EmptyState title="No orders yet" copy="Browse the store or upload a model to start a transparent print." />
         )}
       </div>
-    </main>
+      </PageSection>
+    </PageShell>
   );
 }

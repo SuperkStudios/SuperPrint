@@ -9,6 +9,7 @@ import { getBootstrapStatus } from "@/lib/bootstrap";
 import { createMediaToken } from "@/lib/media-token";
 import { prisma } from "@/lib/prisma";
 import { money } from "@/lib/utils";
+import { EmptyState, PageHero, PageSection, PageShell } from "@/components/cyber-page";
 
 export const dynamic = "force-dynamic";
 
@@ -42,18 +43,18 @@ export default async function DashboardPage() {
   const completedMedia = orders.flatMap((order) => order.videos.map((video) => ({ video, order })));
 
   return (
-    <main className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
-      <div className="flex flex-col justify-between gap-4 md:flex-row md:items-end">
-        <div>
-          <p className="text-sm font-medium text-primary">Customer dashboard</p>
-          <h1 className="mt-1 text-3xl font-semibold tracking-tight">Welcome{session.user.username ? `, ${session.user.username}` : ""}</h1>
-          <p className="mt-3 max-w-2xl text-muted-foreground">Track store orders, custom uploads, live print status, and finished media from one place.</p>
-        </div>
+    <PageShell>
+      <PageSection>
+      <PageHero
+        eyebrow="Customer dashboard"
+        title={`Welcome${session.user.username ? `, ${session.user.username}` : ""}`}
+        copy="Track store orders, custom uploads, live print status, and finished media from one place."
+      >
         <div className="flex flex-wrap gap-2">
           <Button asChild><Link href="/store">Browse store</Link></Button>
           <Button asChild variant="outline"><Link href="/upload">Upload STL</Link></Button>
         </div>
-      </div>
+      </PageHero>
 
       <div className="mt-8 grid gap-4 md:grid-cols-4">
         <Metric label="Orders" value={orders.length.toString()} />
@@ -85,7 +86,7 @@ export default async function DashboardPage() {
                 </div>
               </div>
             )) : (
-              <Empty title="No orders yet" copy="Buy a catalog item or upload a model to start your first transparent print." />
+              <EmptyState title="No orders yet" copy="Buy a catalog item or upload a model to start your first transparent print." />
             )}
           </CardContent>
         </Card>
@@ -102,7 +103,7 @@ export default async function DashboardPage() {
                   </div>
                   <p className="mt-1 text-muted-foreground">{upload.sliceJobs[0] ? `Slice ${upload.sliceJobs[0].status}` : "Waiting for operator review"}</p>
                 </div>
-              )) : <Empty title="No uploads" copy="Your STL review requests will show here." />}
+              )) : <EmptyState title="No uploads" copy="Your STL review requests will show here." />}
             </CardContent>
           </Card>
 
@@ -116,12 +117,13 @@ export default async function DashboardPage() {
                     <a href={`/api/media/${createMediaToken({ key: video.storageKey, expiresAt: Date.now() + 60 * 60 * 1000 })}`}>View video</a>
                   </Button>
                 </div>
-              )) : <Empty title="No media ready" copy="Completed print videos and timelapses will appear here." />}
+              )) : <EmptyState title="No media ready" copy="Completed print videos and timelapses will appear here." />}
             </CardContent>
           </Card>
         </div>
       </div>
-    </main>
+      </PageSection>
+    </PageShell>
   );
 }
 
@@ -133,14 +135,5 @@ function Metric({ label, value }: { label: string; value: string }) {
         <p className="text-sm text-muted-foreground">{label}</p>
       </CardContent>
     </Card>
-  );
-}
-
-function Empty({ title, copy }: { title: string; copy: string }) {
-  return (
-    <div className="rounded border border-dashed p-5 text-sm">
-      <p className="font-medium">{title}</p>
-      <p className="mt-1 text-muted-foreground">{copy}</p>
-    </div>
   );
 }

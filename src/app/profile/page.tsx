@@ -3,6 +3,7 @@ import { AuthRequired } from "@/components/auth-required";
 import { ProfileForm } from "@/components/profile-form";
 import { getBootstrapStatus } from "@/lib/bootstrap";
 import { getCurrentSession } from "@/lib/auth";
+import { PageHero, PageSection, PageShell } from "@/components/cyber-page";
 
 export const dynamic = "force-dynamic";
 
@@ -14,13 +15,13 @@ export default async function ProfilePage() {
   }
 
   return (
-    <main className="mx-auto max-w-3xl px-4 py-12 sm:px-6 lg:px-8">
-      <p className="text-sm font-medium text-primary">Customer profile</p>
-      <h1 className="mt-1 text-3xl font-semibold tracking-tight">Profile</h1>
-      <p className="mt-3 text-muted-foreground">Set your profile photo, username, and bio for your SuperPrint account.</p>
+    <PageShell>
+      <PageSection className="max-w-3xl">
+      <PageHero eyebrow="Customer profile" title="Profile" copy="Set your profile photo, username, and bio for your SuperPrint account." />
       <div className="mt-8">
         <ProfileForm user={session.user} />
       </div>
-    </main>
+      </PageSection>
+    </PageShell>
   );
 }

@@ -5,6 +5,8 @@ import { getBootstrapStatus } from "@/lib/bootstrap";
 import { redirect } from "next/navigation";
 import { getCurrentSession } from "@/lib/auth";
 import { StoreBuyButton } from "@/components/store-buy-button";
+import { EmptyState, PageHero, PageSection, PageShell } from "@/components/cyber-page";
+import { Badge } from "@/components/ui/badge";
 
 export const dynamic = "force-dynamic";
 
@@ -18,19 +20,21 @@ export default async function StorePage() {
   ]);
 
   return (
-    <main className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
-      <p className="text-sm font-medium text-primary">Approved products</p>
-      <h1 className="mt-1 text-3xl font-semibold tracking-tight">Print-ready catalog</h1>
-      <p className="mt-3 max-w-2xl text-muted-foreground">
-        Products here are already printable, priced, and ready to enter the live manufacturing queue after checkout.
-      </p>
+    <PageShell>
+      <PageSection>
+        <PageHero
+          eyebrow="Approved products"
+          title="Print-ready catalog"
+          copy="Products here are already printable, priced, and ready to enter the live manufacturing queue after checkout."
+        />
       <div className="mt-8 grid gap-6 md:grid-cols-3">
         {products.length ? products.map((product) => (
-          <Card key={product.id}>
+          <Card key={product.id} className="overflow-hidden">
             <CardHeader>
-              <div className="mb-4 flex h-36 items-center justify-center rounded bg-zinc-950 text-white">
+              <div className="mb-4 flex h-44 items-center justify-center overflow-hidden rounded-xl bg-zinc-950 text-white">
                 <img src={product.imageUrl} alt="" className="h-full w-full rounded object-cover" />
               </div>
+              <Badge className="w-fit bg-primary/10 text-primary">Queue-ready</Badge>
               <CardTitle>{product.name}</CardTitle>
               <CardDescription>{product.description}</CardDescription>
             </CardHeader>
@@ -43,13 +47,12 @@ export default async function StorePage() {
             </CardContent>
           </Card>
         )) : (
-          <Card className="md:col-span-3">
-            <CardContent className="p-8 text-center text-muted-foreground">
-              No approved products are active yet. Check back after the next catalog release.
-            </CardContent>
-          </Card>
+          <div className="md:col-span-3">
+            <EmptyState title="No products published yet" copy="Approved products will appear here after the operator publishes the first catalog item." />
+          </div>
         )}
       </div>
-    </main>
+      </PageSection>
+    </PageShell>
   );
 }

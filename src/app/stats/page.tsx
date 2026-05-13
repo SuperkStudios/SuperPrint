@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getBootstrapStatus } from "@/lib/bootstrap";
 import { prisma } from "@/lib/prisma";
+import { MetricTile, PageHero, PageSection, PageShell } from "@/components/cyber-page";
 
 export const dynamic = "force-dynamic";
 
@@ -21,30 +22,19 @@ export default async function StatsPage() {
   const consumedGrams = consumed._sum.consumedFilamentGrams ?? 0;
 
   return (
-    <main className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
-      <p className="text-sm font-medium text-primary">Stats</p>
-      <h1 className="mt-2 text-4xl font-semibold tracking-tight">Factory activity</h1>
-      <p className="mt-3 max-w-2xl text-muted-foreground">
-        Public-safe operating totals for the local SuperPrint instance.
-      </p>
+    <PageShell>
+      <PageSection>
+      <PageHero eyebrow="Stats" title="Factory activity" copy="Public-safe operating totals for the local SuperPrint instance." />
       <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <Stat label="Orders" value={orders} />
-        <Stat label="Model uploads" value={uploads} />
-        <Stat label="Print jobs" value={jobs} />
-        <Stat label="Completed prints" value={completedJobs} />
-        <Stat label="Stopped jobs" value={stoppedJobs} />
-        <Stat label="Failed prints" value={failedJobs} />
-        <Stat label="Accounted grams" value={consumedGrams} suffix="g" />
+        <MetricTile label="Orders" value={orders} />
+        <MetricTile label="Model uploads" value={uploads} />
+        <MetricTile label="Print jobs" value={jobs} />
+        <MetricTile label="Completed prints" value={completedJobs} />
+        <MetricTile label="Stopped jobs" value={stoppedJobs} />
+        <MetricTile label="Failed prints" value={failedJobs} />
+        <MetricTile label="Accounted grams" value={`${consumedGrams}g`} />
       </div>
-    </main>
-  );
-}
-
-function Stat({ label, value, suffix = "" }: { label: string; value: number; suffix?: string }) {
-  return (
-    <div className="rounded-lg border bg-white p-6">
-      <p className="text-sm text-muted-foreground">{label}</p>
-      <p className="mt-2 text-3xl font-semibold">{value}{suffix}</p>
-    </div>
+      </PageSection>
+    </PageShell>
   );
 }

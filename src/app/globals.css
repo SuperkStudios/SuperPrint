@@ -23,6 +23,42 @@
   --radius: 0.5rem;
 }
 
+.dark {
+  --background: 222 47% 4%;
+  --foreground: 210 40% 98%;
+  --card: 222 38% 7%;
+  --card-foreground: 210 40% 98%;
+  --secondary: 36 95% 58%;
+  --secondary-foreground: 222 47% 4%;
+  --muted: 222 24% 13%;
+  --muted-foreground: 215 18% 70%;
+  --accent: 190 90% 52%;
+  --accent-foreground: 222 47% 4%;
+  --destructive: 0 72% 56%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 217 22% 18%;
+  --input: 217 22% 18%;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not(.light) {
+    --background: 222 47% 4%;
+    --foreground: 210 40% 98%;
+    --card: 222 38% 7%;
+    --card-foreground: 210 40% 98%;
+    --secondary: 36 95% 58%;
+    --secondary-foreground: 222 47% 4%;
+    --muted: 222 24% 13%;
+    --muted-foreground: 215 18% 70%;
+    --accent: 190 90% 52%;
+    --accent-foreground: 222 47% 4%;
+    --destructive: 0 72% 56%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 217 22% 18%;
+    --input: 217 22% 18%;
+  }
+}
+
 * {
   border-color: hsl(var(--border));
 }
@@ -30,6 +66,26 @@
 body {
   background: hsl(var(--background));
   color: hsl(var(--foreground));
+}
+
+.app-shell {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 18% 0%, hsl(var(--primary) / 0.12), transparent 30rem),
+    radial-gradient(circle at 86% 8%, rgba(249, 115, 22, 0.1), transparent 26rem),
+    linear-gradient(180deg, hsl(var(--background)), hsl(var(--muted) / 0.42));
+}
+
+.cyber-surface {
+  border: 1px solid hsl(var(--border));
+  background: hsl(var(--card) / 0.78);
+  box-shadow: 0 24px 80px rgba(2, 6, 23, 0.08);
+  backdrop-filter: blur(18px);
+}
+
+.dark .cyber-surface,
+:root:not(.light) .cyber-surface {
+  box-shadow: 0 24px 80px rgba(8, 47, 73, 0.24);
 }
 
 .factory-grid {

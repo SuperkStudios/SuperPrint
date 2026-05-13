@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { LockKeyhole } from "lucide-react";
+import { PageShell } from "@/components/cyber-page";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 
 export function AuthRequired({ title, copy }: { title: string; copy: string }) {
   return (
-    <main className="mx-auto max-w-2xl px-4 py-16 sm:px-6">
-      <Card>
+    <PageShell className="flex items-start justify-center">
+      <Card className="mt-8 w-full max-w-2xl">
         <CardContent className="p-8 text-center">
           <div className="mx-auto flex size-12 items-center justify-center rounded bg-primary/10 text-primary">
             <LockKeyhole className="size-5" />
@@ -18,6 +19,6 @@ export function AuthRequired({ title, copy }: { title: string; copy: string }) {
           </Button>
         </CardContent>
       </Card>
-    </main>
+    </PageShell>
   );
 }

@@ -4,6 +4,7 @@ import "./globals.css";
 import { mainNavigation, buildUserNavigation } from "@/domain/navigation";
 import { getCurrentSession } from "@/lib/auth";
 import { getPlatformTheme } from "@/lib/platform-theme";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 export const metadata: Metadata = {
   title: "SuperPrint",
@@ -15,12 +16,17 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
   const userNavigation = buildUserNavigation(session?.user.role);
 
   return (
-    <html lang="en" style={theme?.cssVariables}>
+    <html lang="en" style={theme?.cssVariables} suppressHydrationWarning>
       <body className="min-h-screen antialiased">
-        <header className="sticky top-0 z-50 border-b bg-white/90 backdrop-blur">
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(() => { try { const t = localStorage.getItem("superprint-theme") || "system"; const d = t === "dark" || (t === "system" && matchMedia("(prefers-color-scheme: dark)").matches); document.documentElement.classList.toggle("dark", d); document.documentElement.classList.toggle("light", !d); document.documentElement.dataset.theme = t; } catch (_) {} })();`
+          }}
+        />
+        <header className="sticky top-0 z-50 border-b bg-background/82 backdrop-blur-xl">
           <div className="mx-auto flex min-h-16 max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
             <Link href="/" className="flex items-center gap-2 font-semibold tracking-tight">
-              <span className="flex size-8 items-center justify-center rounded bg-primary text-sm text-primary-foreground">
+              <span className="flex size-8 items-center justify-center rounded bg-primary text-sm text-primary-foreground shadow-[0_0_24px_hsl(var(--primary)/0.32)]">
                 SP
               </span>
               SuperPrint
@@ -33,11 +39,12 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
               ))}
             </nav>
             <nav aria-label="User navigation" className="flex flex-wrap items-center justify-end gap-2">
+              <ThemeToggle />
               {userNavigation.map((item, index) => (
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={index === 0 ? "rounded bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90" : "rounded border px-3 py-2 text-sm font-medium hover:bg-muted"}
+                  className={index === 0 ? "rounded bg-primary px-3 py-2 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90" : "rounded border bg-card/60 px-3 py-2 text-sm font-medium hover:bg-muted"}
                 >
                   {item.label}
                 </Link>

@@ -5,6 +5,7 @@ import { getCurrentSession } from "@/lib/auth";
 import { getBootstrapStatus } from "@/lib/bootstrap";
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
+import { CyberCard, EmptyState, PageHero, PageSection, PageShell } from "@/components/cyber-page";
 
 export const dynamic = "force-dynamic";
 
@@ -29,19 +30,20 @@ export default async function UploadPage() {
   });
 
   return (
-    <main className="mx-auto grid max-w-5xl gap-8 px-4 py-12 sm:px-6 md:grid-cols-[0.8fr_1.2fr] lg:px-8">
-      <div>
-        <p className="text-sm font-medium text-primary">Custom print request</p>
-        <h1 className="text-3xl font-semibold tracking-tight">Upload an STL</h1>
-        <p className="mt-3 text-muted-foreground">
-          Custom models enter an approval queue. Once approved, SuperPrint creates a checkout-ready order with price,
-          ETA, material, and queue placement.
-        </p>
-        <div className="mt-6 space-y-3 text-sm text-muted-foreground">
-          <p className="rounded border bg-white p-3">Accepted files: `.stl` up to 150MB.</p>
-          <p className="rounded border bg-white p-3">Review includes material fit, printability, risk, ETA, and price.</p>
+    <PageShell>
+      <PageSection className="grid max-w-5xl gap-8 md:grid-cols-[0.8fr_1.2fr]">
+      <PageHero
+        eyebrow="Custom print request"
+        title="Upload an STL"
+        copy="Custom models enter an approval queue. Once approved, SuperPrint creates a checkout-ready order with price, ETA, material, and queue placement."
+        className="md:col-span-2"
+      />
+      <CyberCard>
+        <div className="space-y-3 text-sm text-muted-foreground">
+          <p className="rounded-xl border bg-background/35 p-3">Accepted files: `.stl` up to 150MB.</p>
+          <p className="rounded-xl border bg-background/35 p-3">Review includes material fit, printability, risk, ETA, and price.</p>
         </div>
-      </div>
+      </CyberCard>
       <Card>
         <CardHeader>
           <CardTitle>Model approval request</CardTitle>
@@ -69,9 +71,10 @@ export default async function UploadPage() {
               </div>
               <span className="text-muted-foreground">{upload.createdAt.toLocaleString()}</span>
             </div>
-          )) : <p className="text-sm text-muted-foreground">No uploads yet.</p>}
+          )) : <EmptyState title="No uploads yet" copy="Your private model review requests will show here after your first STL upload." />}
         </CardContent>
       </Card>
-    </main>
+      </PageSection>
+    </PageShell>
   );
 }
