@@ -25,15 +25,23 @@ export function AdminPrinterHistoryPanel({ spools }: { spools: Spool[] }) {
   async function pullHistory() {
     setLoading(true);
     setMessage("Pulling printer history...");
-    const response = await fetch("/api/admin/printer-history", { method: "POST" });
-    const body = await response.json().catch(() => null);
-    setLoading(false);
-    if (!response.ok) {
-      setMessage(body?.message ?? body?.error ?? "Could not pull printer history.");
-      return;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20000);
+    try {
+      const response = await fetch("/api/admin/printer-history", { method: "POST", signal: controller.signal });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) {
+        setMessage(body?.message ?? body?.error ?? "Could not pull printer history.");
+        return;
+      }
+      setPrints(body.completedPrints ?? []);
+      setMessage(body.message ?? "History updated.");
+    } catch (error) {
+      setMessage(error instanceof DOMException && error.name === "AbortError" ? "Printer history pull timed out. Try again or check the printer connection." : "Could not pull printer history.");
+    } finally {
+      clearTimeout(timeout);
+      setLoading(false);
     }
-    setPrints(body.completedPrints ?? []);
-    setMessage(body.message ?? "History updated.");
   }
 
   async function act(action: "assign" | "ignore" | "importCompleted", print: HistoryPrint) {

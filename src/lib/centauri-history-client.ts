@@ -9,9 +9,10 @@ import {
 } from "@/domain/centauri-history";
 import { filterCompletedPrinterHistory } from "@/domain/filament-usage";
 
-export async function fetchCentauriCompletedHistory(input: { controlApiUrl: string; mainboardId?: string; timeoutMs?: number }) {
+export async function fetchCentauriCompletedHistory(input: { controlApiUrl: string; mainboardId?: string; timeoutMs?: number; gcodeTimeoutMs?: number }) {
   const mainboardId = input.mainboardId ?? "0000000000000000";
-  const timeoutMs = input.timeoutMs ?? 15000;
+  const timeoutMs = input.timeoutMs ?? 5000;
+  const gcodeTimeoutMs = input.gcodeTimeoutMs ?? 1200;
   const messages = await collectSdcpMessages({
     controlApiUrl: input.controlApiUrl,
     timeoutMs,
@@ -32,13 +33,12 @@ export async function fetchCentauriCompletedHistory(input: { controlApiUrl: stri
     .map((task, index) => normalizeCentauriTask(task, index))
     .filter((task) => task.status === "COMPLETED");
 
-  const enriched = [];
-  for (const task of completed) {
-    enriched.push({
+  const enriched = await Promise.all(
+    completed.map(async (task) => ({
       ...task,
-      gramsUsed: task.gramsUsed ?? (await fetchGcodeFilamentGrams(printerBaseUrl, task.name, timeoutMs))
-    });
-  }
+      gramsUsed: task.gramsUsed ?? (await fetchGcodeFilamentGrams(printerBaseUrl, task.name, gcodeTimeoutMs))
+    }))
+  );
 
   return filterCompletedPrinterHistory(enriched);
 }

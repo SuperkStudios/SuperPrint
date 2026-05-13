@@ -30,7 +30,10 @@ export async function POST() {
     return NextResponse.json({ completedPrints: [], message: "No printer is registered." }, { status: 404 });
   }
   try {
-    const completedPrints = await fetchCentauriCompletedHistory({ controlApiUrl: printer.controlApiUrl });
+    const completedPrints = await withTimeout(
+      fetchCentauriCompletedHistory({ controlApiUrl: printer.controlApiUrl, timeoutMs: 5000, gcodeTimeoutMs: 1200 }),
+      15000
+    );
     return NextResponse.json({
       completedPrints,
       message: completedPrints.length ? `Found ${completedPrints.length} completed print(s).` : "No completed printer-history entries with material usage were found."
@@ -130,4 +133,20 @@ function compactPrint(print: z.infer<typeof printSchema>) {
 
 function readHistory(value: unknown): Array<{ id: string; name: string; gramsUsed: number; completedAt?: string }> {
   return Array.isArray(value) ? value.filter((item): item is { id: string; name: string; gramsUsed: number; completedAt?: string } => Boolean(item && typeof item === "object" && "id" in item)) : [];
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number) {
+  return new Promise<T>((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error("Printer history pull timed out. Try again or check the printer connection.")), timeoutMs);
+    promise.then(
+      (value) => {
+        clearTimeout(timeout);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timeout);
+        reject(error);
+      }
+    );
+  });
 }
