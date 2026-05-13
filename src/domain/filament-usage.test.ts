@@ -104,7 +104,12 @@ describe("Centauri history parsing", () => {
         name: "dragon.gcode",
         status: "COMPLETED",
         gramsUsed: 123.4,
-        completedAt: new Date(1778547600 * 1000).toISOString()
+        gramsSource: "PRINTER_HISTORY",
+        completedAt: new Date(1778547600 * 1000).toISOString(),
+        printTimeSeconds: undefined,
+        printedLayers: undefined,
+        totalLayers: undefined,
+        material: undefined
       }
     ]);
   });
@@ -125,7 +130,60 @@ describe("Centauri history parsing", () => {
         name: "fixture.gcode",
         status: "COMPLETED",
         gramsUsed: 37.5,
-        completedAt: undefined
+        gramsSource: "PRINTER_HISTORY",
+        completedAt: undefined,
+        printTimeSeconds: undefined,
+        printedLayers: undefined,
+        totalLayers: undefined,
+        material: undefined
+      }
+    ]);
+  });
+
+  it("keeps stopped and failed Centauri history with volume-based gram estimates", () => {
+    const result = extractCompletedCentauriHistory([
+      {
+        TaskId: "stopped-task",
+        TaskName: "sample.gcode",
+        TaskStatus: 3,
+        CurrentLayerTalVolume: 10,
+        FilamentDensity: 1.25,
+        AlreadyPrintLayer: 12,
+        SliceInformation: { total_layer_numbers: 100, print_time: 60 }
+      },
+      {
+        TaskId: "failed-task",
+        TaskName: "failed.gcode",
+        TaskStatus: 2,
+        CurrentLayerTalVolume: 2,
+        FilamentDensity: 1.2
+      }
+    ]);
+
+    expect(result).toEqual([
+      {
+        id: "stopped-task",
+        name: "sample.gcode",
+        status: "STOPPED",
+        gramsUsed: 12.5,
+        gramsSource: "VOLUME_ESTIMATE",
+        completedAt: undefined,
+        printTimeSeconds: 60,
+        printedLayers: 12,
+        totalLayers: 100,
+        material: undefined
+      },
+      {
+        id: "failed-task",
+        name: "failed.gcode",
+        status: "FAILED",
+        gramsUsed: 2.4,
+        gramsSource: "VOLUME_ESTIMATE",
+        completedAt: undefined,
+        printTimeSeconds: undefined,
+        printedLayers: undefined,
+        totalLayers: undefined,
+        material: undefined
       }
     ]);
   });

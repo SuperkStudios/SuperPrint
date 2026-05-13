@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { fetchCentauriCompletedHistory } from "@/lib/centauri-history-client";
+import type { CompletedPrinterHistoryItem } from "@/domain/filament-usage";
 import { requireAdmin } from "@/lib/http";
 import { prisma } from "@/lib/prisma";
 import { recordPlatformEvent } from "@/services/events";
@@ -31,19 +32,21 @@ export async function POST() {
   }
   try {
     const completedPrints = await withTimeout(
-      fetchCentauriCompletedHistory({ controlApiUrl: printer.controlApiUrl, timeoutMs: 15000, includeMissingGrams: true, enrichGcode: false }),
+      fetchCentauriCompletedHistory({ controlApiUrl: printer.controlApiUrl, timeoutMs: 15000, gcodeTimeoutMs: 5000, includeMissingGrams: true, enrichGcode: true }),
       45000
     );
-    if (completedPrints.length) {
-      await cachePrinterHistory(completedPrints);
+    const enrichedPrints = await enrichFromAssignedHistory(completedPrints);
+    if (enrichedPrints.length) {
+      await cachePrinterHistory(enrichedPrints);
     }
-    const fallbackPrints = completedPrints.length ? completedPrints : await readCachedPrinterHistory();
+    const fallbackPrints = enrichedPrints.length ? enrichedPrints : await readCachedPrinterHistory();
     const withGrams = fallbackPrints.filter((print) => typeof print.gramsUsed === "number" && print.gramsUsed > 0).length;
+    const interrupted = fallbackPrints.filter((print) => ["FAILED", "STOPPED"].includes(print.status)).length;
     return NextResponse.json({
       completedPrints: fallbackPrints,
       message: fallbackPrints.length
-        ? `${completedPrints.length ? "Found" : "Using last pulled"} ${fallbackPrints.length} completed print(s). ${withGrams} include material usage; enter grams manually for the rest before assigning.`
-        : "No completed printer-history entries were found."
+        ? `${enrichedPrints.length ? "Found" : "Using last pulled"} ${fallbackPrints.length} printer-history row(s), including ${interrupted} stopped/failed. ${withGrams} include material usage.`
+        : "No printer-history entries were found."
     });
   } catch (error) {
     return NextResponse.json({ completedPrints: [], message: error instanceof Error ? error.message : "Could not read printer history." }, { status: 400 });
@@ -103,7 +106,46 @@ export async function PATCH(request: Request) {
   return NextResponse.json({ message: "Past print imported as a completed job.", job: result.job });
 }
 
-async function cachePrinterHistory(prints: Array<{ id: string; name: string; status: string; gramsUsed?: number; completedAt?: string }>) {
+async function enrichFromAssignedHistory(prints: CompletedPrinterHistoryItem[]) {
+  const spools = await prisma.filamentSpool.findMany({ select: { assignedPrinterHistory: true } });
+  const knownByName = new Map<string, { gramsUsed: number }>();
+  for (const spool of spools) {
+    for (const item of readHistory(spool.assignedPrinterHistory)) {
+      if (item.gramsUsed > 0) knownByName.set(item.name, item);
+    }
+  }
+  const nameEnriched = prints.map((print) => {
+    if (typeof print.gramsUsed === "number" && print.gramsUsed > 0) return print;
+    if (!["COMPLETED", "FAILED", "STOPPED"].includes(print.status)) return print;
+    const known = knownByName.get(print.name);
+    if (!known || !print.printedLayers || !print.totalLayers) return print;
+    const ratio = Math.max(0, Math.min(1, print.printedLayers / print.totalLayers));
+    return {
+      ...print,
+      gramsUsed: Number((known.gramsUsed * ratio).toFixed(2)),
+      gramsSource: "MATCHED_COMPLETED_PRINT" as const
+    };
+  });
+  const knownRates = nameEnriched
+    .filter((print): print is CompletedPrinterHistoryItem & { gramsUsed: number; printTimeSeconds: number } => {
+      return typeof print.gramsUsed === "number" && print.gramsUsed > 0 && typeof print.printTimeSeconds === "number" && print.printTimeSeconds > 0;
+    })
+    .map((print) => print.gramsUsed / print.printTimeSeconds)
+    .filter((rate) => Number.isFinite(rate) && rate > 0);
+  const fallbackRate = knownRates.length ? knownRates.reduce((total, rate) => total + rate, 0) / knownRates.length : undefined;
+
+  return nameEnriched.map((print) => {
+    if (typeof print.gramsUsed === "number" && print.gramsUsed > 0) return print;
+    if (!fallbackRate || !print.printTimeSeconds || print.printTimeSeconds <= 0) return print;
+    return {
+      ...print,
+      gramsUsed: Number((fallbackRate * print.printTimeSeconds).toFixed(2)),
+      gramsSource: "TIME_ESTIMATE" as const
+    };
+  });
+}
+
+async function cachePrinterHistory(prints: CompletedPrinterHistoryItem[]) {
   await prisma.systemSetting.upsert({
     where: { key: "printerHistory.lastPull" },
     update: { value: prints },
@@ -115,7 +157,7 @@ async function readCachedPrinterHistory() {
   const setting = await prisma.systemSetting.findUnique({ where: { key: "printerHistory.lastPull" } });
   return Array.isArray(setting?.value)
     ? setting.value.filter(
-        (item): item is { id: string; name: string; status: string; gramsUsed?: number; completedAt?: string } =>
+        (item): item is CompletedPrinterHistoryItem =>
           Boolean(item && typeof item === "object" && "id" in item && "name" in item && "status" in item)
       )
     : [];

@@ -10,27 +10,34 @@ export function extractCompletedCentauriHistory(tasks: CentauriTask[]): Complete
 export function normalizeCentauriTask(task: CentauriTask, index = 0): CompletedPrinterHistoryItem {
   const statusCode = readNumber(task, ["Status", "TaskStatus", "status", "taskStatus"]);
   const statusText = readString(task, ["Status", "TaskStatus", "PrintStatus", "Result", "status", "taskStatus", "printStatus", "result"]);
+  const directGrams = readNumber(task, [
+    "FilamentUsed",
+    "FilamentWeight",
+    "MaterialUsed",
+    "TotalFilamentUsed",
+    "TotalFilamentWeight",
+    "FilamentUsage",
+    "ConsumeMaterial",
+    "filamentUsed",
+    "filamentWeight",
+    "materialUsed",
+    "totalFilamentUsed",
+    "totalFilamentWeight",
+    "filamentUsage",
+    "consumeMaterial"
+  ]);
+  const volumeGrams = calculateVolumeGrams(task);
   return {
     id: readString(task, ["Id", "TaskId", "TaskID", "id", "taskId"]) ?? `centauri-task-${index}`,
     name: readString(task, ["TaskName", "FileName", "Name", "taskName", "fileName", "name"]) ?? "Completed print",
-    status: statusCode === 1 || isCompletedStatus(statusText) ? "COMPLETED" : "OTHER",
-    gramsUsed: readNumber(task, [
-      "FilamentUsed",
-      "FilamentWeight",
-      "MaterialUsed",
-      "TotalFilamentUsed",
-      "TotalFilamentWeight",
-      "FilamentUsage",
-      "ConsumeMaterial",
-      "filamentUsed",
-      "filamentWeight",
-      "materialUsed",
-      "totalFilamentUsed",
-      "totalFilamentWeight",
-      "filamentUsage",
-      "consumeMaterial"
-    ]),
-    completedAt: readCompletedAt(task)
+    status: normalizeTaskStatus(statusCode, statusText),
+    gramsUsed: directGrams ?? volumeGrams,
+    gramsSource: typeof directGrams === "number" ? "PRINTER_HISTORY" : typeof volumeGrams === "number" ? "VOLUME_ESTIMATE" : undefined,
+    completedAt: readCompletedAt(task),
+    printTimeSeconds: readNestedNumber(task, [["SliceInformation", "print_time"], ["SliceInformation", "printTime"]]),
+    printedLayers: readNumber(task, ["AlreadyPrintLayer", "alreadyPrintLayer", "PrintedLayer", "printedLayer"]),
+    totalLayers: readNestedNumber(task, [["SliceInformation", "total_layer_numbers"], ["SliceInformation", "totalLayerNumbers"], ["SliceInformation", "total_layers"]]),
+    material: readString(task, ["Material", "FilamentType", "filamentType", "initial_filament"])
   };
 }
 
@@ -139,6 +146,18 @@ function readNumber(task: CentauriTask, keys: string[]) {
   return undefined;
 }
 
+function readNestedNumber(task: CentauriTask, paths: string[][]) {
+  for (const path of paths) {
+    let value: unknown = task;
+    for (const key of path) {
+      value = isRecord(value) ? value[key] : undefined;
+    }
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (typeof value === "string" && value.trim() && Number.isFinite(Number(value))) return Number(value);
+  }
+  return undefined;
+}
+
 function* walk(value: unknown): Generator<unknown> {
   yield value;
   if (Array.isArray(value)) {
@@ -156,12 +175,28 @@ function hasAnyKey(value: Record<string, unknown>, keys: string[]) {
   return keys.some((key) => key in value);
 }
 
+function normalizeTaskStatus(statusCode?: number, status?: string) {
+  if (statusCode === 1 || isCompletedStatus(status)) return "COMPLETED";
+  if (statusCode === 2 || Boolean(status && /exception|failed|failure|error/i.test(status))) return "FAILED";
+  if (statusCode === 3 || Boolean(status && /stopped|cancel|aborted/i.test(status))) return "STOPPED";
+  return "OTHER";
+}
+
 function isCompletedStatus(status?: string) {
   return Boolean(status && /complete|completed|success|finished|done/i.test(status));
 }
 
+function calculateVolumeGrams(task: CentauriTask) {
+  const volumeMl = readNumber(task, ["CurrentLayerTalVolume", "CurrentLayerTotalVolume", "currentLayerTalVolume", "currentLayerTotalVolume"]);
+  if (!volumeMl || volumeMl <= 0) return undefined;
+  const density = readNumber(task, ["FilamentDensity", "filamentDensity", "filament_density"]) ?? readNestedNumber(task, [["SliceInformation", "filament_density"]]) ?? 1.24;
+  return Number((volumeMl * density).toFixed(2));
+}
+
 export function parseGcodeFilamentGrams(gcode: string) {
-  const direct = gcode.match(/;\s*(?:total\s+)?filament used \[g\]\s*=\s*([0-9.]+)/i);
+  const direct =
+    gcode.match(/;\s*(?:total\s+)?filament used \[g\]\s*=\s*([0-9.]+)/i) ??
+    gcode.match(/;\s*(?:extruded[_ ]weight[_ ]total|total[_ ]weight)\s*[:=]\s*([0-9.]+)/i);
   if (direct) return Number(direct[1]);
 
   const length = gcode.match(/;\s*filament used \[mm\]\s*=\s*([0-9.]+)/i);
@@ -173,4 +208,9 @@ export function parseGcodeFilamentGrams(gcode: string) {
   const lengthCm = Number(length[1]) / 10;
   const volumeCm3 = Math.PI * radiusCm * radiusCm * lengthCm;
   return Number((volumeCm3 * Number(density[1])).toFixed(2));
+}
+
+export function parseGcodeFilamentDensity(gcode: string) {
+  const density = gcode.match(/;\s*filament_density:\s*([0-9.]+)/i) ?? gcode.match(/;\s*filament_density\s*=\s*([0-9.]+)/i);
+  return density ? Number(density[1]) : undefined;
 }

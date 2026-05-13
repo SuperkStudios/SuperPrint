@@ -5,9 +5,10 @@ import {
   extractCentauriTaskIds,
   extractCentauriTasks,
   normalizeCentauriTask,
+  parseGcodeFilamentDensity,
   parseGcodeFilamentGrams
 } from "@/domain/centauri-history";
-import { filterCompletedPrinterHistory } from "@/domain/filament-usage";
+import { filterCompletedPrinterHistory, type CompletedPrinterHistoryItem } from "@/domain/filament-usage";
 
 export async function fetchCentauriCompletedHistory(input: {
   controlApiUrl: string;
@@ -26,18 +27,25 @@ export async function fetchCentauriCompletedHistory(input: {
   });
 
   const printerBaseUrl = toPrinterBaseUrl(input.controlApiUrl);
-  const completed = extractCentauriTasks(messages)
+  const history = extractCentauriTasks(messages)
     .map((task, index) => normalizeCentauriTask(task, index))
-    .filter((task) => task.status === "COMPLETED");
+    .filter((task) => ["COMPLETED", "FAILED", "STOPPED"].includes(task.status));
 
   const enriched = await Promise.all(
-    completed.map(async (task) => ({
-      ...task,
-      gramsUsed: task.gramsUsed ?? (input.enrichGcode === false ? undefined : await fetchGcodeFilamentGrams(printerBaseUrl, task.name, gcodeTimeoutMs))
-    }))
+    history.map(async (task) => {
+      const metadata = input.enrichGcode === false ? undefined : await fetchGcodeFilamentMetadata(printerBaseUrl, task.name, gcodeTimeoutMs);
+      return {
+        ...task,
+        gramsUsed: task.gramsUsed ?? metadata?.gramsUsed,
+        gramsSource: task.gramsSource ?? (metadata?.gramsUsed ? "GCODE" : undefined),
+        material: task.material ?? metadata?.material,
+        density: metadata?.density
+      };
+    })
   );
 
-  return input.includeMissingGrams ? enriched : filterCompletedPrinterHistory(enriched);
+  const estimated = estimateInterruptedUsage(enriched);
+  return input.includeMissingGrams ? estimated : filterCompletedPrinterHistory(estimated);
 }
 
 async function collectHistorySessionWithRetry(input: { controlApiUrl: string; mainboardId?: string; timeoutMs: number }) {
@@ -58,17 +66,91 @@ function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function fetchGcodeFilamentGrams(printerBaseUrl: string, taskName: string, timeoutMs: number) {
+async function fetchGcodeFilamentMetadata(printerBaseUrl: string, taskName: string, timeoutMs: number) {
   if (!taskName.startsWith("/")) return undefined;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch(`${printerBaseUrl}${encodeURI(taskName)}`, { signal: controller.signal }).finally(() => clearTimeout(timeout));
+    const response = await fetch(`${printerBaseUrl}${encodeURI(taskName)}`, { signal: controller.signal });
     if (!response.ok) return undefined;
-    return parseGcodeFilamentGrams(await response.text());
+    const text = await readResponsePrefix(response, 64 * 1024);
+    return {
+      gramsUsed: parseGcodeFilamentGrams(text),
+      density: parseGcodeFilamentDensity(text),
+      material: parseGcodeMaterial(text)
+    };
   } catch {
     return undefined;
+  } finally {
+    clearTimeout(timeout);
   }
+}
+
+async function readResponsePrefix(response: Response, maxBytes: number) {
+  if (!response.body) return response.text();
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let totalBytes = 0;
+  let text = "";
+  while (totalBytes < maxBytes) {
+    const { value, done } = await reader.read();
+    if (done || !value) break;
+    totalBytes += value.byteLength;
+    text += decoder.decode(value, { stream: true });
+  }
+  await reader.cancel().catch(() => undefined);
+  text += decoder.decode();
+  return text;
+}
+
+function parseGcodeMaterial(gcode: string) {
+  const material = gcode.match(/;\s*initial_filament\s*:\s*([^;\r\n]+)/i) ?? gcode.match(/;\s*filament_type\s*[:=]\s*([^;\r\n]+)/i);
+  return material?.[1]?.trim();
+}
+
+function estimateInterruptedUsage(items: Array<CompletedPrinterHistoryItem & { density?: number }>): CompletedPrinterHistoryItem[] {
+  const knownByName = new Map<string, CompletedPrinterHistoryItem & { gramsUsed: number }>();
+  const knownRates = items
+    .filter((item): item is CompletedPrinterHistoryItem & { gramsUsed: number; printTimeSeconds: number } => {
+      return typeof item.gramsUsed === "number" && item.gramsUsed > 0 && typeof item.printTimeSeconds === "number" && item.printTimeSeconds > 0;
+    })
+    .map((item) => item.gramsUsed / item.printTimeSeconds)
+    .filter((rate) => Number.isFinite(rate) && rate > 0);
+  const fallbackRate = knownRates.length ? knownRates.reduce((total, rate) => total + rate, 0) / knownRates.length : undefined;
+
+  for (const item of items) {
+    if (item.status === "COMPLETED" && typeof item.gramsUsed === "number" && item.gramsUsed > 0) {
+      knownByName.set(item.name, item as CompletedPrinterHistoryItem & { gramsUsed: number });
+    }
+  }
+
+  const matchedItems = items.map((item) => {
+    if (typeof item.gramsUsed === "number" && item.gramsUsed > 0) return item;
+    if (!["FAILED", "STOPPED"].includes(item.status)) return item;
+    const matched = knownByName.get(item.name);
+    if (!matched?.gramsUsed || !item.printedLayers || !item.totalLayers) return item;
+    const ratio = Math.max(0, Math.min(1, item.printedLayers / item.totalLayers));
+    return {
+      ...item,
+      gramsUsed: Number((matched.gramsUsed * ratio).toFixed(2)),
+      gramsSource: "MATCHED_COMPLETED_PRINT" as const
+    };
+  });
+
+  if (!fallbackRate || fallbackRate <= 0) return matchedItems;
+
+  return matchedItems.map((item) => {
+    if (typeof item.gramsUsed === "number" && item.gramsUsed > 0) return item;
+    const printTimeSeconds = Number(item.printTimeSeconds ?? 0);
+    if (printTimeSeconds > 0) {
+      return {
+        ...item,
+        gramsUsed: Number((fallbackRate * printTimeSeconds).toFixed(2)),
+        gramsSource: "TIME_ESTIMATE" as const
+      };
+    }
+    return item;
+  });
 }
 
 function toPrinterBaseUrl(controlApiUrl: string) {

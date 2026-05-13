@@ -3,7 +3,12 @@ export type CompletedPrinterHistoryItem = {
   name: string;
   status: string;
   gramsUsed?: number;
+  gramsSource?: "PRINTER_HISTORY" | "GCODE" | "VOLUME_ESTIMATE" | "MATCHED_COMPLETED_PRINT" | "TIME_ESTIMATE";
   completedAt?: string;
+  printTimeSeconds?: number;
+  printedLayers?: number;
+  totalLayers?: number;
+  material?: string;
 };
 
 export type AssignedFilamentPrint = {
@@ -45,7 +50,7 @@ export function calculateFilamentRollUsage(input: {
 
 export function filterCompletedPrinterHistory(items: CompletedPrinterHistoryItem[]) {
   return items.filter((item): item is CompletedPrinterHistoryItem & { gramsUsed: number } => {
-    return item.status === "COMPLETED" && typeof item.gramsUsed === "number" && item.gramsUsed > 0;
+    return ["COMPLETED", "FAILED", "STOPPED"].includes(item.status) && typeof item.gramsUsed === "number" && item.gramsUsed > 0;
   });
 }
 
