@@ -34,11 +34,15 @@ export async function POST() {
       fetchCentauriCompletedHistory({ controlApiUrl: printer.controlApiUrl, timeoutMs: 15000, includeMissingGrams: true, enrichGcode: false }),
       45000
     );
-    const withGrams = completedPrints.filter((print) => typeof print.gramsUsed === "number" && print.gramsUsed > 0).length;
+    if (completedPrints.length) {
+      await cachePrinterHistory(completedPrints);
+    }
+    const fallbackPrints = completedPrints.length ? completedPrints : await readCachedPrinterHistory();
+    const withGrams = fallbackPrints.filter((print) => typeof print.gramsUsed === "number" && print.gramsUsed > 0).length;
     return NextResponse.json({
-      completedPrints,
-      message: completedPrints.length
-        ? `Found ${completedPrints.length} completed print(s). ${withGrams} include material usage; enter grams manually for the rest before assigning.`
+      completedPrints: fallbackPrints,
+      message: fallbackPrints.length
+        ? `${completedPrints.length ? "Found" : "Using last pulled"} ${fallbackPrints.length} completed print(s). ${withGrams} include material usage; enter grams manually for the rest before assigning.`
         : "No completed printer-history entries were found."
     });
   } catch (error) {
@@ -97,6 +101,24 @@ export async function PATCH(request: Request) {
     }
   });
   return NextResponse.json({ message: "Past print imported as a completed job.", job: result.job });
+}
+
+async function cachePrinterHistory(prints: Array<{ id: string; name: string; status: string; gramsUsed?: number; completedAt?: string }>) {
+  await prisma.systemSetting.upsert({
+    where: { key: "printerHistory.lastPull" },
+    update: { value: prints },
+    create: { key: "printerHistory.lastPull", value: prints }
+  });
+}
+
+async function readCachedPrinterHistory() {
+  const setting = await prisma.systemSetting.findUnique({ where: { key: "printerHistory.lastPull" } });
+  return Array.isArray(setting?.value)
+    ? setting.value.filter(
+        (item): item is { id: string; name: string; status: string; gramsUsed?: number; completedAt?: string } =>
+          Boolean(item && typeof item === "object" && "id" in item && "name" in item && "status" in item)
+      )
+    : [];
 }
 
 async function assignPrintToSpool(spoolId: string, print: z.infer<typeof printSchema>, client: Prisma.TransactionClient | typeof prisma = prisma) {

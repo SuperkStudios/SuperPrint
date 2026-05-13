@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { calculateFilamentRollUsage, filterCompletedPrinterHistory, planCompletedPrintAssignments, planFilamentStockAssignments } from "./filament-usage";
-import { buildCentauriHistoryDetailRequest, extractCompletedCentauriHistory, parseGcodeFilamentGrams } from "./centauri-history";
+import { buildCentauriHistoryDetailRequest, extractCentauriTasks, extractCompletedCentauriHistory, parseGcodeFilamentGrams } from "./centauri-history";
 
 describe("filament roll usage", () => {
   it("calculates remaining grams and material costs from assigned completed prints", () => {
@@ -128,6 +128,27 @@ describe("Centauri history parsing", () => {
         completedAt: undefined
       }
     ]);
+  });
+
+  it("extracts nested Centauri history detail rows once", () => {
+    const result = extractCentauriTasks([
+      {
+        Data: {
+          Data: {
+            HistoryDetailList: [
+              {
+                TaskId: "task-d",
+                TaskName: "/local/dragon.gcode",
+                TaskStatus: 1
+              }
+            ]
+          }
+        }
+      }
+    ]);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({ TaskId: "task-d", TaskName: "/local/dragon.gcode" });
   });
 
   it("parses OrcaSlicer filament grams from completed gcode", () => {

@@ -17,26 +17,16 @@ export async function fetchCentauriCompletedHistory(input: {
   includeMissingGrams?: boolean;
   enrichGcode?: boolean;
 }) {
-  const mainboardId = input.mainboardId ?? "0000000000000000";
   const timeoutMs = input.timeoutMs ?? 15000;
   const gcodeTimeoutMs = input.gcodeTimeoutMs ?? 8000;
-  const messages = await collectSdcpMessages({
+  const messages = await collectHistorySessionWithRetry({
     controlApiUrl: input.controlApiUrl,
-    timeoutMs,
-    requests: [buildCentauriHistoryListRequest(mainboardId)]
+    mainboardId: input.mainboardId,
+    timeoutMs
   });
-  const taskIds = extractCentauriTaskIds(messages).slice(0, 10);
-
-  const detailMessages = taskIds.length
-    ? await collectSdcpMessages({
-        controlApiUrl: input.controlApiUrl,
-        timeoutMs,
-        requests: [buildCentauriHistoryDetailRequest(findMainboardId(messages) ?? mainboardId, taskIds)]
-      })
-    : [];
 
   const printerBaseUrl = toPrinterBaseUrl(input.controlApiUrl);
-  const completed = extractCentauriTasks([...messages, ...detailMessages])
+  const completed = extractCentauriTasks(messages)
     .map((task, index) => normalizeCentauriTask(task, index))
     .filter((task) => task.status === "COMPLETED");
 
@@ -50,16 +40,22 @@ export async function fetchCentauriCompletedHistory(input: {
   return input.includeMissingGrams ? enriched : filterCompletedPrinterHistory(enriched);
 }
 
-function findMainboardId(messages: unknown[]) {
-  for (const message of messages) {
-    if (isRecord(message)) {
-      const data = isRecord(message.Data) ? message.Data : undefined;
-      const attributes = isRecord(message.Attributes) ? message.Attributes : undefined;
-      const mainboardId = data?.MainboardID ?? attributes?.MainboardID ?? message.MainboardID;
-      if (typeof mainboardId === "string" && mainboardId.trim()) return mainboardId;
-    }
+async function collectHistorySessionWithRetry(input: { controlApiUrl: string; mainboardId?: string; timeoutMs: number }) {
+  let lastMessages: unknown[] = [];
+  const attemptTimeoutMs = Math.min(input.timeoutMs, 8000);
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const messages = await collectHistorySession({ ...input, timeoutMs: attemptTimeoutMs });
+    if (extractCentauriTasks(messages).length > 0) return messages;
+    lastMessages = messages;
+    await delay(500);
   }
-  return undefined;
+
+  return lastMessages;
+}
+
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function fetchGcodeFilamentGrams(printerBaseUrl: string, taskName: string, timeoutMs: number) {
@@ -89,12 +85,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function collectSdcpMessages(input: { controlApiUrl: string; timeoutMs: number; requests: unknown[] }) {
+function collectHistorySession(input: { controlApiUrl: string; mainboardId?: string; timeoutMs: number }) {
   return new Promise<unknown[]>((resolve, reject) => {
     const socket = new WebSocket(input.controlApiUrl);
     const messages: unknown[] = [];
-    const expectedCmds = new Set(input.requests.map(readRequestCmd).filter((cmd): cmd is number => typeof cmd === "number"));
-    const seenCmds = new Set<number>();
+    let mainboardId = input.mainboardId;
+    let listRequested = false;
+    let detailRequested = false;
     let settled = false;
     const settle = (callback: () => void) => {
       if (settled) return;
@@ -113,10 +110,22 @@ function collectSdcpMessages(input: { controlApiUrl: string; timeoutMs: number; 
       clearTimeout(timeout);
       settle(callback);
     };
+    const requestList = () => {
+      if (settled || listRequested) return;
+      listRequested = true;
+      socket.send(JSON.stringify(buildCentauriHistoryListRequest(mainboardId ?? "0000000000000000")));
+    };
+    const requestDetails = (taskIds: string[]) => {
+      if (settled || detailRequested || taskIds.length === 0) return;
+      detailRequested = true;
+      socket.send(JSON.stringify(buildCentauriHistoryDetailRequest(mainboardId ?? "0000000000000000", taskIds.slice(0, 10))));
+    };
 
     socket.on("open", () => {
-      for (const request of input.requests) {
-        socket.send(JSON.stringify(request));
+      if (mainboardId) {
+        requestList();
+      } else {
+        setTimeout(() => requestList(), 1000);
       }
     });
     socket.on("message", (data) => {
@@ -124,9 +133,11 @@ function collectSdcpMessages(input: { controlApiUrl: string; timeoutMs: number; 
       try {
         const message = JSON.parse(text);
         messages.push(message);
+        mainboardId = mainboardId ?? readMainboardId(message);
+        if (mainboardId) requestList();
         const cmd = readResponseCmd(message);
-        if (typeof cmd === "number") seenCmds.add(cmd);
-        if (expectedCmds.size > 0 && [...expectedCmds].every((expected) => seenCmds.has(expected))) {
+        if (cmd === 320) requestDetails(extractCentauriTaskIds(messages));
+        if (cmd === 321 && extractCentauriTasks(messages).length > 0) {
           finish(() => resolve(messages));
         }
       } catch {
@@ -142,10 +153,6 @@ function collectSdcpMessages(input: { controlApiUrl: string; timeoutMs: number; 
   });
 }
 
-function readRequestCmd(value: unknown) {
-  return readNestedCmd(value);
-}
-
 function readResponseCmd(value: unknown) {
   return readNestedCmd(value);
 }
@@ -154,5 +161,18 @@ function readNestedCmd(value: unknown) {
   if (!isRecord(value)) return undefined;
   const data = value.Data;
   if (isRecord(data) && typeof data.Cmd === "number") return data.Cmd;
+  return undefined;
+}
+
+function readMainboardId(value: unknown): string | undefined {
+  if (!isRecord(value)) return undefined;
+  const data = isRecord(value.Data) ? value.Data : undefined;
+  const attributes = isRecord(value.Attributes) ? value.Attributes : undefined;
+  const mainboardId = data?.MainboardID ?? attributes?.MainboardID ?? value.MainboardID;
+  if (typeof mainboardId === "string" && mainboardId.trim()) return mainboardId;
+  if (typeof value.Topic === "string") {
+    const match = value.Topic.match(/sdcp\/(?:attributes|status|response|request)\/([^/]+)/);
+    if (match?.[1]) return match[1];
+  }
   return undefined;
 }

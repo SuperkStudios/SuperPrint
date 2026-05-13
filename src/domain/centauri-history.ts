@@ -94,7 +94,25 @@ export function extractCentauriTasks(messages: unknown[]) {
       }
     }
   }
-  return tasks;
+  return dedupeTasks(tasks);
+}
+
+function dedupeTasks(tasks: CentauriTask[]) {
+  const seen = new Set<string>();
+  const unique: CentauriTask[] = [];
+
+  for (const task of tasks) {
+    const key =
+      readString(task, ["Id", "TaskId", "TaskID", "id", "taskId"]) ??
+      readString(task, ["TaskName", "FileName", "Name", "taskName", "fileName", "name"]);
+    if (key) {
+      if (seen.has(key)) continue;
+      seen.add(key);
+    }
+    unique.push(task);
+  }
+
+  return unique;
 }
 
 function readCompletedAt(task: CentauriTask) {
