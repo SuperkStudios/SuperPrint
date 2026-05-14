@@ -10,8 +10,8 @@ type ReviewableUpload = {
 
 const approvalSchema = z.object({
   adminNotes: z.string().trim().optional().default(""),
-  estimatedGrams: z.number().int().positive(),
-  estimatedPrintMinutes: z.number().int().positive(),
+  estimatedGrams: z.number().int().positive().optional(),
+  estimatedPrintMinutes: z.number().int().positive().optional(),
   selectedMaterial: z.enum(filamentMaterials),
   selectedPrinterId: z.string().min(1)
 });

@@ -3,15 +3,23 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { ArrowRight, Boxes, Camera, CircuitBoard, Clock, Cpu, Eye, Factory, Gauge, Layers3, PackageCheck, Radio, ShieldCheck, Sparkles, Upload, Video } from "lucide-react";
+import { AlertTriangle, ArrowRight, Boxes, Camera, CheckCircle2, CircuitBoard, Clock, Cpu, Eye, Factory, Gauge, Layers3, PackageCheck, PauseCircle, PlayCircle, Radio, RotateCcw, ShieldCheck, Sparkles, Upload, Video, XCircle } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { LiveBedFeed } from "@/components/live/live-bed-feed";
-import { TelemetryDashboard } from "@/components/live/telemetry-dashboard";
+import { PrinterHeroVisual } from "@/components/homepage/printer-hero-visual";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useLiveManufacturing } from "@/hooks/use-live-manufacturing";
+import { usePrinterFeedStatus } from "@/hooks/use-printer-feed-status";
 
 type QueueState = Awaited<ReturnType<typeof import("@/services/queue").getPublicQueueState>>;
 type PublicEvent = Awaited<ReturnType<typeof import("@/services/events").listPublicEvents>>[number];
+type HistoryEvent = {
+  id: string;
+  type: string;
+  createdAt: string;
+  payload: Record<string, unknown>;
+};
 
 export type HomepageStats = {
   completedPrints: number;
@@ -42,13 +50,32 @@ export function CyberHomepage({
   filament: HomepageFilament[];
 }) {
   const live = useLiveManufacturing(events);
+  const livePrinter = usePrinterFeedStatus();
   const current = queue.current;
+  const printer = current?.printer ?? queue.printers[0] ?? null;
+  const centauriTelemetry = livePrinter?.telemetry?.state === "LIVE" ? livePrinter.telemetry : null;
+  const telemetry = centauriTelemetry ?? (current?.telemetry?.state === "LIVE" ? current.telemetry : null);
   const printerName = current?.printer?.name ?? queue.printers[0]?.name ?? "SuperPrint cell";
   const currentPrint = current?.orderNumber ?? "Awaiting next approved job";
+  const heroProgressPercent = current?.progressPercent ?? (current?.telemetry?.state === "LIVE" ? current.telemetry.progressPercent : 0) ?? 0;
+  const progressPercent = current?.progressPercent ?? telemetry?.progressPercent ?? 0;
+  const isPrinting = Boolean(current) || centauriTelemetry?.machineStatus === 1;
+  const activeStatusLabel = isPrinting ? "Now Printing" : "No Active Print";
+  const activePrintTitle = current?.orderNumber ?? (centauriTelemetry?.machineStatus === 1 ? (centauriTelemetry.currentFileName ?? "Printer active outside SuperPrint queue") : "Awaiting next approved job");
+  const activePrintDetails = current?.filament
+    ? `${current.filament.color} ${current.filament.material} · ETA ${current.etaMinutes}m`
+    : centauriTelemetry?.machineStatus === 1
+      ? `Live printer job · ${formatRemaining(centauriTelemetry.remainingSeconds)} remaining`
+      : "No approved print is currently assigned.";
+  const printerStatus = livePrinter?.online ? centauriTelemetry?.machineStatusLabel ?? "Online" : current?.status ?? "IDLE";
+  const currentLayer = telemetry && "currentLayer" in telemetry ? telemetry.currentLayer : null;
+  const totalLayer = centauriTelemetry?.totalLayer ?? null;
+  const material = current?.filament ?? queue.printers[0]?.filament ?? null;
+  const liveEvents = live.events.length ? live.events : events;
 
   return (
     <main className="app-shell overflow-hidden text-foreground">
-      <section className="relative min-h-screen">
+      <section className="relative">
         <CyberBackground />
         <div className="relative mx-auto grid min-h-screen max-w-7xl items-center gap-12 px-4 py-20 sm:px-6 lg:grid-cols-[0.95fr_1.05fr] lg:px-8">
           <motion.div initial={{ opacity: 0, y: 22 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7 }}>
@@ -78,7 +105,7 @@ export function CyberHomepage({
           <motion.div initial={{ opacity: 0, scale: 0.96, y: 26 }} animate={{ opacity: 1, scale: 1, y: 0 }} transition={{ duration: 0.8, delay: 0.1 }} className="relative">
             <div className="absolute -inset-10 rounded-full bg-primary/10 blur-3xl" />
             <div className="cyber-surface relative rounded-[1.5rem] p-4">
-              <TelemetryDashboard queue={queue} />
+              <PrinterHeroVisual progressPercent={heroProgressPercent} />
             </div>
           </motion.div>
         </div>
@@ -86,27 +113,72 @@ export function CyberHomepage({
 
       <section className="relative border-y bg-card/45 py-16 dark:bg-zinc-950/90 lg:py-24">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_0%,hsl(var(--primary)/0.12),transparent_32%),radial-gradient(circle_at_80%_20%,rgba(249,115,22,0.08),transparent_30%)]" />
-        <div className="relative mx-auto grid max-w-7xl gap-8 px-4 sm:px-6 lg:grid-cols-[1.15fr_0.85fr] lg:px-8">
-          <div className="lg:sticky lg:top-24 lg:self-start">
-            <div className="mb-5 flex items-center gap-3">
-              <span className="size-2 rounded-full bg-emerald-300 shadow-[0_0_18px_rgba(110,231,183,0.9)]" />
-              <span className="text-sm font-medium uppercase tracking-[0.28em] text-emerald-600 dark:text-emerald-200">Live factory</span>
+        <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div className="mb-5 flex items-center gap-3">
+            <span className="size-2 rounded-full bg-emerald-300 shadow-[0_0_18px_rgba(110,231,183,0.9)]" />
+            <span className="text-sm font-medium uppercase tracking-[0.28em] text-emerald-600 dark:text-emerald-200">Live factory</span>
+          </div>
+
+          <div className="cyber-surface rounded-2xl p-5">
+            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+              <div>
+                <Badge className={isPrinting ? "border-primary/30 bg-primary/10 text-primary" : "border-muted-foreground/20 bg-muted text-muted-foreground"}>{activeStatusLabel}</Badge>
+                <h2 className="mt-4 text-2xl font-semibold tracking-tight">{activePrintTitle}</h2>
+                <p className="mt-2 text-sm text-muted-foreground">{activePrintDetails}</p>
+              </div>
+              <div className="flex items-center gap-2 text-sm text-emerald-700 dark:text-emerald-200">
+                <span className="size-2 rounded-full bg-emerald-300 shadow-[0_0_18px_rgba(110,231,183,0.9)]" />
+                {printerStatus}
+              </div>
             </div>
+            <div className="mt-5 h-2 overflow-hidden rounded-full bg-muted">
+              <motion.div
+                className="h-full rounded-full bg-primary shadow-[0_0_22px_hsl(var(--primary)/0.55)]"
+                initial={{ width: 0 }}
+                animate={{ width: `${Math.max(0, Math.min(100, progressPercent ?? 0))}%` }}
+              />
+            </div>
+          </div>
+
+          <div className="mt-5">
             <LiveBedFeed printerName={printerName} currentPrint={currentPrint} />
           </div>
-          <div>
-            <TelemetryDashboard queue={queue} />
-            <div className="cyber-surface mt-5 rounded-2xl p-5">
-              <h3 className="font-semibold">Recent live events</h3>
+
+          <div className="mt-5 grid gap-3 md:grid-cols-4">
+            <LiveMetric icon={Layers3} label="Layer progress" value={formatLayerProgress(currentLayer, totalLayer, progressPercent)} />
+            <LiveMetric icon={Gauge} label="Temperatures" value={formatCombinedTemps(telemetry?.nozzleTempC, centauriTelemetry?.nozzleTargetC, telemetry?.bedTempC, centauriTelemetry?.bedTargetC)} />
+            <LiveMetric icon={Clock} label="Time remaining" value={telemetry?.remainingSeconds != null ? formatRemaining(telemetry.remainingSeconds) : `${current?.etaMinutes ?? 0}m`} />
+            <LiveMetric icon={Boxes} label="Material + color" value={material ? `${material.color} ${material.material}` : "Material pending"} swatch={material?.color} />
+          </div>
+
+          <div className="mt-6 grid gap-6 lg:grid-cols-2">
+            <div className="cyber-surface rounded-2xl p-5">
+              <div className="flex items-center justify-between">
+                <h3 className="font-semibold">Queue</h3>
+                <Upload className="size-4 text-primary" />
+              </div>
               <div className="mt-4 space-y-3">
-                {(live.events.length ? live.events : events).slice(0, 5).map((event) => (
-                  <motion.div key={event.id} layout className="flex items-center gap-3 rounded-xl border bg-background/35 p-3 text-sm">
-                    <Sparkles className="size-4 text-orange-500 dark:text-orange-200" />
-                    <span>{event.type.replaceAll("_", " ")}</span>
-                    <span className="ml-auto text-muted-foreground">{new Date(event.createdAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span>
+                {queue.nextJobs.length ? queue.nextJobs.slice(0, 5).map((job) => (
+                  <motion.div key={job.id} layout className="flex items-center justify-between rounded-xl border bg-background/35 p-3 text-sm">
+                    <span className="font-medium text-foreground">{job.orderNumber}</span>
+                    <span className="text-muted-foreground">#{job.queuePosition ?? "?"} · {job.etaMinutes}m</span>
                   </motion.div>
+                )) : (
+                  <div className="rounded-xl border border-dashed bg-background/25 p-4 text-sm text-muted-foreground">Queue is clear. New approved jobs will appear here.</div>
+                )}
+              </div>
+            </div>
+
+            <div className="cyber-surface rounded-2xl p-5">
+              <div className="flex items-center justify-between">
+                <h3 className="font-semibold">History</h3>
+                <Sparkles className="size-4 text-orange-500 dark:text-orange-200" />
+              </div>
+              <div className="mt-4 space-y-3">
+                {liveEvents.slice(0, 5).map((event) => (
+                  <HistoryEventRow key={event.id} event={event} />
                 ))}
-                {!events.length ? <p className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">Events will appear as production moves.</p> : null}
+                {!liveEvents.length ? <p className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">Events will appear as production moves.</p> : null}
               </div>
             </div>
           </div>
@@ -141,6 +213,120 @@ function HeroStat({ label, value, suffix = "" }: { label: string; value: number;
       <p className="mt-1 text-xs uppercase tracking-[0.18em] text-muted-foreground">{label}</p>
     </div>
   );
+}
+
+function LiveMetric({ icon: Icon, label, value, swatch }: { icon: typeof Boxes; label: string; value: string; swatch?: string }) {
+  return (
+    <div className="cyber-surface rounded-2xl p-4">
+      <div className="flex items-center justify-between gap-3">
+        <Icon className="size-4 text-primary" />
+        {swatch ? <span className="size-4 rounded-full border" style={{ backgroundColor: swatch.toLowerCase() }} /> : null}
+      </div>
+      <p className="mt-3 text-xs uppercase tracking-[0.22em] text-muted-foreground">{label}</p>
+      <p className="mt-1 text-sm font-medium text-foreground">{value}</p>
+    </div>
+  );
+}
+
+function HistoryEventRow({ event }: { event: HistoryEvent }) {
+  const meta = historyEventMeta(event);
+  const Icon = meta.icon;
+
+  return (
+    <motion.div key={event.id} layout className="flex items-start gap-3 rounded-xl border bg-background/35 p-3 text-sm">
+      <span className={`mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full ${meta.iconSurface}`}>
+        <Icon className={`size-4 ${meta.iconColor}`} />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block font-medium text-foreground">{meta.label}</span>
+        {meta.detail ? <span className="mt-1 block text-xs leading-5 text-muted-foreground">{meta.detail}</span> : null}
+      </span>
+      <span className="shrink-0 text-muted-foreground">{new Date(event.createdAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span>
+    </motion.div>
+  );
+}
+
+function historyEventMeta(event: HistoryEvent): { label: string; detail: string; icon: LucideIcon; iconColor: string; iconSurface: string } {
+  const statusMap: Record<string, { label: string; icon: LucideIcon; iconColor: string; iconSurface: string }> = {
+    PRINT_COMPLETED: { label: "Print completed", icon: CheckCircle2, iconColor: "text-emerald-600 dark:text-emerald-200", iconSurface: "bg-emerald-500/10" },
+    PRINT_FAILED: { label: "Print failed", icon: XCircle, iconColor: "text-red-600 dark:text-red-200", iconSurface: "bg-red-500/10" },
+    PRINT_STOPPED: { label: "Build stopped", icon: AlertTriangle, iconColor: "text-amber-600 dark:text-amber-200", iconSurface: "bg-amber-500/10" },
+    PRINT_PAUSED: { label: "Print paused", icon: PauseCircle, iconColor: "text-amber-600 dark:text-amber-200", iconSurface: "bg-amber-500/10" },
+    PRINT_STARTED: { label: "Print started", icon: PlayCircle, iconColor: "text-primary", iconSurface: "bg-primary/10" },
+    PRINT_REQUEUED: { label: "Print requeued", icon: RotateCcw, iconColor: "text-primary", iconSurface: "bg-primary/10" },
+    MANUAL_PRINT_DETECTED: { label: "Manual print detected", icon: Sparkles, iconColor: "text-orange-500 dark:text-orange-200", iconSurface: "bg-orange-500/10" },
+    QUEUE_ADMITTED: { label: "Added to queue", icon: Upload, iconColor: "text-primary", iconSurface: "bg-primary/10" },
+    MODEL_APPROVED: { label: "Model approved", icon: CheckCircle2, iconColor: "text-emerald-600 dark:text-emerald-200", iconSurface: "bg-emerald-500/10" },
+    MODEL_REJECTED: { label: "Model rejected", icon: XCircle, iconColor: "text-red-600 dark:text-red-200", iconSurface: "bg-red-500/10" },
+    SLICING_FAILED: { label: "Slicing failed", icon: XCircle, iconColor: "text-red-600 dark:text-red-200", iconSurface: "bg-red-500/10" },
+    SLICING_COMPLETE: { label: "Slicing complete", icon: CheckCircle2, iconColor: "text-emerald-600 dark:text-emerald-200", iconSurface: "bg-emerald-500/10" }
+  };
+  const fallback = { label: toTitleCase(event.type), icon: Sparkles, iconColor: "text-orange-500 dark:text-orange-200", iconSurface: "bg-orange-500/10" };
+  const base = statusMap[event.type] ?? fallback;
+
+  return {
+    ...base,
+    detail: eventDetail(event)
+  };
+}
+
+function eventDetail(event: HistoryEvent) {
+  const payload = event.payload;
+  const details = [
+    stringValue(payload.orderNumber),
+    stringValue(payload.fileName),
+    stringValue(payload.productName),
+    stringValue(payload.printerName)
+  ];
+
+  if (event.type === "PRINT_STOPPED") details.push("Interrupted by operator, not failed");
+  if (event.type === "PRINT_FAILED") details.push(stringValue(payload.failureReason));
+  if (payload.currentLayer != null || payload.totalLayer != null) details.push(`Layer ${payload.currentLayer ?? "?"}/${payload.totalLayer ?? "?"}`);
+  if (typeof payload.progressPercent === "number") details.push(`${Math.round(payload.progressPercent)}% complete`);
+  if (typeof payload.runtimeMinutes === "number") details.push(`${payload.runtimeMinutes}m runtime`);
+  if (typeof payload.consumedFilamentGrams === "number") details.push(`${Math.round(payload.consumedFilamentGrams)}g used`);
+  if (typeof payload.queuePosition === "number") details.push(`Queue #${payload.queuePosition}`);
+  if (typeof payload.etaMinutes === "number") details.push(`${payload.etaMinutes}m ETA`);
+
+  return details.filter(Boolean).slice(0, 4).join(" · ");
+}
+
+function stringValue(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function toTitleCase(value: string) {
+  return value
+    .toLowerCase()
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function formatLayerProgress(currentLayer?: number | null, totalLayer?: number | null, progressPercent?: number | null) {
+  const layers = currentLayer != null && totalLayer != null && totalLayer > 0 ? `${currentLayer}/${totalLayer}` : "--/--";
+  return `${layers} · ${Math.round(progressPercent ?? 0)}%`;
+}
+
+function formatCombinedTemps(nozzle?: number | null, nozzleTarget?: number | null, bed?: number | null, bedTarget?: number | null) {
+  if (nozzle == null && bed == null) return "Waiting for printer";
+  return `Nozzle ${formatTemp(nozzle, nozzleTarget)} · Bed ${formatTemp(bed, bedTarget)}`;
+}
+
+function formatTemp(current?: number | null, target?: number | null) {
+  if (current == null) return "--C";
+  const currentRounded = Math.round(current);
+  const targetRounded = target == null ? null : Math.round(target);
+  return targetRounded != null && targetRounded > 0 ? `${currentRounded}/${targetRounded}C` : `${currentRounded}C`;
+}
+
+function formatRemaining(seconds: number | null) {
+  if (seconds == null) return "Waiting";
+  const minutes = Math.max(0, Math.round(seconds / 60));
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  return remainder ? `${hours}h ${remainder}m` : `${hours}h`;
 }
 
 function HowItWorks() {

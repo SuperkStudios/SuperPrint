@@ -34,7 +34,10 @@ export async function POST(request: Request) {
 
   const body = actionSchema.parse(await request.json());
   if (body.action === "approve") {
-    if (!body.estimatedGrams || !body.estimatedPrintMinutes || !body.selectedMaterial || !body.selectedPrinterId) {
+    const upload = await prisma.modelUpload.findUnique({ where: { id: body.uploadId } });
+    const estimatedGrams = body.estimatedGrams ?? upload?.estimatedGrams ?? undefined;
+    const estimatedPrintMinutes = body.estimatedPrintMinutes ?? upload?.estimatedPrintMinutes ?? undefined;
+    if (!estimatedGrams || !estimatedPrintMinutes || !body.selectedMaterial || !body.selectedPrinterId) {
       return NextResponse.json({ error: "Approval requires grams, print time, material, and printer profile" }, { status: 400 });
     }
     return NextResponse.json(
@@ -43,8 +46,8 @@ export async function POST(request: Request) {
         {
           adminNotes: body.adminNotes,
           estimatedPriceCents: body.estimatedPriceCents,
-          estimatedGrams: body.estimatedGrams,
-          estimatedPrintMinutes: body.estimatedPrintMinutes,
+          estimatedGrams,
+          estimatedPrintMinutes,
           selectedMaterial: body.selectedMaterial,
           selectedPrinterId: body.selectedPrinterId
         },
