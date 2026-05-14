@@ -57,11 +57,10 @@ export function parseProductPrintFileEstimates(text: string) {
 
 export function estimateStlPrintFile(data: Uint8Array | ArrayBuffer, material = "PLA") {
   const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
-  const triangles = readStlTriangles(bytes);
-  if (!triangles.length) return { estimatedPrintMinutes: null, estimatedGrams: null };
+  const stats = readStlMeshStats(bytes);
+  if (!stats || !stats.triangleCount) return { estimatedPrintMinutes: null, estimatedGrams: null };
 
-  const stats = meshStats(triangles);
-  const volumeMm3 = stats.volumeMm3;
+  const volumeMm3 = Math.abs(stats.signedVolumeMm3);
   if (!Number.isFinite(volumeMm3) || volumeMm3 <= 0) return { estimatedPrintMinutes: null, estimatedGrams: null };
 
   const density = materialDensities[String(material).toUpperCase()] ?? materialDensities.PLA;
@@ -69,7 +68,8 @@ export function estimateStlPrintFile(data: Uint8Array | ArrayBuffer, material = 
   const effectiveInfillRatio = 0.12;
   const extrudedVolumeMm3 = (stats.surfaceAreaMm2 * shellThicknessMm) + (volumeMm3 * effectiveInfillRatio);
   const estimatedGrams = Math.max(1, Math.round((extrudedVolumeMm3 / 1000) * density));
-  const estimatedPrintMinutes = Math.max(3, Math.round(estimatedGrams * 4.8 + stats.heightMm * 0.22));
+  const heightMm = Number.isFinite(stats.minZ) && Number.isFinite(stats.maxZ) ? Math.max(0, stats.maxZ - stats.minZ) : 0;
+  const estimatedPrintMinutes = Math.max(3, Math.round(estimatedGrams * 4.8 + heightMm * 0.22));
 
   return { estimatedPrintMinutes, estimatedGrams };
 }
@@ -107,43 +107,60 @@ function parseGcodeMinutes(text: string) {
 }
 
 type Vertex = [number, number, number];
-type Triangle = [Vertex, Vertex, Vertex];
 
-function readStlTriangles(bytes: Uint8Array): Triangle[] {
-  const binary = readBinaryStlTriangles(bytes);
-  if (binary) return binary;
-  return readAsciiStlTriangles(new TextDecoder().decode(bytes));
+type MeshStats = {
+  triangleCount: number;
+  signedVolumeMm3: number;
+  surfaceAreaMm2: number;
+  minZ: number;
+  maxZ: number;
+};
+
+function readStlMeshStats(bytes: Uint8Array): MeshStats | null {
+  return readBinaryStlMeshStats(bytes) ?? readAsciiStlMeshStats(new TextDecoder().decode(bytes));
 }
 
-function readBinaryStlTriangles(bytes: Uint8Array): Triangle[] | null {
+function readBinaryStlMeshStats(bytes: Uint8Array): MeshStats | null {
   if (bytes.byteLength < 84) return null;
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const triangleCount = view.getUint32(80, true);
   if (84 + triangleCount * 50 !== bytes.byteLength) return null;
 
-  const triangles: Triangle[] = [];
+  const stats = createMeshStats();
   for (let index = 0; index < triangleCount; index += 1) {
     const offset = 84 + index * 50 + 12;
-    triangles.push([
+    addTriangleStats(stats,
       readVertex(view, offset),
       readVertex(view, offset + 12),
       readVertex(view, offset + 24)
-    ]);
+    );
   }
-  return triangles;
+  return stats;
 }
 
-function readAsciiStlTriangles(text: string): Triangle[] {
-  const values = [...text.matchAll(/vertex\s+([-+0-9.eE]+)\s+([-+0-9.eE]+)\s+([-+0-9.eE]+)/g)].map((match) => [
-    Number(match[1]),
-    Number(match[2]),
-    Number(match[3])
-  ] as Vertex);
-  const triangles: Triangle[] = [];
-  for (let index = 0; index + 2 < values.length; index += 3) {
-    triangles.push([values[index], values[index + 1], values[index + 2]]);
+function readAsciiStlMeshStats(text: string): MeshStats {
+  const stats = createMeshStats();
+  const vertexRegex = /vertex\s+([-+0-9.eE]+)\s+([-+0-9.eE]+)\s+([-+0-9.eE]+)/g;
+  let first: Vertex | null = null;
+  let second: Vertex | null = null;
+  let vertexIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = vertexRegex.exec(text))) {
+    const vertex: Vertex = [Number(match[1]), Number(match[2]), Number(match[3])];
+    const position = vertexIndex % 3;
+    if (position === 0) {
+      first = vertex;
+    } else if (position === 1) {
+      second = vertex;
+    } else if (first && second) {
+      addTriangleStats(stats, first, second, vertex);
+      first = null;
+      second = null;
+    }
+    vertexIndex += 1;
   }
-  return triangles;
+  return stats;
 }
 
 function readVertex(view: DataView, offset: number): Vertex {
@@ -158,24 +175,22 @@ function signedTetrahedronVolume(a: Vertex, b: Vertex, c: Vertex) {
   return dot(a, cross(b, c)) / 6;
 }
 
-function meshStats(triangles: Triangle[]) {
-  let signedVolumeMm3 = 0;
-  let surfaceAreaMm2 = 0;
-  let minZ = Infinity;
-  let maxZ = -Infinity;
-
-  for (const [a, b, c] of triangles) {
-    signedVolumeMm3 += signedTetrahedronVolume(a, b, c);
-    surfaceAreaMm2 += triangleArea(a, b, c);
-    minZ = Math.min(minZ, a[2], b[2], c[2]);
-    maxZ = Math.max(maxZ, a[2], b[2], c[2]);
-  }
-
+function createMeshStats(): MeshStats {
   return {
-    volumeMm3: Math.abs(signedVolumeMm3),
-    surfaceAreaMm2,
-    heightMm: Number.isFinite(minZ) && Number.isFinite(maxZ) ? Math.max(0, maxZ - minZ) : 0
+    triangleCount: 0,
+    signedVolumeMm3: 0,
+    surfaceAreaMm2: 0,
+    minZ: Infinity,
+    maxZ: -Infinity
   };
+}
+
+function addTriangleStats(stats: MeshStats, a: Vertex, b: Vertex, c: Vertex) {
+  stats.triangleCount += 1;
+  stats.signedVolumeMm3 += signedTetrahedronVolume(a, b, c);
+  stats.surfaceAreaMm2 += triangleArea(a, b, c);
+  stats.minZ = Math.min(stats.minZ, a[2], b[2], c[2]);
+  stats.maxZ = Math.max(stats.maxZ, a[2], b[2], c[2]);
 }
 
 function triangleArea(a: Vertex, b: Vertex, c: Vertex) {
