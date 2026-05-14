@@ -6,7 +6,8 @@ import { requireAdmin } from "@/lib/http";
 import { prisma } from "@/lib/prisma";
 import { buildLocalStorageKey, resolveLocalStoragePath } from "@/lib/storage";
 import { upsertProduct } from "@/services/products";
-import { calculateProductMaterialCostCents, parseProductPrintFileEstimates } from "@/domain/products";
+import { calculateProductMaterialCostCents } from "@/domain/products";
+import { estimatePrintFile } from "@/services/slicer-estimates";
 
 const schema = z.object({
   id: z.string().optional(),
@@ -39,8 +40,8 @@ export async function POST(request: Request) {
     body.imageStorageKey = existing?.imageStorageKey ?? undefined;
     body.productFileStorageKey = body.productFileStorageKey ?? existing?.productFileStorageKey ?? undefined;
   }
-  if (!body.imageStorageKey) {
-    return NextResponse.json({ error: "Product image upload is required" }, { status: 400 });
+  if (!body.imageStorageKey && !body.productFileStorageKey) {
+    return NextResponse.json({ error: "Upload a product image or an STL print file" }, { status: 400 });
   }
   body.imageUrl = body.imageUrl ?? "__LOCAL_IMAGE__";
   return NextResponse.json({ product: await upsertProduct({ ...body, imageUrl: body.imageUrl ?? "__LOCAL_IMAGE__" }, session!.user.id) });
@@ -54,8 +55,8 @@ async function readProductRequest(request: Request) {
   const imageFile = formData.get("imageFile");
   const printFile = formData.get("printFile");
   const imageStorageKey = imageFile instanceof File && imageFile.size > 0 ? await storeProductFile(imageFile, "thumbnails", ["image/png", "image/jpeg", "image/webp"]) : undefined;
-  const parsedPrintFile = printFile instanceof File && printFile.size > 0 ? await storeProductPrintFile(printFile) : undefined;
   const material = String(formData.get("defaultMaterial") ?? "PLA");
+  const parsedPrintFile = printFile instanceof File && printFile.size > 0 ? await storeProductPrintFile(printFile, material) : undefined;
   const estimatedGrams = parsedPrintFile?.estimatedGrams ?? Number(formData.get("estimatedGrams") ?? 0);
   const spool = await prisma.filamentSpool.findFirst({ where: { material: material as never }, orderBy: { rollCostCents: "desc" } });
 
@@ -101,13 +102,16 @@ async function storeProductFile(file: File, storageClass: "uploads" | "thumbnail
   return key;
 }
 
-async function storeProductPrintFile(file: File) {
+async function storeProductPrintFile(file: File, material: string) {
   const storageKey = await storeProductFile(file, "uploads", ["model/stl", "application/octet-stream", "text/plain", "application/vnd.ms-pki.stl", ""]);
-  if (!/\.(gcode|gco|g)$/i.test(file.name)) return { storageKey };
-  const localPath = resolveLocalStoragePath(storageKey);
-  const text = Buffer.from(await file.arrayBuffer()).toString("utf8");
-  await writeFile(localPath, text);
-  const estimates = parseProductPrintFileEstimates(text);
+  if (!/\.(stl|gcode|gco|g)$/i.test(file.name)) return { storageKey };
+  const bytes = await file.arrayBuffer();
+  const estimates = await estimatePrintFile({
+    fileName: file.name,
+    contentType: file.type,
+    material,
+    bytes
+  });
   return {
     storageKey,
     estimatedGrams: estimates.estimatedGrams ?? undefined,

@@ -1,4 +1,6 @@
 import { AdminProductForm } from "@/components/admin-product-form";
+import { StlModelViewer } from "@/components/stl-model-viewer";
+import { filamentColorToHex } from "@/lib/filament-colors";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { money } from "@/lib/utils";
@@ -11,7 +13,15 @@ export default async function AdminProductsPage() {
     prisma.product.findMany({ orderBy: { createdAt: "desc" } }),
     prisma.filamentSpool.findMany({ orderBy: [{ material: "asc" }, { remainingGrams: "desc" }] })
   ]);
-  const materials = [...new Map(spools.map((spool) => [spool.material, { material: spool.material, rollCostCents: spool.rollCostCents }])).values()];
+  const materials = [...spools.reduce((map, spool) => {
+    const existing = map.get(spool.material);
+    if (existing) {
+      if (!existing.colors.includes(spool.color)) existing.colors.push(spool.color);
+    } else {
+      map.set(spool.material, { material: spool.material, rollCostCents: spool.rollCostCents, colors: [spool.color] });
+    }
+    return map;
+  }, new Map<string, { material: string; rollCostCents: number; colors: string[] }>()).values()];
 
   return (
     <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
@@ -34,7 +44,15 @@ export default async function AdminProductsPage() {
               <Badge>{product.status}</Badge>
             </CardHeader>
             <CardContent className="grid gap-4 md:grid-cols-[120px_1fr]">
-              <img src={product.imageUrl} alt="" className="h-24 w-full rounded object-cover" />
+              {product.productFileStorageKey && /\.stl$/i.test(product.productFileStorageKey) ? (
+                <StlModelViewer
+                  src={`/api/products/${product.id}/model`}
+                  color={filamentColorToHex(materials.find((item) => item.material === product.defaultMaterial)?.colors[0] ?? product.defaultMaterial)}
+                  className="h-24 border-0"
+                />
+              ) : (
+                <img src={product.imageUrl} alt="" className="h-24 w-full rounded object-cover" />
+              )}
               <div className="space-y-2 text-sm">
                 <p>{product.description}</p>
                 <p className="font-medium">{money(product.priceCents)} · {product.estimatedPrintMinutes} min · {product.estimatedGrams}g · {product.defaultMaterial}</p>

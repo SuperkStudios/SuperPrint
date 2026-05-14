@@ -48,7 +48,14 @@ export default async function AdminUploadsPage() {
                 ))}
               </div>
             ) : null}
-            {upload.status === "PENDING" ? <UploadReviewActions uploadId={upload.id} printers={printers} /> : null}
+            {upload.status === "PENDING" ? (
+              <UploadReviewActions
+                uploadId={upload.id}
+                printers={printers}
+                estimatedGrams={upload.estimatedGrams}
+                estimatedPrintMinutes={upload.estimatedPrintMinutes}
+              />
+            ) : null}
           </CardContent>
         </Card>
       ))}

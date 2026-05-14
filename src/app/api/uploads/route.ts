@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { requireCustomer } from "@/lib/http";
 import { recordPlatformEvent } from "@/services/events";
 import { getBootstrapStatus } from "@/lib/bootstrap";
+import { estimatePrintFile } from "@/services/slicer-estimates";
 
 export async function POST(request: Request) {
   if (!(await getBootstrapStatus()).isComplete) {
@@ -37,6 +38,11 @@ export async function POST(request: Request) {
   await mkdir(localPath.slice(0, localPath.lastIndexOf("/")), { recursive: true });
   const fileBuffer = Buffer.from(await file.arrayBuffer());
   const checksumSha256 = createHash("sha256").update(fileBuffer).digest("hex");
+  const estimates = await estimatePrintFile({
+    fileName: file.name,
+    contentType: file.type,
+    bytes: fileBuffer
+  });
   await writeFile(localPath, fileBuffer);
 
   const upload = await prisma.modelUpload.create({
@@ -48,6 +54,8 @@ export async function POST(request: Request) {
       fileSizeBytes: file.size,
       contentType: file.type || "application/octet-stream",
       notes: typeof notes === "string" ? notes : undefined,
+      estimatedGrams: estimates.estimatedGrams,
+      estimatedPrintMinutes: estimates.estimatedPrintMinutes,
       status: "PENDING"
     }
   });
