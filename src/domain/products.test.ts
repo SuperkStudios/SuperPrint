@@ -48,8 +48,14 @@ describe("product catalog", () => {
 
   it("parses slicer G-code comments from Elegoo and Orca output", () => {
     expect(
-      parseProductPrintFileEstimates("; filament used [cm3] = 9.69\n; total filament used [g] = 0.00\n; estimated printing time (normal mode) = 1h 22m 19s")
+      parseProductPrintFileEstimates("; filament used [cm3] = 9.69\n; total filament used [g] = 0.00\n; estimated printing time (normal mode) = 1h 22m 19s", "PLA")
     ).toEqual({ estimatedPrintMinutes: 82, estimatedGrams: 12 });
+  });
+
+  it("converts slicer volume comments with the selected material density", () => {
+    expect(
+      parseProductPrintFileEstimates("; filament used [cm3] = 100\n; estimated printing time = 1h", "ABS")
+    ).toEqual({ estimatedPrintMinutes: 60, estimatedGrams: 104 });
   });
 
   it("estimates grams and time directly from STL mesh volume", () => {
@@ -67,6 +73,17 @@ describe("product catalog", () => {
 
     expect(detailedCube.estimatedGrams).toBe(singleCube.estimatedGrams);
     expect(detailedCube.estimatedPrintMinutes).toBe(singleCube.estimatedPrintMinutes);
+  });
+
+  it("adapts fallback STL estimates using slicer-like material settings", () => {
+    const stl = new TextEncoder().encode(asciiCubeStl(40));
+
+    const pla = estimateStlPrintFile(stl, "PLA");
+    const tpu = estimateStlPrintFile(stl, "TPU");
+    const abs = estimateStlPrintFile(stl, "ABS");
+
+    expect(tpu.estimatedPrintMinutes).toBeGreaterThan(pla.estimatedPrintMinutes! * 2);
+    expect(abs.estimatedGrams).toBeLessThan(pla.estimatedGrams!);
   });
 });
 

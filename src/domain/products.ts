@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { getPrintMaterialProfile } from "./print-materials";
 
 export const productInputSchema = z.object({
   name: z.string().trim().min(2),
@@ -46,8 +47,8 @@ export function calculateProductMaterialCostCents(input: {
   return Math.round((input.estimatedGrams / rollGrams) * input.rollCostCents);
 }
 
-export function parseProductPrintFileEstimates(text: string) {
-  const grams = parseGcodeGrams(text);
+export function parseProductPrintFileEstimates(text: string, material = "PLA") {
+  const grams = parseGcodeGrams(text, material);
   const minutes = parseGcodeMinutes(text);
   return {
     estimatedPrintMinutes: minutes,
@@ -63,33 +64,25 @@ export function estimateStlPrintFile(data: Uint8Array | ArrayBuffer, material = 
   const volumeMm3 = Math.abs(stats.signedVolumeMm3);
   if (!Number.isFinite(volumeMm3) || volumeMm3 <= 0) return { estimatedPrintMinutes: null, estimatedGrams: null };
 
-  const density = materialDensities[String(material).toUpperCase()] ?? materialDensities.PLA;
-  const shellThicknessMm = 0.55;
-  const effectiveInfillRatio = 0.12;
-  const extrudedVolumeMm3 = (stats.surfaceAreaMm2 * shellThicknessMm) + (volumeMm3 * effectiveInfillRatio);
-  const estimatedGrams = Math.max(1, Math.round((extrudedVolumeMm3 / 1000) * density));
+  const profile = getPrintMaterialProfile(material);
+  const wallShellMm = profile.lineWidthMm * profile.wallLoops * 0.44;
+  const topBottomShellMm = profile.layerHeightMm * profile.topBottomLayers * 0.18;
+  const shellThicknessMm = wallShellMm + topBottomShellMm;
+  const extrudedVolumeMm3 = ((stats.surfaceAreaMm2 * shellThicknessMm) + (volumeMm3 * profile.infillDensity)) * profile.flowRatio * (1 + profile.supportWasteRatio);
+  const estimatedGrams = Math.max(1, Math.round((extrudedVolumeMm3 / 1000) * profile.densityGPerCm3));
   const heightMm = Number.isFinite(stats.minZ) && Number.isFinite(stats.maxZ) ? Math.max(0, stats.maxZ - stats.minZ) : 0;
-  const estimatedPrintMinutes = Math.max(3, Math.round(estimatedGrams * 4.8 + heightMm * 0.22));
+  const estimatedPrintMinutes = Math.max(3, Math.round(((estimatedGrams * 4.8) + (heightMm * 0.22)) / profile.speedFactor));
 
   return { estimatedPrintMinutes, estimatedGrams };
 }
 
-const materialDensities: Record<string, number> = {
-  PLA: 1.24,
-  PETG: 1.27,
-  ABS: 1.04,
-  TPU: 1.21,
-  NYLON: 1.14,
-  RESIN: 1.1
-};
-
-function parseGcodeGrams(text: string) {
+function parseGcodeGrams(text: string, material: string) {
   const direct = text.match(/;\s*(?:total\s+)?filament used \[g\]\s*[=:]\s*([0-9.]+)/i);
   if (direct && Number(direct[1]) > 0) return Number(direct[1]);
   const orca = text.match(/filament used \[g\]:\s*([0-9.]+)/i);
   if (orca && Number(orca[1]) > 0) return Number(orca[1]);
   const volume = text.match(/;\s*filament used \[cm3\]\s*[=:]\s*([0-9.]+)/i);
-  return volume ? Number(volume[1]) * materialDensities.PLA : null;
+  return volume ? Number(volume[1]) * getPrintMaterialProfile(material).densityGPerCm3 : null;
 }
 
 function parseGcodeMinutes(text: string) {

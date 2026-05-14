@@ -5,6 +5,7 @@ import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
+import { materializeSlicerProfileSet } from "./host-slicer-profiles.mjs";
 
 const port = Number(process.env.HOST_SLICER_PORT ?? 4317);
 const host = process.env.HOST_SLICER_HOST ?? "127.0.0.1";
@@ -45,6 +46,10 @@ const slicers = [
     machine: path.join(orcaDataDir, "system/Elegoo/machine/ECC/Elegoo Centauri Carbon 0.4 nozzle.json"),
     process: path.join(orcaDataDir, "system/Elegoo/process/ECC/0.20mm Standard @Elegoo CC 0.4 nozzle.json"),
     filament: path.join(orcaDataDir, "system/Elegoo/filament/ECC/Elegoo PLA @ECC.json"),
+    filamentDirectories: [
+      path.join(orcaDataDir, "system/Elegoo/filament/ECC"),
+      path.join(orcaDataDir, "user/default/filament")
+    ],
     patch: centauriEstimatePatch
   },
   {
@@ -54,6 +59,10 @@ const slicers = [
     machine: path.join(elegooDataDir, "system/Elegoo/machine/ECC/Elegoo Centauri Carbon 0.4 nozzle.json"),
     process: path.join(elegooDataDir, "system/Elegoo/process/ECC/0.20mm Standard @Elegoo CC 0.4 nozzle.json"),
     filament: path.join(elegooDataDir, "system/Elegoo/filament/ECC/Elegoo PLA @ECC.json"),
+    filamentDirectories: [
+      path.join(elegooDataDir, "system/Elegoo/filament/ECC"),
+      path.join(elegooDataDir, "user/default/filament")
+    ],
     patch: centauriEstimatePatch
   },
   {
@@ -61,7 +70,10 @@ const slicers = [
     bin: "/Applications/OrcaSlicer.app/Contents/MacOS/OrcaSlicer",
     machine: "/Applications/OrcaSlicer.app/Contents/Resources/profiles/Elegoo/machine/ECC/Elegoo Centauri Carbon 0.4 nozzle.json",
     process: "/Applications/OrcaSlicer.app/Contents/Resources/profiles/Elegoo/process/ECC/0.20mm Standard @Elegoo CC 0.4 nozzle.json",
-    filament: "/Applications/OrcaSlicer.app/Contents/Resources/profiles/Elegoo/filament/ELEGOO/Elegoo PLA.json"
+    filament: "/Applications/OrcaSlicer.app/Contents/Resources/profiles/Elegoo/filament/ELEGOO/Elegoo PLA.json",
+    filamentDirectories: [
+      "/Applications/OrcaSlicer.app/Contents/Resources/profiles/Elegoo/filament/ELEGOO"
+    ]
   }
 ];
 
@@ -108,7 +120,11 @@ async function estimateWithSlicer(input) {
   try {
     const inputPath = path.join(tmpDir, `${randomUUID()}-${input.fileName}`);
     await writeFile(inputPath, input.buffer);
-    const profiles = await materializeProfiles(selected, tmpDir);
+    const profiles = await materializeSlicerProfileSet({
+      slicer: selected,
+      material: input.material,
+      tmpDir
+    });
 
     const args = [
       "--slice",
@@ -133,7 +149,7 @@ async function estimateWithSlicer(input) {
     return {
       ...parsed,
       source: "slicer",
-      message: `${selected.name} ${path.basename(selected.process)}`
+      message: `${selected.name} ${path.basename(profiles.process)} using ${String(input.material).toUpperCase()} settings`
     };
   } finally {
     await rm(tmpDir, { recursive: true, force: true });
@@ -156,22 +172,6 @@ function resolveSlicer() {
     throw new Error("No configured ElegooSlicer or OrcaSlicer profile set was found. Set HOST_SLICER_BIN, HOST_SLICER_MACHINE_PROFILE, HOST_SLICER_PROCESS_PROFILE, and HOST_SLICER_FILAMENT_PROFILE.");
   }
   return found;
-}
-
-async function materializeProfiles(slicer, tmpDir) {
-  if (!slicer.patch) return slicer;
-  return {
-    ...slicer,
-    machine: await patchedProfile(slicer.machine, slicer.patch.machine, path.join(tmpDir, "machine-profile.json")),
-    process: await patchedProfile(slicer.process, slicer.patch.process, path.join(tmpDir, "process-profile.json"))
-  };
-}
-
-async function patchedProfile(source, patch, destination) {
-  const profile = JSON.parse(await readFile(source, "utf8"));
-  Object.assign(profile, patch);
-  await writeFile(destination, JSON.stringify(profile, null, 2));
-  return destination;
 }
 
 function parseSlicerGcode(text, material) {

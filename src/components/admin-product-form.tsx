@@ -103,7 +103,7 @@ export function AdminProductForm({ product, materials = fallbackMaterials }: { p
       setMessage("Print file stored. Upload STL or G-code to calculate estimates.");
       return;
     }
-    const estimates = parseProductPrintFileEstimates(await file.text());
+    const estimates = parseProductPrintFileEstimates(await file.text(), selectedMaterial);
     if (estimates.estimatedGrams) setEstimatedGrams(estimates.estimatedGrams);
     if (estimates.estimatedPrintMinutes) setEstimatedPrintMinutes(estimates.estimatedPrintMinutes);
     setMessage(estimates.estimatedGrams || estimates.estimatedPrintMinutes ? "Loaded estimates from G-code comments." : "No safe estimates found in G-code comments.");

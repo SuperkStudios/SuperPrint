@@ -16,7 +16,7 @@ export async function estimatePrintFile(input: {
   const bytes = input.bytes instanceof Uint8Array ? input.bytes : new Uint8Array(input.bytes);
 
   if (/\.(gcode|gco|g)$/i.test(input.fileName)) {
-    const estimate = parseProductPrintFileEstimates(Buffer.from(bytes).toString("utf8"));
+    const estimate = parseProductPrintFileEstimates(Buffer.from(bytes).toString("utf8"), input.material);
     return { ...estimate, source: "gcode" };
   }
 

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
+import { prepareGeometryForBuildPlate } from "./stl-model-viewer-utils";
 
 export function StlModelViewer({
   src,
@@ -35,8 +36,8 @@ export function StlModelViewer({
     const scene = new THREE.Scene();
     scene.background = new THREE.Color("#f8fafc");
 
-    const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 1000);
-    camera.position.set(0, 0.8, 4);
+    const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 2000);
+    camera.position.set(150, 110, 190);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -53,15 +54,8 @@ export function StlModelViewer({
     scene.add(new THREE.HemisphereLight("#ffffff", "#94a3b8", 2.4));
     const keyLight = new THREE.DirectionalLight("#ffffff", 3);
     keyLight.position.set(3, 5, 4);
+    keyLight.castShadow = true;
     scene.add(keyLight);
-
-    const floor = new THREE.Mesh(
-      new THREE.CircleGeometry(1.8, 64),
-      new THREE.MeshStandardMaterial({ color: "#e2e8f0", roughness: 0.82, metalness: 0 })
-    );
-    floor.rotation.x = -Math.PI / 2;
-    floor.position.y = -0.85;
-    scene.add(floor);
 
     const material = new THREE.MeshStandardMaterial({
       color,
@@ -92,27 +86,39 @@ export function StlModelViewer({
           return response.arrayBuffer();
         });
         if (disposed) return;
-        const geometry = new STLLoader().parse(buffer);
-        geometry.computeVertexNormals();
-        geometry.computeBoundingBox();
+        const loadedGeometry = new STLLoader().parse(buffer);
+        loadedGeometry.computeVertexNormals();
+        const prepared = prepareGeometryForBuildPlate(loadedGeometry);
+        loadedGeometry.dispose();
 
-        const box = geometry.boundingBox;
-        if (!box) throw new Error("Invalid STL bounds");
-        const center = new THREE.Vector3();
-        const size = new THREE.Vector3();
-        box.getCenter(center);
-        box.getSize(size);
-        geometry.translate(-center.x, -center.y, -center.z);
+        const plate = new THREE.Mesh(
+          new THREE.PlaneGeometry(prepared.plateSizeMm.width, prepared.plateSizeMm.depth),
+          new THREE.MeshStandardMaterial({ color: "#e2e8f0", roughness: 0.86, metalness: 0 })
+        );
+        plate.rotation.x = -Math.PI / 2;
+        plate.position.y = -0.02;
+        plate.receiveShadow = true;
+        scene.add(plate);
 
-        const largest = Math.max(size.x, size.y, size.z) || 1;
-        geometry.scale(2.3 / largest, 2.3 / largest, 2.3 / largest);
-        geometry.rotateX(-Math.PI / 2);
+        const grid = new THREE.GridHelper(
+          Math.max(prepared.plateSizeMm.width, prepared.plateSizeMm.depth),
+          12,
+          "#94a3b8",
+          "#cbd5e1"
+        );
+        grid.position.y = 0.01;
+        scene.add(grid);
 
-        const mesh = new THREE.Mesh(geometry, material);
+        const mesh = new THREE.Mesh(prepared.geometry, material);
         mesh.castShadow = true;
         mesh.receiveShadow = true;
         scene.add(mesh);
-        controls.target.set(0, 0, 0);
+
+        const frameSize = Math.max(prepared.plateSizeMm.width, prepared.plateSizeMm.depth, prepared.modelSizeMm.height);
+        camera.position.set(frameSize * 0.72, frameSize * 0.58, frameSize * 0.9);
+        controls.target.set(0, prepared.modelSizeMm.height * 0.38, 0);
+        controls.maxDistance = frameSize * 2.4;
+        controls.minDistance = frameSize * 0.28;
         controls.update();
         setStatus("");
       } catch {
