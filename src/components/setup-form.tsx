@@ -315,11 +315,17 @@ export function SetupForm() {
 
   return (
     <div className="grid gap-6">
-      <div className="grid gap-2 rounded-lg border bg-white p-4 md:grid-cols-6">
+      <div className="grid gap-2 rounded-lg border bg-card p-4 text-card-foreground shadow-sm md:grid-cols-6">
         {steps.map((label, index) => (
-          <div key={label} className={`rounded-md border p-3 text-sm ${index === step ? "border-primary bg-primary/5" : "bg-muted/30"}`}>
+          <div key={label} className={`rounded-md border p-3 text-sm ${index === step ? "border-primary bg-primary/10 text-foreground" : "bg-muted/30 text-muted-foreground"}`}>
             <div className="flex items-center gap-2 font-medium">
-              {index < step ? <CheckCircle2 className="size-4 text-primary" /> : <span className="grid size-4 place-items-center rounded-full border text-[10px]">{index + 1}</span>}
+              {index < step ? (
+                <CheckCircle2 className="size-5 shrink-0 text-primary" />
+              ) : (
+                <span className="flex size-5 shrink-0 items-center justify-center rounded-full border text-[11px] leading-none tabular-nums">
+                  {index + 1}
+                </span>
+              )}
               {label}
             </div>
           </div>
@@ -360,7 +366,7 @@ export function SetupForm() {
           <Field label="Internal IP or hostname" value={draft.printer.internalIp} onChange={(value) => updatePrinter("internalIp", value)} />
           <Field label="Control API URL" value={draft.printer.controlApiUrl} onChange={(value) => updatePrinter("controlApiUrl", value)} />
 
-          <div className="md:col-span-2 rounded-md border p-4">
+          <div className="md:col-span-2 rounded-md border bg-muted/20 p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <Printer className="size-4 text-primary" />
@@ -396,7 +402,7 @@ export function SetupForm() {
                       id={`filamentMaterial-${spool.localId}`}
                       value={spool.material}
                       onChange={(event) => updateSpool(spool.localId, "material", event.target.value)}
-                      className="h-10 rounded-md border bg-white px-3 text-sm"
+                      className="h-10 rounded-md border bg-background px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       {["PLA", "PETG", "ABS", "TPU", "NYLON", "RESIN"].map((material) => (
                         <option key={material}>{material}</option>
@@ -424,7 +430,7 @@ export function SetupForm() {
 
       {step === 4 ? (
         <Panel title="Assign completed prints" description="Pull completed printer history, choose which roll each completed print used, or ignore test prints you do not want tracked.">
-          <div className="md:col-span-2 rounded-md border p-4">
+          <div className="md:col-span-2 rounded-md border bg-muted/20 p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <Boxes className="size-4 text-primary" />
@@ -449,7 +455,7 @@ export function SetupForm() {
                       value={ignoredPrintIds.includes(print.id) ? "" : printAssignments[print.id] ?? ""}
                       onChange={(event) => assignPrintToSpool(print.id, event.target.value)}
                       disabled={ignoredPrintIds.includes(print.id)}
-                      className="h-10 min-w-0 rounded-md border bg-white px-3 text-sm"
+                      className="h-10 min-w-0 rounded-md border bg-background px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       <option value="">Leave unassigned</option>
                       {stockSpools.map((spool, index) => (
@@ -489,7 +495,7 @@ export function SetupForm() {
               <ShieldCheck className="size-4 text-primary" />
               <p className="font-medium">Setup sheet</p>
             </div>
-            <pre className="whitespace-pre-wrap rounded border bg-white p-4 text-sm leading-6 text-muted-foreground">{summary}</pre>
+            <pre className="whitespace-pre-wrap rounded border bg-background p-4 text-sm leading-6 text-muted-foreground">{summary}</pre>
             <div className="mt-3">
               <Button type="button" variant="secondary" onClick={() => window.print()}>
                 Print setup sheet
@@ -522,7 +528,7 @@ export function SetupForm() {
 
 function Panel({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
   return (
-    <section className="space-y-5 rounded-lg border bg-white p-5">
+    <section className="space-y-5 rounded-lg border bg-card p-5 text-card-foreground shadow-sm">
       <div>
         <h2 className="text-xl font-semibold">{title}</h2>
         <p className="mt-1 text-sm text-muted-foreground">{description}</p>
