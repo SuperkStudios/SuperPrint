@@ -4,13 +4,25 @@ import { useState } from "react";
 import { ShoppingCart } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-export function StoreBuyButton({ productId, signedIn }: { productId: string; signedIn: boolean }) {
+export function StoreBuyButton({
+  productId,
+  signedIn,
+  selectedMaterial,
+  selectedColor,
+  loginNext
+}: {
+  productId: string;
+  signedIn: boolean;
+  selectedMaterial?: string;
+  selectedColor?: string;
+  loginNext?: string;
+}) {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
 
   async function buy() {
     if (!signedIn) {
-      window.location.href = "/login";
+      window.location.href = `/login?mode=signup&next=${encodeURIComponent(loginNext ?? window.location.pathname)}`;
       return;
     }
     setLoading(true);
@@ -18,7 +30,7 @@ export function StoreBuyButton({ productId, signedIn }: { productId: string; sig
     const response = await fetch("/api/orders", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ productId })
+      body: JSON.stringify({ productId, selectedMaterial, selectedColor })
     });
     const body = await response.json().catch(() => null);
     setLoading(false);

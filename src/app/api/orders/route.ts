@@ -8,7 +8,9 @@ import { createProductCheckout } from "@/services/checkout";
 
 const createOrderSchema = z.object({
   productId: z.string().optional(),
-  uploadId: z.string().optional()
+  uploadId: z.string().optional(),
+  selectedMaterial: z.string().optional(),
+  selectedColor: z.string().optional()
 });
 
 export async function GET() {
@@ -38,7 +40,9 @@ export async function POST(request: Request) {
     const checkout = await createProductCheckout({
       productId: body.productId,
       customerId: session!.user.id,
-      customerEmail: session!.user.email
+      customerEmail: session!.user.email,
+      selectedMaterial: body.selectedMaterial,
+      selectedColor: body.selectedColor
     });
     return NextResponse.json(checkout, { status: 201 });
   }

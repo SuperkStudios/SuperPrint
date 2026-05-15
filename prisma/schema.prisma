@@ -239,6 +239,8 @@ model Order {
   totalCents     Int
   paymentStatus  String      @default("PENDING")
   shippingStatus String      @default("NOT_STARTED")
+  selectedMaterial FilamentMaterial?
+  selectedColor   String?
   printJobs      PrintJob[]
   videos         OrderVideo[]
   createdAt      DateTime    @default(now())

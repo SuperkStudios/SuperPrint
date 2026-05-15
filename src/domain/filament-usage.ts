@@ -3,7 +3,7 @@ export type CompletedPrinterHistoryItem = {
   name: string;
   status: string;
   gramsUsed?: number;
-  gramsSource?: "PRINTER_HISTORY" | "GCODE" | "VOLUME_ESTIMATE" | "MATCHED_COMPLETED_PRINT" | "TIME_ESTIMATE";
+  gramsSource?: "PRINTER_HISTORY" | "GCODE" | "VOLUME_ESTIMATE" | "MATCHED_COMPLETED_PRINT" | "TIME_ESTIMATE" | "LAYER_ESTIMATE";
   completedAt?: string;
   printTimeSeconds?: number;
   printedLayers?: number;

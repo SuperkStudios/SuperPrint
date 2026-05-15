@@ -1,5 +1,5 @@
 import { Prisma } from "@prisma/client";
-import { sanitizePlatformEvent, type PlatformEventType } from "../domain/events";
+import { isPublicPlatformEvent, sanitizePlatformEvent, type PlatformEventType } from "../domain/events";
 import { prisma } from "../lib/prisma";
 
 export async function recordPlatformEvent(input: {
@@ -19,15 +19,18 @@ export async function recordPlatformEvent(input: {
 export async function listPublicEvents(limit = 20) {
   const events = await prisma.platformEvent.findMany({
     orderBy: { createdAt: "desc" },
-    take: limit
+    take: limit * 3
   });
 
-  return events.map((event) =>
-    sanitizePlatformEvent({
-      id: event.id,
-      type: event.type,
-      createdAt: event.createdAt,
-      payload: event.payload as Record<string, unknown>
-    })
-  );
+  return events
+    .filter((event) => isPublicPlatformEvent({ type: event.type, payload: event.payload as Record<string, unknown> }))
+    .slice(0, limit)
+    .map((event) =>
+      sanitizePlatformEvent({
+        id: event.id,
+        type: event.type,
+        createdAt: event.createdAt,
+        payload: event.payload as Record<string, unknown>
+      })
+    );
 }

@@ -27,6 +27,29 @@ describe("printer profile validation", () => {
     });
   });
 
+  it("accepts Centauri websocket control endpoints when assigning active filament", () => {
+    expect(
+      validatePrinterProfile({
+        name: "centauri-01",
+        publicName: "Centauri One",
+        modelName: "Elegoo Centauri Carbon",
+        nozzleSizeMm: 0.4,
+        buildVolumeXmm: 256,
+        buildVolumeYmm: 256,
+        buildVolumeZmm: 256,
+        supportedMaterials: ["PLA", "PETG"],
+        currentFilamentId: "spool_1",
+        cameraSource: null,
+        maintenanceProfile: "Carbon motion system / enclosed FDM",
+        internalIp: "192.168.10.125",
+        controlApiUrl: "ws://192.168.10.125:3030/websocket"
+      })
+    ).toMatchObject({
+      currentFilamentId: "spool_1",
+      controlApiUrl: "ws://192.168.10.125:3030/websocket"
+    });
+  });
+
   it("rejects impossible machine dimensions and unsupported materials", () => {
     expect(() =>
       validatePrinterProfile({

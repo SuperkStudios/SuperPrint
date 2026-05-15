@@ -5,6 +5,7 @@ import {
   completePrintJob,
   failPrintJob,
   getAdminQueueState,
+  optimizeQueueForLoadedFilament,
   pausePrintJob,
   approvePhysicalPrintStart,
   requeuePrintJob,
@@ -13,7 +14,7 @@ import {
 } from "@/services/queue";
 
 const actionSchema = z.object({
-  action: z.enum(["reorder", "approvePhysicalStart", "pause", "complete", "stop", "fail", "requeue"]),
+  action: z.enum(["reorder", "optimizeMaterials", "approvePhysicalStart", "pause", "complete", "stop", "fail", "requeue"]),
   printJobId: z.string().optional(),
   orderedIds: z.array(z.string()).optional(),
   checklist: z
@@ -42,6 +43,9 @@ export async function POST(request: Request) {
   const body = actionSchema.parse(await request.json());
   if (body.action === "reorder") {
     return NextResponse.json({ jobs: await reorderPrintQueue(body.orderedIds ?? []) });
+  }
+  if (body.action === "optimizeMaterials") {
+    return NextResponse.json(await optimizeQueueForLoadedFilament(session!.user.id));
   }
   if (!body.printJobId) {
     return NextResponse.json({ error: "printJobId is required" }, { status: 400 });

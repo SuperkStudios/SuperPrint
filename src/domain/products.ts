@@ -4,7 +4,7 @@ import { getPrintMaterialProfile } from "./print-materials";
 export const productInputSchema = z.object({
   name: z.string().trim().min(2),
   slug: z.string().trim().min(2).optional(),
-  description: z.string().trim().min(10),
+  description: z.string().trim().min(1),
   imageUrl: z
     .string()
     .trim()

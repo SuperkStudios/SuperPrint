@@ -1,7 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { normalizeProductInput, type ProductInput } from "@/domain/products";
 import { prisma } from "@/lib/prisma";
-import { recordPlatformEvent } from "./events";
 
 export async function upsertProduct(input: ProductInput & { id?: string }, actorId: string) {
   const product = normalizeProductInput(input);
@@ -21,15 +20,7 @@ export async function upsertProduct(input: ProductInput & { id?: string }, actor
         })
       : saved;
 
-  await recordPlatformEvent({
-    type: "ORDER_CREATED",
-    actorId,
-    payload: {
-      adminAction: input.id ? "PRODUCT_UPDATED" : "PRODUCT_CREATED",
-      productId: finalProduct.id,
-      productName: finalProduct.name
-    }
-  });
+  void actorId;
 
   return finalProduct;
 }

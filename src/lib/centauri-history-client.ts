@@ -10,6 +10,9 @@ import {
 } from "@/domain/centauri-history";
 import { filterCompletedPrinterHistory, type CompletedPrinterHistoryItem } from "@/domain/filament-usage";
 
+const GCODE_HEAD_BYTES = 256 * 1024;
+const GCODE_TAIL_BYTES = 2 * 1024 * 1024;
+
 export async function fetchCentauriCompletedHistory(input: {
   controlApiUrl: string;
   mainboardId?: string;
@@ -34,10 +37,11 @@ export async function fetchCentauriCompletedHistory(input: {
   const enriched = await Promise.all(
     history.map(async (task) => {
       const metadata = input.enrichGcode === false ? undefined : await fetchGcodeFilamentMetadata(printerBaseUrl, task.name, gcodeTimeoutMs);
+      const metadataUsage = resolveGcodeHistoryUsage(task, metadata?.gramsUsed);
       return {
         ...task,
-        gramsUsed: task.gramsUsed ?? metadata?.gramsUsed,
-        gramsSource: task.gramsSource ?? (metadata?.gramsUsed ? "GCODE" : undefined),
+        gramsUsed: task.gramsUsed ?? metadataUsage.gramsUsed,
+        gramsSource: task.gramsSource ?? metadataUsage.gramsSource,
         material: task.material ?? metadata?.material,
         density: metadata?.density
       };
@@ -46,6 +50,26 @@ export async function fetchCentauriCompletedHistory(input: {
 
   const estimated = estimateInterruptedUsage(enriched);
   return input.includeMissingGrams ? estimated : filterCompletedPrinterHistory(estimated);
+}
+
+export function resolveGcodeHistoryUsage(
+  task: Pick<CompletedPrinterHistoryItem, "status" | "printedLayers" | "totalLayers">,
+  fullGcodeGrams?: number
+) {
+  if (typeof fullGcodeGrams !== "number" || !Number.isFinite(fullGcodeGrams) || fullGcodeGrams <= 0) {
+    return {} as Pick<CompletedPrinterHistoryItem, "gramsUsed" | "gramsSource">;
+  }
+  if (!["FAILED", "STOPPED"].includes(task.status)) {
+    return { gramsUsed: fullGcodeGrams, gramsSource: "GCODE" as const };
+  }
+  if (typeof task.printedLayers !== "number" || typeof task.totalLayers !== "number" || task.totalLayers <= 0) {
+    return { gramsUsed: fullGcodeGrams, gramsSource: "GCODE" as const };
+  }
+  const layerRatio = Math.max(0, Math.min(1, task.printedLayers / task.totalLayers));
+  return {
+    gramsUsed: Number((fullGcodeGrams * layerRatio).toFixed(2)),
+    gramsSource: "LAYER_ESTIMATE" as const
+  };
 }
 
 async function collectHistorySessionWithRetry(input: { controlApiUrl: string; mainboardId?: string; timeoutMs: number }) {
@@ -71,9 +95,7 @@ async function fetchGcodeFilamentMetadata(printerBaseUrl: string, taskName: stri
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch(`${printerBaseUrl}${encodeURI(taskName)}`, { signal: controller.signal });
-    if (!response.ok) return undefined;
-    const text = await readResponsePrefix(response, 64 * 1024);
+    const text = await fetchGcodeMetadataText(`${printerBaseUrl}${encodeURI(taskName)}`, controller.signal);
     return {
       gramsUsed: parseGcodeFilamentGrams(text),
       density: parseGcodeFilamentDensity(text),
@@ -86,7 +108,28 @@ async function fetchGcodeFilamentMetadata(printerBaseUrl: string, taskName: stri
   }
 }
 
-async function readResponsePrefix(response: Response, maxBytes: number) {
+export async function fetchGcodeMetadataText(url: string, signal?: AbortSignal) {
+  const headResponse = await fetch(url, {
+    signal,
+    headers: { Range: `bytes=0-${GCODE_HEAD_BYTES - 1}` }
+  });
+  if (!headResponse.ok) return "";
+
+  const headText = await readGcodeMetadataText(headResponse, GCODE_HEAD_BYTES);
+  const totalBytes = readTotalResponseBytes(headResponse);
+  if (parseGcodeFilamentGrams(headText) || !totalBytes || totalBytes <= GCODE_HEAD_BYTES) return headText;
+
+  const tailStart = Math.max(GCODE_HEAD_BYTES, totalBytes - GCODE_TAIL_BYTES);
+  const tailResponse = await fetch(url, {
+    signal,
+    headers: { Range: `bytes=${tailStart}-${totalBytes - 1}` }
+  });
+  if (!tailResponse.ok) return headText;
+
+  return `${headText}\n${await readGcodeMetadataText(tailResponse, GCODE_TAIL_BYTES)}`;
+}
+
+export async function readGcodeMetadataText(response: Response, maxBytes = GCODE_HEAD_BYTES + GCODE_TAIL_BYTES) {
   if (!response.body) return response.text();
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -101,6 +144,14 @@ async function readResponsePrefix(response: Response, maxBytes: number) {
   await reader.cancel().catch(() => undefined);
   text += decoder.decode();
   return text;
+}
+
+function readTotalResponseBytes(response: Response) {
+  const contentRange = response.headers.get("content-range");
+  const rangeTotal = contentRange?.match(/\/(\d+)$/)?.[1];
+  if (rangeTotal && Number.isFinite(Number(rangeTotal))) return Number(rangeTotal);
+  const contentLength = response.headers.get("content-length");
+  return contentLength && Number.isFinite(Number(contentLength)) ? Number(contentLength) : undefined;
 }
 
 function parseGcodeMaterial(gcode: string) {

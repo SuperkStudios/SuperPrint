@@ -1,10 +1,7 @@
-import http from "node:http";
-import https from "node:https";
 import WebSocket from "ws";
 import {
   buildCentauriStatusRefreshRequest,
   buildPrinterHeartbeatUpdate,
-  getCentauriMjpegUrl,
   parseCentauriStatusTelemetry,
   type PublicPrinterTelemetry
 } from "@/domain/printer-heartbeat";
@@ -12,19 +9,19 @@ import { probePrinterConnection } from "@/domain/bootstrap";
 import { prisma } from "@/lib/prisma";
 import { recordPlatformEvent } from "@/services/events";
 
+const telemetryCache = new Map<string, { telemetry: PublicPrinterTelemetry | null; checkedAtMs: number; inFlight?: Promise<PublicPrinterTelemetry | null> }>();
+const TELEMETRY_CACHE_MS = 2500;
+
 export async function refreshPrinterHeartbeat(printerId: string) {
   const printer = await prisma.printer.findUniqueOrThrow({ where: { id: printerId } });
   const startedAt = Date.now();
-  const [result, cameraReachable] = await Promise.all([
-    probePrinterConnection(
-      { internalIp: printer.internalIp, controlApiUrl: printer.controlApiUrl },
-      { timeoutMs: 1500 }
-    ),
-    probeCameraReachable(getCentauriMjpegUrl({ internalIp: printer.internalIp, cameraSource: printer.cameraSource }), 5000)
-  ]);
+  const result = await probePrinterConnection(
+    { internalIp: printer.internalIp, controlApiUrl: printer.controlApiUrl },
+    { timeoutMs: 1500 }
+  );
   const update = buildPrinterHeartbeatUpdate({
-    ok: result.ok || cameraReachable,
-    message: result.ok ? result.message : cameraReachable ? "Printer camera endpoint reachable." : result.message,
+    ok: result.ok,
+    message: result.message,
     checkedAt: new Date(),
     latencyMs: Date.now() - startedAt
   });
@@ -33,7 +30,7 @@ export async function refreshPrinterHeartbeat(printerId: string) {
     where: { id: printer.id },
     data: {
       ...update,
-      cameraStatus: result.ok || cameraReachable ? "ONLINE" : "OFFLINE"
+      cameraStatus: result.ok ? "ONLINE" : "OFFLINE"
     },
     include: { currentFilament: true }
   });
@@ -45,9 +42,24 @@ export async function refreshAllPrinterHeartbeats() {
 }
 
 export async function readPrinterTelemetry(printerId: string): Promise<PublicPrinterTelemetry | null> {
+  const cached = telemetryCache.get(printerId);
+  const now = Date.now();
+  if (cached?.inFlight) return cached.inFlight;
+  if (cached && now - cached.checkedAtMs < TELEMETRY_CACHE_MS) return cached.telemetry;
+
   const printer = await prisma.printer.findUniqueOrThrow({ where: { id: printerId } });
   if (!printer.controlApiUrl.startsWith("ws")) return null;
-  const telemetry = await readCentauriTelemetry(printer.controlApiUrl, 3500);
+  const inFlight = readCentauriTelemetry(printer.controlApiUrl, 3500).then((telemetry) => {
+    telemetryCache.set(printerId, { telemetry, checkedAtMs: Date.now() });
+    return telemetry;
+  }).finally(() => {
+    const next = telemetryCache.get(printerId);
+    if (next?.inFlight === inFlight) {
+      telemetryCache.set(printerId, { telemetry: next.telemetry, checkedAtMs: next.checkedAtMs });
+    }
+  });
+  telemetryCache.set(printerId, { telemetry: cached?.telemetry ?? null, checkedAtMs: cached?.checkedAtMs ?? 0, inFlight });
+  const telemetry = await inFlight;
   if (telemetry) {
     await recordManualPrintDetection(printer.id, telemetry).catch(() => undefined);
   }
@@ -130,21 +142,5 @@ function readCentauriTelemetry(controlApiUrl: string, timeoutMs: number) {
       }
     });
     socket.on("error", () => finish(null));
-  });
-}
-
-function probeCameraReachable(url: string, timeoutMs: number) {
-  return new Promise<boolean>((resolve) => {
-    const parsed = new URL(url);
-    const client = parsed.protocol === "https:" ? https : http;
-    const request = client.get(parsed, { timeout: timeoutMs }, (response) => {
-      response.destroy();
-      resolve(Boolean(response.statusCode && response.statusCode < 400));
-    });
-    request.on("timeout", () => {
-      request.destroy();
-      resolve(false);
-    });
-    request.on("error", () => resolve(false));
   });
 }

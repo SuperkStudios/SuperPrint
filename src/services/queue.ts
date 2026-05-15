@@ -13,8 +13,11 @@ import {
 import { approveOperatorPrintStart, type OperatorStartChecklist } from "../domain/operator-start";
 import { completePrintingJobAccounting, failPrintingJobAccounting, stopPrintingJobAccounting } from "../domain/print-completion";
 import { assignQueuedJobToPrinter } from "../domain/queue-preparation";
+import { CentauriPrinterControlAdapter } from "../domain/printer-control";
+import { planMaterialAwareQueue } from "../domain/material-queue-planner";
 import { enqueuePrintJob } from "../lib/queue-broker";
 import { prisma } from "../lib/prisma";
+import { resolveLocalStoragePath } from "../lib/storage";
 import { recordPlatformEvent } from "./events";
 
 export async function getPublicQueueState() {
@@ -77,6 +80,65 @@ export async function reorderPrintQueue(orderedIds: string[]) {
   );
 
   return reordered;
+}
+
+export async function optimizeQueueForLoadedFilament(actorId?: string) {
+  const [printer, queuedJobs] = await Promise.all([
+    prisma.printer.findFirst({
+      where: { currentFilamentId: { not: null }, status: { not: "OFFLINE" } },
+      include: { currentFilament: true },
+      orderBy: { publicName: "asc" }
+    }),
+    prisma.printJob.findMany({
+      where: { status: "QUEUED" },
+      include: { filament: true },
+      orderBy: { queuePosition: "asc" }
+    })
+  ]);
+
+  const plan = planMaterialAwareQueue({
+    currentMaterial: printer?.currentFilament?.material,
+    jobs: queuedJobs.map((job) => ({
+      id: job.id,
+      queuePosition: job.queuePosition,
+      material: job.filament?.material
+    }))
+  });
+
+  if (plan.orderedJobIds.length > 1) {
+    await reorderPrintQueue(plan.orderedJobIds);
+  }
+
+  let task = null;
+  if (printer && plan.requiredFilamentChange) {
+    const title = `Change filament to ${plan.requiredFilamentChange.toMaterial}`;
+    const existing = await prisma.maintenanceTask.findFirst({
+      where: {
+        printerId: printer.id,
+        title,
+        status: { in: ["OPEN", "IN_PROGRESS"] }
+      }
+    });
+    task = existing ?? await prisma.maintenanceTask.create({
+      data: {
+        printerId: printer.id,
+        title,
+        description: `${plan.requiredFilamentChange.reason}. Load the requested spool, purge until color/material is clean, update the printer's active filament, then resume the queue.`,
+        dueAt: new Date()
+      }
+    });
+    await recordPlatformEvent({
+      type: "MAINTENANCE_DUE",
+      actorId,
+      payload: {
+        printerId: printer.id,
+        title,
+        reason: plan.requiredFilamentChange.reason
+      }
+    });
+  }
+
+  return { plan, task };
 }
 
 export async function startPrintJob(printJobId: string, actorId?: string) {
@@ -341,7 +403,7 @@ export async function prepareNextQueuedJob() {
   const lockToken = randomUUID();
   const locked = await prisma.$transaction(async (tx) => {
     const job = await tx.printJob.findFirst({
-      where: { status: "QUEUED", queueLockedAt: null },
+      where: { status: "QUEUED", queueLockedAt: null, assignmentBlockedReason: null },
       orderBy: { queuePosition: "asc" }
     });
     if (!job) return null;
@@ -392,4 +454,96 @@ export async function prepareNextQueuedJob() {
     }
   });
   return prisma.printJob.findUnique({ where: { id: job.id } });
+}
+
+export async function startAssignedQueuedJobOnPrinter(printJobId: string, actorId?: string) {
+  const job = await prisma.printJob.findUniqueOrThrow({
+    where: { id: printJobId },
+    include: { order: { include: { product: true } }, printer: true, sliceJob: true }
+  });
+  if (!["QUEUED", "READY_ON_NODE"].includes(job.status) || !job.printerId || !job.printer) {
+    return job;
+  }
+  if (process.env.CENTAURI_DIRECT_START_ENABLED !== "true") {
+    return prisma.printJob.update({
+      where: { id: printJobId },
+      data: {
+        assignmentBlockedReason: "Direct Centauri printer start is disabled. Verify G-code on the printer and clear this hold before enabling CENTAURI_DIRECT_START_ENABLED."
+      }
+    });
+  }
+
+  const gcodeLocalPath = resolveDispatchableGcodePath(job);
+  if (!gcodeLocalPath) {
+    return prisma.printJob.update({
+      where: { id: printJobId },
+      data: {
+        assignmentBlockedReason: "No dispatchable G-code is attached. Store products must be pre-sliced or have a ready slice before automatic printer start."
+      }
+    });
+  }
+
+  const adapter = new CentauriPrinterControlAdapter({ controlApiUrl: job.printer.controlApiUrl });
+  let ack: Awaited<ReturnType<CentauriPrinterControlAdapter["startPrint"]>>;
+  try {
+    ack = await adapter.startPrint({ printJobId, gcodeLocalPath });
+  } catch (error) {
+    return prisma.printJob.update({
+      where: { id: printJobId },
+      data: {
+        assignmentBlockedReason: `Automatic printer start failed: ${error instanceof Error ? error.message : String(error)}`
+      }
+    });
+  }
+  const now = new Date();
+  const updated = await prisma.printJob.update({
+    where: { id: printJobId },
+    data: {
+      status: "PRINTING",
+      startedAt: now,
+      queuePosition: 0,
+      assignmentBlockedReason: null,
+      nodeLocalJobPath: gcodeLocalPath,
+      printCommandAcknowledgedAt: now,
+      printCommandAcknowledgedByNodeId: "direct-worker",
+      order: { update: { status: "PRINTING" } }
+    },
+    include: { order: true, printer: true }
+  });
+
+  await recordPlatformEvent({
+    type: "PRINT_COMMAND_ACKNOWLEDGED",
+    actorId,
+    payload: {
+      orderNumber: updated.order.orderNumber,
+      printerName: updated.printer?.publicName,
+      status: "PRINTING",
+      adapter: ack.mode,
+      nodeLocalJobPath: gcodeLocalPath
+    }
+  });
+  await recordPlatformEvent({
+    type: "PRINT_STARTED",
+    actorId,
+    payload: {
+      orderNumber: updated.order.orderNumber,
+      printerName: updated.printer?.publicName,
+      status: "PRINTING",
+      etaMinutes: updated.etaMinutes
+    }
+  });
+
+  return updated;
+}
+
+function resolveDispatchableGcodePath(job: {
+  nodeLocalJobPath: string | null;
+  sliceJob: { outputStorageKey: string | null } | null;
+  order: { product: { productFileStorageKey: string | null } | null };
+}) {
+  if (job.nodeLocalJobPath) return job.nodeLocalJobPath;
+  if (job.sliceJob?.outputStorageKey) return resolveLocalStoragePath(job.sliceJob.outputStorageKey);
+  const productFile = job.order.product?.productFileStorageKey;
+  if (productFile && /\.(gcode|gco|g)$/i.test(productFile)) return resolveLocalStoragePath(productFile);
+  return null;
 }

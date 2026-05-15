@@ -1,12 +1,14 @@
-import { buildStripeProductLineItem, nextQueuePosition } from "@/domain/checkout";
+import { buildStripeCheckoutSuccessUrl, buildStripeProductLineItem, isPaidStripeCheckoutSession, nextQueuePosition, resolveCheckoutSelection } from "@/domain/checkout";
 import { prisma } from "@/lib/prisma";
 import { getStripe, getStripeBaseUrl } from "@/lib/stripe";
+import { enqueuePrintJob } from "@/lib/queue-broker";
 import { recordPlatformEvent } from "./events";
 
-export async function createProductCheckout(input: { productId: string; customerId: string; customerEmail?: string | null }) {
+export async function createProductCheckout(input: { productId: string; customerId: string; customerEmail?: string | null; selectedMaterial?: string | null; selectedColor?: string | null }) {
   const product = await prisma.product.findFirstOrThrow({
     where: { id: input.productId, status: "ACTIVE" }
   });
+  const selection = resolveCheckoutSelection(product, input);
   const order = await prisma.order.create({
     data: {
       orderNumber: `SP-${Date.now().toString().slice(-6)}`,
@@ -14,17 +16,19 @@ export async function createProductCheckout(input: { productId: string; customer
       productId: product.id,
       totalCents: product.priceCents,
       status: "CHECKOUT_READY",
-      paymentStatus: "PENDING"
+      paymentStatus: "PENDING",
+      selectedMaterial: selection.selectedMaterial as never,
+      selectedColor: selection.selectedColor
     }
   });
 
   await recordPlatformEvent({
     type: "ORDER_CREATED",
     actorId: input.customerId,
-    payload: { orderNumber: order.orderNumber, customerEmail: input.customerEmail, productName: product.name }
+    payload: { orderNumber: order.orderNumber, customerEmail: input.customerEmail, productName: product.name, material: selection.selectedMaterial, color: selection.selectedColor }
   });
 
-  const stripe = getStripe();
+  const stripe = await getStripe();
   if (!stripe) {
     return {
       order,
@@ -40,9 +44,11 @@ export async function createProductCheckout(input: { productId: string; customer
     line_items: [buildStripeProductLineItem(product)],
     metadata: {
       orderId: order.id,
-      productId: product.id
+      productId: product.id,
+      selectedMaterial: selection.selectedMaterial,
+      selectedColor: selection.selectedColor ?? ""
     },
-    success_url: `${baseUrl}/orders?checkout=success&order=${order.id}`,
+    success_url: buildStripeCheckoutSuccessUrl(baseUrl, order.id),
     cancel_url: `${baseUrl}/store?checkout=cancelled`
   });
 
@@ -51,6 +57,15 @@ export async function createProductCheckout(input: { productId: string; customer
     checkoutUrl: session.url,
     stripeConfigured: true
   };
+}
+
+export async function reconcilePaidStripeCheckoutSession(input: { sessionId?: string | null; orderId?: string | null; actorId?: string }) {
+  if (!input.sessionId || !input.orderId) return null;
+  const stripe = await getStripe();
+  if (!stripe) return null;
+  const session = await stripe.checkout.sessions.retrieve(input.sessionId);
+  if (!isPaidStripeCheckoutSession(session, input.orderId)) return null;
+  return markOrderPaidAndQueue(input.orderId, input.actorId);
 }
 
 export async function markOrderPaidAndQueue(orderId: string, actorId?: string) {
@@ -68,7 +83,14 @@ export async function markOrderPaidAndQueue(orderId: string, actorId?: string) {
   const position = nextQueuePosition(queueJobs.map((job) => job.queuePosition));
   const spool = await prisma.filamentSpool.findFirst({
     where: {
-      material: order.product.defaultMaterial,
+      material: (order.selectedMaterial ?? order.product.defaultMaterial) as never,
+      ...(order.selectedColor ? { color: order.selectedColor } : {}),
+      remainingGrams: { gt: order.product.estimatedGrams }
+    },
+    orderBy: { remainingGrams: "asc" }
+  }) ?? await prisma.filamentSpool.findFirst({
+    where: {
+      material: (order.selectedMaterial ?? order.product.defaultMaterial) as never,
       remainingGrams: { gt: order.product.estimatedGrams }
     },
     orderBy: { remainingGrams: "asc" }
@@ -107,12 +129,19 @@ export async function markOrderPaidAndQueue(orderId: string, actorId?: string) {
     payload: {
       orderNumber: updated.orderNumber,
       productName: updated.product?.name,
+      material: order.selectedMaterial ?? order.product.defaultMaterial,
+      color: order.selectedColor,
       queuePosition: position,
       reservedGrams: updated.product?.estimatedGrams,
       filamentReserved: Boolean(spool),
       operatorGate: "Physical start still requires admin checklist"
     }
   });
+
+  const printJobId = updated.printJobs[0]?.id;
+  if (printJobId) {
+    await enqueuePrintJob(printJobId);
+  }
 
   return updated;
 }

@@ -40,6 +40,11 @@ export type PublicPlatformEvent = {
   payload: Record<string, unknown>;
 };
 
+export function isPublicPlatformEvent(event: Pick<PlatformEventInput, "type" | "payload">) {
+  if (typeof event.payload.adminAction === "string" && event.payload.adminAction.startsWith("PRODUCT_")) return false;
+  return true;
+}
+
 const privatePayloadKeys = new Set([
   "adminNotes",
   "internalNotes",

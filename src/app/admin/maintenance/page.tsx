@@ -1,4 +1,5 @@
 import { AdminActionButton } from "@/components/admin-action-button";
+import { recommendedMaintenanceChecklist } from "@/domain/maintenance-schedule";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { prisma } from "@/lib/prisma";
@@ -11,8 +12,26 @@ export default async function AdminMaintenancePage() {
     orderBy: { dueAt: "asc" }
   });
 
+  const checklist = recommendedMaintenanceChecklist();
+
   return (
     <div className="grid gap-4">
+      <Card>
+        <CardHeader className="flex-row items-start justify-between gap-4">
+          <div>
+            <CardTitle>Maintenance command center</CardTitle>
+            <p className="mt-1 text-sm text-muted-foreground">Generate due work from runtime and failures. Open tasks block queue assignment for that printer.</p>
+          </div>
+          <AdminActionButton endpoint="/api/admin/maintenance" payload={{ action: "generateSchedule" }}>
+            Generate due tasks
+          </AdminActionButton>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-2 text-sm text-muted-foreground md:grid-cols-2">
+            {checklist.map((item) => <p key={item}>• {item}</p>)}
+          </div>
+        </CardContent>
+      </Card>
       {tasks.map((task) => (
         <Card key={task.id}>
           <CardHeader className="flex-row items-start justify-between">

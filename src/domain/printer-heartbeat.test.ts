@@ -46,19 +46,25 @@ describe("printer heartbeat", () => {
   });
 
   it("builds the Centauri SDCP video enable request", () => {
-    const request = buildCentauriVideoEnableRequest("0000000000000000", "request-1", 1778547600);
+    const request = buildCentauriVideoEnableRequest("mainboard-1", "12345", 1778547600000);
 
+    expect(request.Id).toBe("mainboard-1");
     expect(request.Data.Cmd).toBe(386);
     expect(request.Data.Data).toEqual({ Enable: 1 });
-    expect(request.Topic).toBe("sdcp/request/0000000000000000");
+    expect(request.Data.RequestID).toBe("12345");
+    expect(request.Data.From).toBe(1);
+    expect(request.Topic).toBe("");
   });
 
   it("builds the Centauri SDCP status refresh request", () => {
-    const request = buildCentauriStatusRefreshRequest("mainboard-1", "request-2", 1778547601);
+    const request = buildCentauriStatusRefreshRequest("mainboard-1", "12346", 1778547601000);
 
+    expect(request.Id).toBe("mainboard-1");
     expect(request.Data.Cmd).toBe(0);
     expect(request.Data.Data).toEqual({});
-    expect(request.Topic).toBe("sdcp/request/mainboard-1");
+    expect(request.Data.RequestID).toBe("12346");
+    expect(request.Data.From).toBe(1);
+    expect(request.Topic).toBe("");
   });
 
   it("parses safe Centauri SDCP telemetry from status messages", () => {

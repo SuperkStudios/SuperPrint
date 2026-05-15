@@ -1,9 +1,20 @@
 import Stripe from "stripe";
+import { resolveStripeSettings, stripeSettingKeys } from "@/domain/stripe-settings";
+import { prisma } from "@/lib/prisma";
 
-export function getStripe() {
-  const key = process.env.STRIPE_SECRET_KEY;
+export async function getStripe() {
+  const { secretKey: key } = await getStripeSettings();
   if (!key) return null;
   return new Stripe(key);
+}
+
+export async function getStripeSettings() {
+  const settings = await prisma.systemSetting.findMany({
+    where: { key: { in: stripeSettingKeys() } }
+  });
+  return resolveStripeSettings({
+    settings: Object.fromEntries(settings.map((setting) => [setting.key, setting.value]))
+  });
 }
 
 export function getStripeBaseUrl() {

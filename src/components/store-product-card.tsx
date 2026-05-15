@@ -1,20 +1,18 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { StoreBuyButton } from "@/components/store-buy-button";
+import Link from "next/link";
 import { StlModelViewer } from "@/components/stl-model-viewer";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { filamentColorToHex } from "@/lib/filament-colors";
 import { money } from "@/lib/utils";
 
 export function StoreProductCard({
-  product,
-  colors,
-  signedIn
+  product
 }: {
   product: {
     id: string;
+    slug: string;
     name: string;
     description: string;
     imageUrl: string;
@@ -23,46 +21,34 @@ export function StoreProductCard({
     estimatedPrintMinutes: number;
     defaultMaterial: string;
   };
-  colors: string[];
-  signedIn: boolean;
 }) {
-  const options = colors.length ? colors : [product.defaultMaterial];
-  const [selectedColor, setSelectedColor] = useState(options[0]);
-  const previewColor = useMemo(() => filamentColorToHex(selectedColor), [selectedColor]);
-
   return (
-    <Card className="overflow-hidden">
+    <Card className="overflow-hidden transition hover:-translate-y-0.5 hover:shadow-lg">
       <CardHeader>
-        <div className="mb-4 h-48 overflow-hidden rounded-md bg-slate-50">
+        <Link href={`/store/${product.slug}`} className="mb-4 block h-56 overflow-hidden rounded-md bg-slate-50">
           {product.modelUrl ? (
-            <StlModelViewer src={product.modelUrl} color={previewColor} className="h-full border-0" />
+            <StlModelViewer src={product.modelUrl} className="h-full border-0" />
           ) : (
             <img src={product.imageUrl} alt="" className="h-full w-full object-cover" />
           )}
-        </div>
+        </Link>
         <div className="flex flex-wrap items-center gap-2">
           <Badge className="w-fit bg-primary/10 text-primary">Queue-ready</Badge>
-          {options.map((color) => (
-            <button
-              key={color}
-              type="button"
-              title={color}
-              aria-label={`Preview ${color}`}
-              onClick={() => setSelectedColor(color)}
-              className={`size-6 rounded-full border-2 ${selectedColor === color ? "border-slate-950" : "border-white shadow"}`}
-              style={{ backgroundColor: filamentColorToHex(color) }}
-            />
-          ))}
+          <Badge className="w-fit bg-secondary">{product.defaultMaterial}</Badge>
         </div>
-        <CardTitle>{product.name}</CardTitle>
+        <CardTitle>
+          <Link href={`/store/${product.slug}`}>{product.name}</Link>
+        </CardTitle>
         <CardDescription>{product.description}</CardDescription>
       </CardHeader>
       <CardContent className="flex items-center justify-between">
         <div>
           <p className="font-semibold">{money(product.priceCents)}</p>
-          <p className="text-sm text-muted-foreground">{product.estimatedPrintMinutes} min · {selectedColor} {product.defaultMaterial}</p>
+          <p className="text-sm text-muted-foreground">{product.estimatedPrintMinutes} min production estimate</p>
         </div>
-        <StoreBuyButton productId={product.id} signedIn={signedIn} />
+        <Button asChild size="sm">
+          <Link href={`/store/${product.slug}`}>View</Link>
+        </Button>
       </CardContent>
     </Card>
   );

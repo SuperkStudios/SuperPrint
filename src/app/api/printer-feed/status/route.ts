@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCentauriMjpegUrl } from "@/domain/printer-heartbeat";
 import { prisma } from "@/lib/prisma";
+import { getSharedPrinterFeedRelay } from "@/services/printer-camera-relay";
 import { getPublicQueueState } from "@/services/queue";
 import { readPrinterTelemetry, refreshPrinterHeartbeat } from "@/services/printer-heartbeat";
 
@@ -13,9 +14,11 @@ export async function GET() {
     : [null, null];
   const queue = await getPublicQueueState();
   const publicPrinter = queue.current?.printer ?? queue.printers[0] ?? null;
+  const relay = getSharedPrinterFeedRelay().getState();
+  const online = refreshed?.heartbeatStatus === "ONLINE" || relay.state === "connected" || relay.state === "connecting";
 
   return NextResponse.json({
-    online: refreshed?.heartbeatStatus === "ONLINE",
+    online,
     streamUrl: "/api/printer-feed/stream",
     fallbackHlsUrl: "/api/live/printer/main.m3u8",
     printerName: refreshed?.publicName ?? publicPrinter?.name ?? "SuperPrint cell",
@@ -23,6 +26,7 @@ export async function GET() {
     cameraSource: refreshed ? "proxied-mjpeg" : null,
     recording: false,
     latencyMode: "mjpeg-direct",
+    relay,
     heartbeatAt: refreshed?.lastHeartbeatAt,
     heartbeatLatencyMs: refreshed?.heartbeatLatencyMs,
     telemetry: telemetry ?? { state: "WAITING_FOR_TELEMETRY" },

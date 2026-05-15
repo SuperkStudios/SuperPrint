@@ -28,7 +28,7 @@ export const printerProfileSchema = z.object({
     .string()
     .trim()
     .min(1)
-    .refine((value) => /^https?:\/\//.test(value), "Control API URL must be HTTP(S)"),
+    .refine((value) => /^(https?|wss?):\/\//.test(value), "Control API URL must be HTTP(S) or WS(S)"),
   healthDescription: z.string().trim().default("Waiting for first SuperNode heartbeat"),
   status: z.enum(["HEALTHY", "WARNING", "OFFLINE", "MAINTENANCE"]).default("OFFLINE"),
   heartbeatStatus: z.enum(["UNKNOWN", "ONLINE", "STALE", "OFFLINE"]).default("UNKNOWN"),
@@ -43,7 +43,7 @@ export type PrinterProfile = z.output<typeof printerProfileSchema>;
 export function validatePrinterProfile(input: PrinterProfileInput): PrinterProfile {
   const parsed = printerProfileSchema.safeParse(input);
   if (!parsed.success) {
-    throw new Error("Printer profile is invalid");
+    throw new Error(`Printer profile is invalid: ${parsed.error.issues.map((issue) => issue.message).join("; ")}`);
   }
   return parsed.data;
 }

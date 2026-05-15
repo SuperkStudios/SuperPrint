@@ -23,7 +23,6 @@ type Spool = {
 export function AdminPrinterHistoryPanel({ spools }: { spools: Spool[] }) {
   const [prints, setPrints] = useState<HistoryPrint[]>([]);
   const [assignments, setAssignments] = useState<Record<string, string>>({});
-  const [manualGrams, setManualGrams] = useState<Record<string, string>>({});
   const [message, setMessage] = useState("Pull printer history to review completed, stopped, and failed prints.");
   const [loading, setLoading] = useState(false);
 
@@ -51,13 +50,13 @@ export function AdminPrinterHistoryPanel({ spools }: { spools: Spool[] }) {
 
   async function act(action: "assign" | "ignore" | "importCompleted", print: HistoryPrint) {
     const spoolId = assignments[print.id];
-    const gramsUsed = Number(manualGrams[print.id] ?? print.gramsUsed ?? 0);
+    const gramsUsed = Number(print.gramsUsed ?? 0);
     if ((action === "assign" || action === "importCompleted") && !spoolId) {
       setMessage("Choose a filament roll first.");
       return;
     }
     if ((action === "assign" || action === "importCompleted") && (!Number.isFinite(gramsUsed) || gramsUsed <= 0)) {
-      setMessage("Enter grams used before assigning this print.");
+      setMessage("This printer-history row did not include material usage. Pull history again or check that G-code enrichment is available.");
       return;
     }
     const response = await fetch("/api/admin/printer-history", {
@@ -99,15 +98,16 @@ export function AdminPrinterHistoryPanel({ spools }: { spools: Spool[] }) {
               </p>
             </div>
             <span className={`w-fit rounded-full px-2 py-1 text-xs font-medium ${statusClassName(print.status)}`}>{print.status.toLowerCase()}</span>
-            <input
-              value={manualGrams[print.id] ?? (print.gramsUsed ? String(print.gramsUsed) : "")}
-              onChange={(event) => setManualGrams((current) => ({ ...current, [print.id]: event.target.value }))}
-              placeholder={print.gramsSource ? print.gramsSource.toLowerCase().replaceAll("_", " ") : "grams"}
-              type="number"
-              min="0.01"
-              step="0.01"
-              className="h-9 rounded-md border border-input bg-background px-2 text-sm"
-            />
+            <div className="text-sm">
+              {print.gramsUsed ? (
+                <>
+                  <p className="font-medium">{Math.round(print.gramsUsed)}g</p>
+                  <p className="text-xs text-muted-foreground">{print.gramsSource ? print.gramsSource.toLowerCase().replaceAll("_", " ") : "printer"}</p>
+                </>
+              ) : (
+                <p className="text-xs text-destructive">No printer grams</p>
+              )}
+            </div>
             <select
               value={assignments[print.id] ?? ""}
               onChange={(event) => setAssignments((current) => ({ ...current, [print.id]: event.target.value }))}

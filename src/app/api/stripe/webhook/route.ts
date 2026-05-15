@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
-import { getStripe } from "@/lib/stripe";
+import { getStripe, getStripeSettings } from "@/lib/stripe";
 import { markOrderPaidAndQueue } from "@/services/checkout";
 
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
-  const stripe = getStripe();
-  const secret = process.env.STRIPE_WEBHOOK_SECRET;
+  const [stripe, settings] = await Promise.all([getStripe(), getStripeSettings()]);
+  const secret = settings.webhookSecret;
   if (!stripe || !secret) {
     return NextResponse.json({ error: "Stripe webhook is not configured" }, { status: 503 });
   }

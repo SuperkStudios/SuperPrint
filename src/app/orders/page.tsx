@@ -10,16 +10,27 @@ import { AuthRequired } from "@/components/auth-required";
 import { getBootstrapStatus } from "@/lib/bootstrap";
 import { redirect } from "next/navigation";
 import { EmptyState, PageHero, PageSection, PageShell } from "@/components/cyber-page";
+import { reconcilePaidStripeCheckoutSession } from "@/services/checkout";
 
 export const dynamic = "force-dynamic";
 
-export default async function OrdersPage() {
+export default async function OrdersPage({ searchParams }: { searchParams?: Promise<{ checkout?: string; order?: string; session_id?: string }> }) {
   if (!(await getBootstrapStatus()).isComplete) {
     redirect("/setup");
   }
   const session = await getCurrentSession();
   if (!session?.user.id) {
     return <AuthRequired title="Sign in to view orders" copy="Order history, private queue status, and local media downloads are only available to the signed-in customer." />;
+  }
+  const params = await searchParams;
+  if (params?.checkout === "success") {
+    await reconcilePaidStripeCheckoutSession({
+      sessionId: params.session_id,
+      orderId: params.order,
+      actorId: session.user.id
+    }).catch((error) => {
+      console.error("Stripe checkout reconciliation failed", error);
+    });
   }
 
   const orders = await prisma.order.findMany({

@@ -1,7 +1,7 @@
 import { Worker } from "bullmq";
 import IORedis from "ioredis";
 import { printQueueName } from "../lib/queue-broker";
-import { prepareNextQueuedJob } from "../services/queue";
+import { prepareNextQueuedJob, startAssignedQueuedJobOnPrinter } from "../services/queue";
 
 if (!process.env.REDIS_URL) {
   throw new Error("REDIS_URL is required to run the print worker");
@@ -15,9 +15,14 @@ new Worker(
   printQueueName,
   async (job) => {
     const { printJobId } = job.data as { printJobId: string };
-    // TODO: Real printer agent dispatch belongs behind SuperNode; this worker only prepares persisted assignments.
     const prepared = await prepareNextQueuedJob();
-    return { acknowledged: true, requestedPrintJobId: printJobId, preparedPrintJobId: prepared?.id ?? null };
+    const started = prepared?.printerId ? await startAssignedQueuedJobOnPrinter(prepared.id) : null;
+    return {
+      acknowledged: true,
+      requestedPrintJobId: printJobId,
+      preparedPrintJobId: prepared?.id ?? null,
+      startedPrintJobId: started?.status === "PRINTING" ? started.id : null
+    };
   },
   { connection }
 );

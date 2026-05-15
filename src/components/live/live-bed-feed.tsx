@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type Hls from "hls.js";
-import { Maximize2, Radio, VideoOff } from "lucide-react";
+import { Maximize2, Radio } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
@@ -17,7 +17,9 @@ export function LiveBedFeed({
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [state, setState] = useState<"loading" | "online" | "offline">("loading");
+  const [retryToken, setRetryToken] = useState(0);
   const isMjpeg = !streamUrl.endsWith(".m3u8");
+  const mjpegSrc = `${streamUrl}${streamUrl.includes("?") ? "&" : "?"}r=${retryToken}`;
 
   useEffect(() => {
     let destroyed = false;
@@ -45,13 +47,18 @@ export function LiveBedFeed({
     }
 
     connect();
-    const retry = setInterval(() => {
-      if (!destroyed && state === "offline") connect();
-    }, 10000);
+    const retry = state === "offline"
+      ? setTimeout(() => {
+          if (destroyed) return;
+          setState("loading");
+          if (isMjpeg) setRetryToken((value) => value + 1);
+          else void connect();
+        }, 10000)
+      : null;
 
     return () => {
       destroyed = true;
-      clearInterval(retry);
+      if (retry) clearTimeout(retry);
       hls?.destroy();
     };
   }, [streamUrl, state, isMjpeg]);
@@ -67,8 +74,9 @@ export function LiveBedFeed({
       {isMjpeg ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
+          key={retryToken}
           data-live-bed-feed
-          src={streamUrl}
+          src={mjpegSrc}
           alt={`${printerName} live print bed`}
           className="relative aspect-video w-full bg-zinc-950 object-cover"
           onLoad={() => setState("online")}
@@ -81,19 +89,9 @@ export function LiveBedFeed({
           autoPlay
           playsInline
           controls={false}
-          className={`relative aspect-video w-full bg-zinc-950 object-cover ${state === "online" ? "opacity-100" : "opacity-0"}`}
+          className="relative aspect-video w-full bg-zinc-950 object-cover"
         />
       )}
-      {!isMjpeg && state !== "online" ? (
-        <div className="absolute inset-0 grid place-items-center bg-zinc-950">
-          <div className="absolute inset-0 animate-pulse bg-[linear-gradient(110deg,transparent,rgba(34,211,238,0.12),transparent)]" />
-          <div className="relative text-center">
-            <VideoOff className="mx-auto size-9 text-cyan-200" />
-            <p className="mt-3 font-medium text-white">{state === "loading" ? "Connecting to live bed feed" : "Camera stream offline"}</p>
-            <p className="mt-1 text-sm text-zinc-400">Waiting for self-hosted HLS at {streamUrl}</p>
-          </div>
-        </div>
-      ) : null}
       <div className="absolute inset-x-0 top-0 flex items-center justify-between p-4">
         <Badge className={state === "online" ? "border-emerald-300/30 bg-emerald-300/10 text-emerald-100" : "border-orange-300/30 bg-orange-300/10 text-orange-100"}>
           <Radio className="mr-1 size-3" />
@@ -107,9 +105,9 @@ export function LiveBedFeed({
         <p className="text-sm text-zinc-300">{printerName}</p>
         <p className="text-xl font-semibold">{currentPrint}</p>
         <div className="mt-2 flex flex-wrap gap-3 text-xs text-zinc-400">
-          <span>Latency: low-latency HLS</span>
+          <span>Relay: shared MJPEG</span>
           <span>Recording: armed</span>
-          <span>Reconnect: 10s</span>
+          <span>Reconnect: on disconnect</span>
         </div>
       </div>
     </div>

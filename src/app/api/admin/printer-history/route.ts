@@ -13,7 +13,7 @@ const printSchema = z.object({
   id: z.string(),
   name: z.string(),
   status: z.string(),
-  gramsUsed: z.number().positive(),
+  gramsUsed: z.number().positive().optional(),
   completedAt: z.string().optional(),
   gramsSource: z.string().optional(),
   printedLayers: z.number().optional(),
@@ -70,13 +70,20 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "spoolId is required" }, { status: 400 });
   }
   if (body.action === "assign") {
+    if (!hasUsableGrams(body.print)) {
+      return NextResponse.json({ error: "Printer history did not include material usage for this print." }, { status: 400 });
+    }
     await assignPrintToSpool(body.spoolId, body.print);
     return NextResponse.json({ message: "Print assigned to filament roll." });
   }
+  if (!hasUsableGrams(body.print)) {
+    return NextResponse.json({ error: "Printer history did not include material usage for this print." }, { status: 400 });
+  }
+  const printWithGrams = body.print;
 
   const result = await prisma.$transaction(async (tx) => {
-    const spool = await assignPrintToSpool(body.spoolId!, body.print, tx);
-    const printStatus = toPrintJobStatus(body.print.status);
+    const spool = await assignPrintToSpool(body.spoolId!, printWithGrams, tx);
+    const printStatus = toPrintJobStatus(printWithGrams.status);
     const orderStatus = printStatus === "FAILED" ? "FAILED" : printStatus === "STOPPED" ? "STOPPED" : "COMPLETED";
     const order = await tx.order.create({
       data: {
@@ -93,9 +100,9 @@ export async function PATCH(request: Request) {
         filamentId: spool.id,
         status: printStatus,
         etaMinutes: 0,
-        completedAt: body.print.completedAt ? new Date(body.print.completedAt) : new Date(),
+        completedAt: printWithGrams.completedAt ? new Date(printWithGrams.completedAt) : new Date(),
         failureReason: printStatus === "FAILED" ? `Imported failed printer-history entry` : undefined,
-        consumedFilamentGrams: Math.round(body.print.gramsUsed)
+        consumedFilamentGrams: Math.round(printWithGrams.gramsUsed)
       }
     });
     return { order, job, spool };
@@ -108,7 +115,7 @@ export async function PATCH(request: Request) {
       orderNumber: result.order.orderNumber,
       importedHistoryId: body.print.id,
       fileName: body.print.name,
-      consumedFilamentGrams: Math.round(body.print.gramsUsed)
+      consumedFilamentGrams: Math.round(printWithGrams.gramsUsed)
     }
   });
   return NextResponse.json({ message: `Past ${body.print.status.toLowerCase()} print imported into platform stats without changing failure counts unless it truly failed.`, job: result.job });
@@ -118,6 +125,10 @@ function toPrintJobStatus(status: string) {
   if (status === "FAILED") return "FAILED";
   if (status === "STOPPED") return "STOPPED";
   return "COMPLETED";
+}
+
+function hasUsableGrams(print: z.infer<typeof printSchema>): print is z.infer<typeof printSchema> & { gramsUsed: number } {
+  return typeof print.gramsUsed === "number" && Number.isFinite(print.gramsUsed) && print.gramsUsed > 0;
 }
 
 async function enrichFromAssignedHistory(prints: CompletedPrinterHistoryItem[]) {
@@ -177,7 +188,7 @@ async function readCachedPrinterHistory() {
     : [];
 }
 
-async function assignPrintToSpool(spoolId: string, print: z.infer<typeof printSchema>, client: Prisma.TransactionClient | typeof prisma = prisma) {
+async function assignPrintToSpool(spoolId: string, print: z.infer<typeof printSchema> & { gramsUsed: number }, client: Prisma.TransactionClient | typeof prisma = prisma) {
   const spool = await client.filamentSpool.findUniqueOrThrow({ where: { id: spoolId } });
   const assigned = readHistory(spool.assignedPrinterHistory);
   if (assigned.some((item) => item.id === print.id)) return spool;
@@ -207,7 +218,7 @@ function compactPrint(print: z.infer<typeof printSchema>) {
   return {
     id: print.id,
     name: print.name,
-    gramsUsed: Math.round(print.gramsUsed),
+    gramsUsed: print.gramsUsed ? Math.round(print.gramsUsed) : undefined,
     completedAt: print.completedAt,
     status: print.status,
     gramsSource: print.gramsSource,

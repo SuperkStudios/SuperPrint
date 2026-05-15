@@ -43,13 +43,14 @@ function formatPrintTime(minutes: number) {
 }
 
 export function AdminProductForm({ product, materials = fallbackMaterials }: { product?: ProductDraft; materials?: MaterialOption[] }) {
+  const materialOptions = materials.length ? materials : fallbackMaterials;
   const [message, setMessage] = useState("");
   const [estimatedGrams, setEstimatedGrams] = useState(product?.estimatedGrams ?? 50);
   const [estimatedPrintMinutes, setEstimatedPrintMinutes] = useState(product?.estimatedPrintMinutes ?? 60);
-  const [selectedMaterial, setSelectedMaterial] = useState(product?.defaultMaterial ?? materials[0]?.material ?? "PLA");
+  const [selectedMaterial, setSelectedMaterial] = useState(product?.defaultMaterial ?? materialOptions[0]?.material ?? "PLA");
   const [selectedModelFile, setSelectedModelFile] = useState<File | null>(null);
-  const selectedRollCostCents = materials.find((item) => item.material === selectedMaterial)?.rollCostCents ?? 0;
-  const colorOptions = useMemo(() => materials.find((item) => item.material === selectedMaterial)?.colors?.filter(Boolean) ?? [], [materials, selectedMaterial]);
+  const selectedRollCostCents = materialOptions.find((item) => item.material === selectedMaterial)?.rollCostCents ?? 0;
+  const colorOptions = useMemo(() => materialOptions.find((item) => item.material === selectedMaterial)?.colors?.filter(Boolean) ?? [], [materialOptions, selectedMaterial]);
   const [selectedColor, setSelectedColor] = useState(colorOptions[0] ?? selectedMaterial);
   const previewColor = filamentColorToHex(selectedColor);
   const materialCostCents = useMemo(
@@ -68,6 +69,18 @@ export function AdminProductForm({ product, materials = fallbackMaterials }: { p
       body: formData
     });
     setMessage(response.ok ? "Product saved." : (await response.json().catch(() => null))?.error ?? "Product save failed.");
+    if (response.ok) window.location.reload();
+  }
+
+  async function deleteProduct() {
+    if (!product?.id) return;
+    if (!window.confirm(`Delete ${product.name}? Products with existing orders will be archived instead.`)) return;
+    setMessage("Deleting product...");
+    const response = await fetch(`/api/admin/products?id=${encodeURIComponent(product.id)}`, {
+      method: "DELETE"
+    });
+    const body = await response.json().catch(() => null);
+    setMessage(response.ok ? body?.message ?? "Product deleted." : body?.error ?? "Product delete failed.");
     if (response.ok) window.location.reload();
   }
 
@@ -144,13 +157,13 @@ export function AdminProductForm({ product, materials = fallbackMaterials }: { p
             value={selectedMaterial}
             onChange={(event) => {
               const nextMaterial = event.target.value;
-              const nextColors = materials.find((item) => item.material === nextMaterial)?.colors?.filter(Boolean) ?? [];
+              const nextColors = materialOptions.find((item) => item.material === nextMaterial)?.colors?.filter(Boolean) ?? [];
               setSelectedMaterial(nextMaterial);
               setSelectedColor(nextColors[0] ?? nextMaterial);
             }}
             className="h-10 rounded-md border border-input bg-background px-3 text-sm"
           >
-            {materials.map((item) => <option key={item.material}>{item.material}</option>)}
+            {materialOptions.map((item) => <option key={item.material}>{item.material}</option>)}
           </select>
         </div>
       </div>
@@ -201,7 +214,14 @@ export function AdminProductForm({ product, materials = fallbackMaterials }: { p
           <option>ARCHIVED</option>
         </select>
       </div>
-      <Button type="submit">Save product</Button>
+      <div className="flex flex-wrap gap-2">
+        <Button type="submit">Save product</Button>
+        {product?.id ? (
+          <Button type="button" variant="outline" className="border-red-200 text-red-700 hover:bg-red-50" onClick={deleteProduct}>
+            Delete product
+          </Button>
+        ) : null}
+      </div>
       {message ? <p className="text-sm text-muted-foreground">{message}</p> : null}
     </form>
   );

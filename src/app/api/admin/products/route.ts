@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
+import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { requireAdmin } from "@/lib/http";
 import { prisma } from "@/lib/prisma";
@@ -44,7 +45,27 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Upload a product image or an STL print file" }, { status: 400 });
   }
   body.imageUrl = body.imageUrl ?? "__LOCAL_IMAGE__";
-  return NextResponse.json({ product: await upsertProduct({ ...body, imageUrl: body.imageUrl ?? "__LOCAL_IMAGE__" }, session!.user.id) });
+  try {
+    return NextResponse.json({ product: await upsertProduct({ ...body, imageUrl: body.imageUrl ?? "__LOCAL_IMAGE__" }, session!.user.id) });
+  } catch (error) {
+    return NextResponse.json({ error: productErrorMessage(error) }, { status: 400 });
+  }
+}
+
+export async function DELETE(request: Request) {
+  const { response } = await requireAdmin();
+  if (response) return response;
+  const id = new URL(request.url).searchParams.get("id");
+  if (!id) return NextResponse.json({ error: "Product id is required" }, { status: 400 });
+
+  const orderCount = await prisma.order.count({ where: { productId: id } });
+  if (orderCount > 0) {
+    const product = await prisma.product.update({ where: { id }, data: { status: "ARCHIVED" } });
+    return NextResponse.json({ product, message: "Product has orders, so it was archived instead of deleted." });
+  }
+
+  await prisma.product.delete({ where: { id } });
+  return NextResponse.json({ message: "Product deleted." });
 }
 
 async function readProductRequest(request: Request) {
@@ -117,4 +138,14 @@ async function storeProductPrintFile(file: File, material: string) {
     estimatedGrams: estimates.estimatedGrams ?? undefined,
     estimatedPrintMinutes: estimates.estimatedPrintMinutes ?? undefined
   };
+}
+
+function productErrorMessage(error: unknown) {
+  if (error instanceof z.ZodError) {
+    return error.issues.map((issue) => `${issue.path.join(".") || "product"}: ${issue.message}`).join("; ");
+  }
+  if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+    return "A product with that slug already exists.";
+  }
+  return error instanceof Error ? error.message : "Product save failed.";
 }

@@ -27,33 +27,33 @@ export function getCentauriMjpegUrl(input: { internalIp: string; cameraSource?: 
   return input.cameraSource?.trim() || `http://${input.internalIp}:3031/video`;
 }
 
-export function buildCentauriVideoEnableRequest(mainboardId = "0000000000000000", requestId = crypto.randomUUID(), timestamp = Math.floor(Date.now() / 1000)) {
+export function buildCentauriVideoEnableRequest(mainboardId = "0000000000000000", requestId = generateCentauriRequestId(), timestamp = Date.now()) {
   return {
-    Id: requestId,
+    Id: mainboardId,
     Data: {
       Cmd: 386,
       Data: { Enable: 1 },
       RequestID: requestId,
       MainboardID: mainboardId,
       TimeStamp: timestamp,
-      From: 0
+      From: 1
     },
-    Topic: `sdcp/request/${mainboardId}`
+    Topic: ""
   };
 }
 
-export function buildCentauriStatusRefreshRequest(mainboardId = "0000000000000000", requestId = crypto.randomUUID(), timestamp = Math.floor(Date.now() / 1000)) {
+export function buildCentauriStatusRefreshRequest(mainboardId = "0000000000000000", requestId = generateCentauriRequestId(), timestamp = Date.now()) {
   return {
-    Id: requestId,
+    Id: mainboardId,
     Data: {
       Cmd: 0,
       Data: {},
       RequestID: requestId,
       MainboardID: mainboardId,
       TimeStamp: timestamp,
-      From: 0
+      From: 1
     },
-    Topic: `sdcp/request/${mainboardId}`
+    Topic: ""
   };
 }
 
@@ -192,4 +192,8 @@ function printStatusLabel(status: number | null) {
     10: "File checking"
   };
   return status == null ? "Unknown" : labels[status] ?? `Print status ${status}`;
+}
+
+function generateCentauriRequestId() {
+  return String(Math.floor(10000 + Math.random() * 90000));
 }

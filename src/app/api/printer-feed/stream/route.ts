@@ -1,8 +1,7 @@
-import http from "node:http";
-import https from "node:https";
 import WebSocket from "ws";
 import { buildCentauriVideoEnableRequest, getCentauriMjpegUrl } from "@/domain/printer-heartbeat";
 import { prisma } from "@/lib/prisma";
+import { getSharedPrinterFeedRelay } from "@/services/printer-camera-relay";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -13,12 +12,11 @@ export async function GET() {
     return new Response("No printer registered", { status: 404 });
   }
 
-  if (printer.controlApiUrl.startsWith("ws")) {
-    enableCentauriVideo(printer.controlApiUrl).catch(() => undefined);
-  }
-  const activeStream = await openMjpegStream(getCentauriMjpegUrl({ internalIp: printer.internalIp, cameraSource: printer.cameraSource }));
-  if (!activeStream.ok) {
-    return new Response("Printer camera stream unavailable", { status: activeStream.status });
+  const activeStream = await getSharedPrinterFeedRelay().openClient(getCentauriMjpegUrl({ internalIp: printer.internalIp, cameraSource: printer.cameraSource }), {
+    beforeConnect: printer.controlApiUrl.startsWith("ws") ? () => enableCentauriVideo(printer.controlApiUrl).catch(() => undefined) : undefined
+  }).catch(() => null);
+  if (!activeStream) {
+    return new Response("Printer camera stream unavailable", { status: 503 });
   }
 
   return new Response(activeStream.stream, {
@@ -58,42 +56,5 @@ function enableCentauriVideo(controlApiUrl: string) {
       reject(error);
     });
     socket.on("close", () => clearTimeout(timeout));
-  });
-}
-
-function openMjpegStream(url: string): Promise<{ ok: true; stream: ReadableStream<Uint8Array>; contentType: string } | { ok: false; status: number }> {
-  return new Promise((resolve) => {
-    const parsed = new URL(url);
-    const client = parsed.protocol === "https:" ? https : http;
-    const request = client.get(parsed, { timeout: 3000 }, (response) => {
-      if (!response.statusCode || response.statusCode >= 400) {
-        response.resume();
-        resolve({ ok: false, status: response.statusCode ?? 503 });
-        return;
-      }
-
-      const stream = new ReadableStream<Uint8Array>({
-        start(controller) {
-          response.on("data", (chunk: Buffer) => controller.enqueue(new Uint8Array(chunk)));
-          response.on("end", () => controller.close());
-          response.on("error", (error) => controller.error(error));
-        },
-        cancel() {
-          request.destroy();
-        }
-      });
-
-      resolve({
-        ok: true,
-        stream,
-        contentType: response.headers["content-type"] ?? "multipart/x-mixed-replace"
-      });
-    });
-
-    request.on("timeout", () => {
-      request.destroy();
-      resolve({ ok: false, status: 504 });
-    });
-    request.on("error", () => resolve({ ok: false, status: 503 }));
   });
 }

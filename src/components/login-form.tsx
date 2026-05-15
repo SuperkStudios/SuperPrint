@@ -1,12 +1,15 @@
 "use client";
 
 import { useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 export function LoginForm() {
-  const [mode, setMode] = useState<"signin" | "signup">("signin");
+  const searchParams = useSearchParams();
+  const nextPath = safeNextPath(searchParams.get("next"));
+  const [mode, setMode] = useState<"signin" | "signup">(searchParams.get("mode") === "signup" ? "signup" : "signin");
   const [name, setName] = useState("");
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
@@ -34,11 +37,11 @@ export function LoginForm() {
         password,
         name: name || username || email.split("@")[0],
         username,
-        callbackURL: "/dashboard"
+        callbackURL: nextPath
       })
     });
     if (response.ok) {
-      window.location.href = "/dashboard";
+      window.location.href = nextPath;
       return;
     }
     const body = await response.json().catch(() => null);
@@ -49,7 +52,7 @@ export function LoginForm() {
     const response = await fetch("/api/auth/sign-in/social", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ provider, callbackURL: "/dashboard" })
+      body: JSON.stringify({ provider, callbackURL: nextPath })
     });
     const body = await response.json().catch(() => null);
     if (body?.url) {
@@ -101,4 +104,8 @@ export function LoginForm() {
       </form>
     </div>
   );
+}
+
+function safeNextPath(value: string | null) {
+  return value?.startsWith("/") && !value.startsWith("//") ? value : "/dashboard";
 }

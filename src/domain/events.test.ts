@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { sanitizePlatformEvent } from "./events";
+import { isPublicPlatformEvent, sanitizePlatformEvent } from "./events";
 
 describe("sanitizePlatformEvent", () => {
   it("keeps public event facts while removing internal operational data", () => {
@@ -54,5 +54,21 @@ describe("sanitizePlatformEvent", () => {
         progressPercent: 3
       }
     });
+  });
+
+  it("keeps admin product catalog edits out of public history", () => {
+    expect(
+      isPublicPlatformEvent({
+        type: "ORDER_CREATED",
+        payload: { adminAction: "PRODUCT_CREATED", productName: "Dragon" }
+      })
+    ).toBe(false);
+
+    expect(
+      isPublicPlatformEvent({
+        type: "ORDER_CREATED",
+        payload: { orderNumber: "SP-1001", productName: "Dragon" }
+      })
+    ).toBe(true);
   });
 });

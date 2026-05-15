@@ -22,6 +22,25 @@ describe("product catalog", () => {
     });
   });
 
+  it("allows short internal test product descriptions", () => {
+    expect(
+      normalizeProductInput({
+        name: "TEST",
+        description: "TEST",
+        imageUrl: "__LOCAL_IMAGE__",
+        productFileStorageKey: "uploads/test.stl",
+        priceCents: 100,
+        estimatedPrintMinutes: 1,
+        estimatedGrams: 1,
+        defaultMaterial: "PLA"
+      })
+    ).toMatchObject({
+      name: "TEST",
+      description: "TEST",
+      slug: "test"
+    });
+  });
+
   it("rejects products without customer-facing media and pricing", () => {
     expect(() =>
       normalizeProductInput({

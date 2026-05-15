@@ -1,7 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { getBootstrapStatus } from "@/lib/bootstrap";
 import { redirect } from "next/navigation";
-import { getCurrentSession } from "@/lib/auth";
 import { EmptyState, PageHero, PageSection, PageShell } from "@/components/cyber-page";
 import { StoreProductCard } from "@/components/store-product-card";
 
@@ -11,34 +10,23 @@ export default async function StorePage() {
   if (!(await getBootstrapStatus()).isComplete) {
     redirect("/setup");
   }
-  const [products, spools, session] = await Promise.all([
-    prisma.product.findMany({ where: { status: "ACTIVE" }, orderBy: { name: "asc" } }),
-    prisma.filamentSpool.findMany({ orderBy: [{ material: "asc" }, { color: "asc" }] }),
-    getCurrentSession().catch(() => null)
-  ]);
-  const colorsByMaterial = spools.reduce((map, spool) => {
-    const colors = map.get(spool.material) ?? [];
-    if (!colors.includes(spool.color)) colors.push(spool.color);
-    map.set(spool.material, colors);
-    return map;
-  }, new Map<string, string[]>());
+  const products = await prisma.product.findMany({ where: { status: "ACTIVE" }, orderBy: { name: "asc" } });
 
   return (
     <PageShell>
       <PageSection>
         <PageHero
           eyebrow="Approved products"
-          title="Print-ready catalog"
-          copy="Products here are already printable, priced, and ready to enter the live manufacturing queue after checkout."
+          title="Store"
+          copy="Premade, tested products that enter the live print queue automatically after checkout."
         />
-      <div className="mt-8 grid gap-6 md:grid-cols-3">
+      <div className="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
         {products.length ? products.map((product) => (
           <StoreProductCard
             key={product.id}
-            signedIn={Boolean(session?.user.id)}
-            colors={colorsByMaterial.get(product.defaultMaterial) ?? []}
             product={{
               id: product.id,
+              slug: product.slug,
               name: product.name,
               description: product.description,
               imageUrl: product.imageUrl,

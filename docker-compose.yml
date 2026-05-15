@@ -17,6 +17,7 @@ services:
       MEDIA_TOKEN_SECRET: dev-media-secret-change-me
       REDIS_URL: redis://redis:6379
       HOST_SLICER_ESTIMATE_URL: http://host.docker.internal:4317/estimate
+      PRINTER_ALERT_WEBHOOK_TOKEN: dev-printer-alert-token-change-me
       SUPERNODE_REGISTRATION_TOKEN: dev-supernode-registration-token
       SUPERPRINT_DATA_ROOT: /data
       PUBLIC_FACTORY_STREAM_URL: https://demo.superprint.local/live/factory
@@ -49,6 +50,7 @@ services:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/superprint?schema=public
       REDIS_URL: redis://redis:6379
       SUPERPRINT_DATA_ROOT: /data
+      CENTAURI_DIRECT_START_ENABLED: "true"
     volumes:
       - uploads:/data/uploads
       - sliced:/data/sliced

@@ -57,8 +57,11 @@ export default async function AdminQueuePage() {
       ))}
       {queuedIds.length > 1 ? (
         <Card>
-          <CardContent className="flex items-center justify-between gap-4 p-5">
-            <p className="text-sm text-muted-foreground">Reorder action reverses the queued jobs into contiguous positions.</p>
+          <CardContent className="flex flex-wrap items-center justify-between gap-4 p-5">
+            <p className="text-sm text-muted-foreground">Batch compatible filament jobs first, or reverse queued jobs into contiguous positions.</p>
+            <AdminActionButton endpoint="/api/admin/queue" payload={{ action: "optimizeMaterials" }}>
+              Batch by loaded filament
+            </AdminActionButton>
             <AdminActionButton endpoint="/api/admin/queue" payload={{ action: "reorder", orderedIds: [...queuedIds].reverse() }}>
               Reverse queued order
             </AdminActionButton>

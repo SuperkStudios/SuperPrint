@@ -224,4 +224,13 @@ describe("printer history filtering", () => {
 
     expect(result).toEqual([{ id: "done", name: "finished.gcode", status: "COMPLETED", gramsUsed: 24, completedAt: "2026-05-12T01:00:00Z" }]);
   });
+
+  it("does not fabricate gram usage for assignment rows missing printer material usage", () => {
+    const result = filterCompletedPrinterHistory([
+      { id: "missing-grams", name: "old.gcode", status: "COMPLETED" },
+      { id: "zero-grams", name: "zero.gcode", status: "COMPLETED", gramsUsed: 0 }
+    ]);
+
+    expect(result).toEqual([]);
+  });
 });
