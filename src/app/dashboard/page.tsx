@@ -114,7 +114,7 @@ export default async function DashboardPage() {
                 <div key={video.id} className="flex flex-wrap items-center justify-between gap-2 rounded border p-3 text-sm">
                   <span>{order.orderNumber}</span>
                   <Button asChild size="sm" variant="outline">
-                    <a href={`/api/media/${createMediaToken({ key: video.storageKey, expiresAt: Date.now() + 60 * 60 * 1000 })}`}>View video</a>
+                    <a href={`/api/media/${createMediaToken({ key: video.storageKey, expiresAt: Date.now() + 60 * 60 * 1000 })}`}>{video.storageKey.startsWith("timelapses/") ? "Timelapse" : "View video"}</a>
                   </Button>
                 </div>
               )) : <EmptyState title="No media ready" copy="Completed print videos and timelapses will appear here." />}

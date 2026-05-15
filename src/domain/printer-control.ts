@@ -54,7 +54,7 @@ export function buildCentauriStartPrintRequest(input: {
         StartLayer: 0,
         Calibration_switch: 0,
         PrintPlatformType: 0,
-        Tlp_Switch: 0,
+        Tlp_Switch: 1,
         slot_map: []
       },
       RequestID: requestId,
@@ -64,6 +64,36 @@ export function buildCentauriStartPrintRequest(input: {
     },
     Topic: ""
   };
+}
+
+export function buildCentauriTimelapseEnableRequest(input: {
+  enable?: boolean;
+  mainboardId?: string;
+  requestId?: string;
+  timestamp?: number;
+}) {
+  return buildCentauriRequest({
+    cmd: 387,
+    data: { Enable: input.enable === false ? 0 : 1 },
+    mainboardId: input.mainboardId,
+    requestId: input.requestId,
+    timestamp: input.timestamp
+  });
+}
+
+export function buildCentauriTimelapseExportRequest(input: {
+  path: string;
+  mainboardId?: string;
+  requestId?: string;
+  timestamp?: number;
+}) {
+  return buildCentauriRequest({
+    cmd: 323,
+    data: { Url: [input.path] },
+    mainboardId: input.mainboardId,
+    requestId: input.requestId,
+    timestamp: input.timestamp
+  });
 }
 
 export function buildCentauriRequest(input: {
@@ -91,6 +121,30 @@ export function buildCentauriRequest(input: {
 
 export function buildCentauriPrinterFilename(gcodeLocalPath: string) {
   return path.basename(gcodeLocalPath);
+}
+
+export function prepareCentauriTimelapseGcode(file: Buffer) {
+  if (file.includes(0)) return file;
+  const text = file.toString("utf8");
+  if (/SET_PRINT_STATS_INFO\s+(?:TOTAL_LAYER|CURRENT_LAYER)=/i.test(text)) return file;
+
+  const lines = text.split(/\r?\n/);
+  const markerIndexes = lines
+    .map((line, index) => (/^;\s*(?:LAYER_CHANGE|CHANGE_LAYER)\b/i.test(line) ? index : -1))
+    .filter((index) => index >= 0);
+  const totalLayers = readTotalLayerCount(text) ?? markerIndexes.length;
+  if (!totalLayers || totalLayers <= 0) return file;
+
+  const output = [`SET_PRINT_STATS_INFO TOTAL_LAYER=${totalLayers}`];
+  let currentLayer = 0;
+  for (let index = 0; index < lines.length; index += 1) {
+    output.push(lines[index]);
+    if (markerIndexes.includes(index)) {
+      currentLayer += 1;
+      output.push(`SET_PRINT_STATS_INFO CURRENT_LAYER=${currentLayer}`);
+    }
+  }
+  return Buffer.from(output.join("\n"));
 }
 
 export function getCentauriResponseAck(message: unknown, cmd: number) {
@@ -185,6 +239,13 @@ function generateCentauriPrinterRequestId() {
   return String(Math.floor(10000 + Math.random() * 90000));
 }
 
+function readTotalLayerCount(gcode: string) {
+  const direct =
+    gcode.match(/;\s*total[_\s-]*layer[_\s-]*(?:count|number)\s*[:=]\s*(\d+)/i) ??
+    gcode.match(/;\s*layer\s+num\/total_layer_count\s*:\s*\d+\s*\/\s*(\d+)/i);
+  return direct ? Number(direct[1]) : undefined;
+}
+
 export class CentauriPrinterControlAdapter implements PrinterControlAdapter {
   constructor(private readonly input: { controlApiUrl: string; mainboardId?: string; timeoutMs?: number }) {}
 
@@ -197,7 +258,7 @@ export class CentauriPrinterControlAdapter implements PrinterControlAdapter {
       timeoutMs: this.input.timeoutMs ?? 10000
     });
 
-    const file = await readFile(command.gcodeLocalPath);
+    const file = prepareCentauriTimelapseGcode(await readFile(command.gcodeLocalPath));
     await uploadCentauriGcode({
       urls: [resolveCentauriUploadUrl(this.input.controlApiUrl), resolveCentauriUploadFallbackUrl(this.input.controlApiUrl)],
       filename: uploadFilename,
@@ -216,6 +277,13 @@ export class CentauriPrinterControlAdapter implements PrinterControlAdapter {
     if (!findCentauriFile(fileList, printerFilename)) {
       throw new Error(`Centauri uploaded file was not found on printer storage: ${printerFilename}`);
     }
+
+    await sendCentauriCommand({
+      controlApiUrl: this.input.controlApiUrl,
+      request: buildCentauriTimelapseEnableRequest({ mainboardId }),
+      cmd: 387,
+      timeoutMs: this.input.timeoutMs ?? 10000
+    }).catch(() => undefined);
 
     const startResponse = await sendCentauriCommand({
       controlApiUrl: this.input.controlApiUrl,

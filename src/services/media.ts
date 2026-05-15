@@ -14,6 +14,16 @@ export async function attachExistingOrderMedia(
   actorId?: string
 ) {
   const order = await prisma.order.findUniqueOrThrow({ where: { id: orderId } });
+  const existing = await prisma.orderVideo.findFirst({
+    where: {
+      orderId,
+      OR: [
+        { storageKey: media.videoKey },
+        media.timelapseKey ? { timelapseStorageKey: media.timelapseKey } : { storageKey: media.videoKey }
+      ]
+    }
+  });
+  if (existing) return existing;
 
   const record = await prisma.orderVideo.create({
     data: {

@@ -52,6 +52,18 @@ export async function fetchCentauriCompletedHistory(input: {
   return input.includeMissingGrams ? estimated : filterCompletedPrinterHistory(estimated);
 }
 
+export async function fetchCentauriHistoryMessages(input: {
+  controlApiUrl: string;
+  mainboardId?: string;
+  timeoutMs?: number;
+}) {
+  return collectHistorySessionWithRetry({
+    controlApiUrl: input.controlApiUrl,
+    mainboardId: input.mainboardId,
+    timeoutMs: input.timeoutMs ?? 15000
+  });
+}
+
 export function resolveGcodeHistoryUsage(
   task: Pick<CompletedPrinterHistoryItem, "status" | "printedLayers" | "totalLayers">,
   fullGcodeGrams?: number

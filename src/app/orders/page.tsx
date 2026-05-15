@@ -72,8 +72,8 @@ export default async function OrdersPage({ searchParams }: { searchParams?: Prom
                 {order.videos.length
                   ? order.videos.map((video) => (
                       <div key={video.id} className="mt-1 flex flex-wrap gap-2">
-                        <Button asChild size="sm" variant="outline"><a href={`/api/media/${createMediaToken({ key: video.storageKey, expiresAt: Date.now() + 60 * 60 * 1000 })}`}>View video</a></Button>
-                        {video.timelapseStorageKey ? <Button asChild size="sm" variant="outline"><a href={`/api/media/${createMediaToken({ key: video.timelapseStorageKey, expiresAt: Date.now() + 60 * 60 * 1000 })}`}>Timelapse</a></Button> : null}
+                        <Button asChild size="sm" variant="outline"><a href={`/api/media/${createMediaToken({ key: video.storageKey, expiresAt: Date.now() + 60 * 60 * 1000 })}`}>{video.storageKey.startsWith("timelapses/") ? "Timelapse" : "View video"}</a></Button>
+                        {video.timelapseStorageKey && video.timelapseStorageKey !== video.storageKey ? <Button asChild size="sm" variant="outline"><a href={`/api/media/${createMediaToken({ key: video.timelapseStorageKey, expiresAt: Date.now() + 60 * 60 * 1000 })}`}>Timelapse</a></Button> : null}
                         {video.thumbnailStorageKey ? <Button asChild size="sm" variant="outline"><a href={`/api/media/${createMediaToken({ key: video.thumbnailStorageKey, expiresAt: Date.now() + 60 * 60 * 1000 })}`}>Thumbnail</a></Button> : null}
                       </div>
                     ))

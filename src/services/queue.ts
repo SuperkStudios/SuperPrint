@@ -19,6 +19,7 @@ import { enqueuePrintJob } from "../lib/queue-broker";
 import { prisma } from "../lib/prisma";
 import { resolveLocalStoragePath } from "../lib/storage";
 import { recordPlatformEvent } from "./events";
+import { attachCompletedPrintTimelapse } from "./timelapse-media";
 
 export async function getPublicQueueState() {
   const [current, nextJobs, printers] = await Promise.all([
@@ -239,6 +240,9 @@ export async function completePrintJob(printJobId: string, actorId?: string) {
       consumedFilamentGrams: accounting.consumedFilamentGrams,
       runtimeMinutes: accounting.runtimeMinutes
     }
+  });
+  void attachCompletedPrintTimelapse(printJobId).catch((error) => {
+    console.error("Could not attach completed print timelapse", error);
   });
 
   return updated;
