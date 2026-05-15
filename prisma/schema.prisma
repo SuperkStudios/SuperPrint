@@ -11,11 +11,17 @@ enum UserRole {
   OWNER
   CUSTOMER
   ADMIN
+  STAFF
 }
 
 enum ProductStatus {
   ACTIVE
   ARCHIVED
+}
+
+enum PricingMode {
+  FIXED
+  DYNAMIC
 }
 
 enum UploadStatus {
@@ -70,11 +76,14 @@ enum CameraStatus {
 
 enum FilamentMaterial {
   PLA
+  PLA_PLUS
   PETG
   ABS
+  ASA
   TPU
   NYLON
   RESIN
+  CARBON_FIBER_PETG
 }
 
 enum MaintenanceStatus {
@@ -126,6 +135,7 @@ model User {
   bio          String?
   passwordHash String?
   role         UserRole      @default(CUSTOMER)
+  staffPermissions Json      @default("[]")
   sessions     Session[]
   accounts     Account[]
   uploads      ModelUpload[]
@@ -188,15 +198,41 @@ model Product {
   imageUrl             String
   imageStorageKey      String?
   productFileStorageKey String?
+  baseModelFile        String?
+  defaultFilamentMaterialId String?
+  defaultFilamentMaterial FilamentSpool? @relation("DefaultProductFilament", fields: [defaultFilamentMaterialId], references: [id])
+  baseLaborMinutes     Int           @default(10)
+  basePackagingCents   Int           @default(150)
   priceCents           Int
+  pricingMode          PricingMode   @default(DYNAMIC)
+  fixedPriceCents      Int?
   estimatedPrintMinutes Int
   estimatedGrams       Int           @default(1)
   materialCostCents    Int           @default(0)
   defaultMaterial      FilamentMaterial
   status               ProductStatus @default(ACTIVE)
+  allowedFilaments     ProductAllowedFilament[]
   orders               Order[]
+  pricingSnapshots     OrderPricingSnapshot[]
   createdAt            DateTime      @default(now())
   updatedAt            DateTime      @updatedAt
+}
+
+model ProductAllowedFilament {
+  id                            String         @id @default(cuid())
+  productId                     String
+  product                       Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
+  filamentMaterialId            String
+  filamentMaterial              FilamentSpool  @relation(fields: [filamentMaterialId], references: [id], onDelete: Cascade)
+  estimatedGramsOverride        Int?
+  estimatedPrintMinutesOverride Int?
+  priceAdjustmentCents          Int            @default(0)
+  enabled                       Boolean        @default(true)
+  createdAt                     DateTime       @default(now())
+  updatedAt                     DateTime       @updatedAt
+
+  @@unique([productId, filamentMaterialId])
+  @@index([filamentMaterialId])
 }
 
 model ModelUpload {
@@ -241,6 +277,9 @@ model Order {
   shippingStatus String      @default("NOT_STARTED")
   selectedMaterial FilamentMaterial?
   selectedColor   String?
+  selectedFilamentMaterialId String?
+  selectedFilamentMaterial FilamentSpool? @relation("OrderSelectedFilament", fields: [selectedFilamentMaterialId], references: [id])
+  pricingSnapshot OrderPricingSnapshot?
   printJobs      PrintJob[]
   videos         OrderVideo[]
   createdAt      DateTime    @default(now())
@@ -426,20 +465,80 @@ model WatchedFolder {
 
 model FilamentSpool {
   id             String           @id @default(cuid())
+  name           String?
   material       FilamentMaterial
+  type           FilamentMaterial  @default(PLA)
   color          String
   brand          String
   startingGrams  Int              @default(1000)
+  spoolWeightGrams Int            @default(1000)
   remainingGrams Int
   thresholdGrams Int
   rollCostCents  Int              @default(0)
+  costPerSpoolCents Int           @default(0)
+  costPerGramCents Float          @default(0)
+  markupMultiplier Float          @default(1)
+  active         Boolean          @default(true)
+  requiresAdminApproval Boolean   @default(false)
+  notes          String?
   assignedPrinterHistory Json     @default("[]")
   ignoredPrinterHistory Json      @default("[]")
   location       String
   printers       Printer[]
   jobs           PrintJob[]
+  defaultProducts Product[]        @relation("DefaultProductFilament")
+  allowedProducts ProductAllowedFilament[]
+  selectedOrders  Order[]          @relation("OrderSelectedFilament")
+  pricingSnapshots OrderPricingSnapshot[]
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
+}
+
+model PricingSettings {
+  id                             String   @id @default(cuid())
+  machineHourlyRateCents          Int      @default(250)
+  laborHourlyRateCents            Int      @default(1800)
+  electricityHourlyRateCents      Int      @default(20)
+  maintenanceReservePercent       Float    @default(0.08)
+  failureReservePercent           Float    @default(0.12)
+  defaultProfitMultiplier         Float    @default(2)
+  paymentProcessingPercent        Float    @default(0.029)
+  paymentProcessingFixedCents     Int      @default(30)
+  taxPercentEstimate              Float?
+  minimumOrderPriceCents          Int      @default(500)
+  createdAt                       DateTime @default(now())
+  updatedAt                       DateTime @updatedAt
+}
+
+model OrderPricingSnapshot {
+  id                         String        @id @default(cuid())
+  orderId                    String        @unique
+  order                      Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId                  String
+  product                    Product       @relation(fields: [productId], references: [id])
+  filamentMaterialId         String
+  filamentMaterial           FilamentSpool @relation(fields: [filamentMaterialId], references: [id])
+  materialCostCents          Int
+  machineTimeCostCents       Int
+  electricityCostCents       Int
+  laborCostCents             Int
+  packagingCostCents         Int
+  maintenanceReserveCents    Int
+  failureReserveCents        Int
+  subtotalCostCents          Int
+  profitMarkupCents          Int
+  paymentFeeCents            Int
+  taxCents                   Int
+  shippingCents              Int
+  finalCustomerPriceCents    Int
+  internalCostCents          Int           @default(0)
+  marginCents                Int           @default(0)
+  marginPercent              Float         @default(0)
+  pricingFormulaVersion      String        @default("product-pricing-v1")
+  createdAt                  DateTime      @default(now())
+
+  @@index([productId])
+  @@index([filamentMaterialId])
 }
 
 model MaintenanceTask {

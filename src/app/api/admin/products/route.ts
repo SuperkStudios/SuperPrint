@@ -19,15 +19,27 @@ const schema = z.object({
   imageStorageKey: z.string().optional(),
   productFileStorageKey: z.string().optional(),
   priceCents: z.number(),
+  pricingMode: z.enum(["FIXED", "DYNAMIC"]).default("DYNAMIC"),
+  fixedPriceCents: z.number().optional().nullable(),
+  baseLaborMinutes: z.number().int().nonnegative().default(10),
+  basePackagingCents: z.number().int().nonnegative().default(150),
   estimatedPrintMinutes: z.number(),
   estimatedGrams: z.number(),
   materialCostCents: z.number().optional(),
-  defaultMaterial: z.enum(["PLA", "PETG", "ABS", "TPU", "NYLON", "RESIN"]),
+  defaultMaterial: z.enum(["PLA", "PLA_PLUS", "PETG", "ABS", "ASA", "TPU", "NYLON", "RESIN", "CARBON_FIBER_PETG"]),
+  defaultFilamentMaterialId: z.string().optional().nullable(),
+  allowedFilaments: z.array(z.object({
+    filamentMaterialId: z.string(),
+    estimatedGramsOverride: z.number().int().positive().optional().nullable(),
+    estimatedPrintMinutesOverride: z.number().int().positive().optional().nullable(),
+    priceAdjustmentCents: z.number().int().default(0),
+    enabled: z.boolean().default(true)
+  })).default([]),
   status: z.enum(["ACTIVE", "ARCHIVED"]).default("ACTIVE")
 });
 
 export async function POST(request: Request) {
-  const { session, response } = await requireAdmin();
+  const { session, response } = await requireAdmin("products");
   if (response) return response;
   let body: z.infer<typeof schema>;
   try {
@@ -53,7 +65,7 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  const { response } = await requireAdmin();
+  const { response } = await requireAdmin("products");
   if (response) return response;
   const id = new URL(request.url).searchParams.get("id");
   if (!id) return NextResponse.json({ error: "Product id is required" }, { status: 400 });
@@ -76,10 +88,15 @@ async function readProductRequest(request: Request) {
   const imageFile = formData.get("imageFile");
   const printFile = formData.get("printFile");
   const imageStorageKey = imageFile instanceof File && imageFile.size > 0 ? await storeProductFile(imageFile, "thumbnails", ["image/png", "image/jpeg", "image/webp"]) : undefined;
-  const material = String(formData.get("defaultMaterial") ?? "PLA");
+  const defaultFilamentMaterialId = stringValue(formData.get("defaultFilamentMaterialId"));
+  const defaultSpool = defaultFilamentMaterialId ? await prisma.filamentSpool.findUnique({ where: { id: defaultFilamentMaterialId } }) : null;
+  const material = String(formData.get("defaultMaterial") ?? defaultSpool?.material ?? "PLA");
   const parsedPrintFile = printFile instanceof File && printFile.size > 0 ? await storeProductPrintFile(printFile, material) : undefined;
   const estimatedGrams = parsedPrintFile?.estimatedGrams ?? Number(formData.get("estimatedGrams") ?? 0);
-  const spool = await prisma.filamentSpool.findFirst({ where: { material: material as never }, orderBy: { rollCostCents: "desc" } });
+  const spool = defaultSpool ?? await prisma.filamentSpool.findFirst({ where: { material: material as never }, orderBy: { rollCostCents: "desc" } });
+  const allowedFilaments = parseAllowedFilaments(formData, defaultFilamentMaterialId ?? spool?.id);
+  const fixedPriceCents = optionalCents(formData.get("fixedPriceCents"));
+  const fallbackPriceCents = Number(formData.get("priceCents") ?? 0);
 
   return {
     id: stringValue(formData.get("id")),
@@ -89,11 +106,17 @@ async function readProductRequest(request: Request) {
     imageUrl: imageStorageKey ? "__LOCAL_IMAGE__" : undefined,
     imageStorageKey,
     productFileStorageKey: parsedPrintFile?.storageKey,
-    priceCents: Number(formData.get("priceCents") ?? 0),
+    priceCents: fallbackPriceCents || fixedPriceCents || 1,
+    pricingMode: String(formData.get("pricingMode") ?? "DYNAMIC"),
+    fixedPriceCents,
+    baseLaborMinutes: Number(formData.get("baseLaborMinutes") ?? 10),
+    basePackagingCents: Number(formData.get("basePackagingCents") ?? 150),
     estimatedPrintMinutes: parsedPrintFile?.estimatedPrintMinutes ?? Number(formData.get("estimatedPrintMinutes") ?? 0),
     estimatedGrams,
     materialCostCents: calculateProductMaterialCostCents({ estimatedGrams, rollCostCents: spool?.rollCostCents ?? 0 }),
     defaultMaterial: material,
+    defaultFilamentMaterialId: defaultFilamentMaterialId ?? spool?.id,
+    allowedFilaments,
     status: String(formData.get("status") ?? "ACTIVE")
   };
 }
@@ -101,6 +124,28 @@ async function readProductRequest(request: Request) {
 function stringValue(value: FormDataEntryValue | null) {
   const text = String(value ?? "").trim();
   return text.length ? text : undefined;
+}
+
+function optionalCents(value: FormDataEntryValue | null) {
+  const parsed = Math.round(Number(value ?? 0));
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function optionalPositiveInt(value: FormDataEntryValue | null) {
+  const parsed = Math.round(Number(value ?? 0));
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function parseAllowedFilaments(formData: FormData, fallbackId?: string) {
+  const ids = formData.getAll("allowedFilamentIds").map(String).filter(Boolean);
+  const uniqueIds = [...new Set(ids.length ? ids : fallbackId ? [fallbackId] : [])];
+  return uniqueIds.map((id) => ({
+    filamentMaterialId: id,
+    estimatedGramsOverride: optionalPositiveInt(formData.get(`overrideGrams:${id}`)),
+    estimatedPrintMinutesOverride: optionalPositiveInt(formData.get(`overrideMinutes:${id}`)),
+    priceAdjustmentCents: Math.round(Number(formData.get(`priceAdjustmentCents:${id}`) ?? 0)),
+    enabled: formData.get(`enabled:${id}`) !== "false"
+  }));
 }
 
 async function storeProductFile(file: File, storageClass: "uploads" | "thumbnails", acceptedTypes: string[]) {

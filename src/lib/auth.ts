@@ -4,6 +4,7 @@ import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { nextCookies } from "better-auth/next-js";
 import { prisma } from "./prisma";
+import type { StaffPermission } from "@/domain/navigation";
 
 const socialProviders = {
   ...(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
@@ -70,17 +71,38 @@ export type AppSession = {
     name: string;
     image?: string | null;
     role?: string | null;
+    staffPermissions?: unknown;
     username?: string | null;
     bio?: string | null;
   };
 } | null;
 
 export async function getCurrentSession(): Promise<AppSession> {
-  return (await auth.api.getSession({
+  const session = (await auth.api.getSession({
     headers: await headers()
   })) as AppSession;
+  if (!session?.user.id) return session;
+  const user = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { role: true, staffPermissions: true }
+  });
+  return user ? { ...session, user: { ...session.user, role: user.role, staffPermissions: user.staffPermissions } } : session;
 }
 
 export function hasAdminRole(role?: string | null) {
   return role === "ADMIN" || role === "OWNER";
+}
+
+export function hasStaffPermission(session: AppSession, permission?: StaffPermission) {
+  const role = session?.user.role;
+  if (role === "OWNER" || role === "ADMIN") return true;
+  if (role !== "STAFF" || !permission) return false;
+  const permissions = session?.user.staffPermissions;
+  return Array.isArray(permissions) && permissions.map(String).includes(permission);
+}
+
+export function hasAnyStaffPermission(session: AppSession) {
+  const role = session?.user.role;
+  if (role === "OWNER" || role === "ADMIN") return true;
+  return role === "STAFF" && Array.isArray(session?.user.staffPermissions) && session.user.staffPermissions.length > 0;
 }

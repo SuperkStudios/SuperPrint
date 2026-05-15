@@ -2,11 +2,13 @@ import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { requireAdminPage } from "@/lib/admin-permissions";
 import { refreshAllPrinterHeartbeats } from "@/services/printer-heartbeat";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminPrintersPage() {
+  await requireAdminPage("printers");
   const printers = await refreshAllPrinterHeartbeats();
 
   return (

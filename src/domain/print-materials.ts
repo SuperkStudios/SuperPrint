@@ -1,5 +1,5 @@
 export type PrintMaterialProfile = {
-  material: "PLA" | "PETG" | "ABS" | "TPU" | "NYLON" | "RESIN";
+  material: "PLA" | "PLA_PLUS" | "PETG" | "ABS" | "TPU" | "NYLON" | "RESIN";
   densityGPerCm3: number;
   lineWidthMm: number;
   wallLoops: number;
@@ -22,6 +22,18 @@ export const printMaterialProfiles: Record<string, PrintMaterialProfile> = {
     infillDensity: 0.17,
     flowRatio: 0.98,
     speedFactor: 1,
+    supportWasteRatio: 0.06
+  },
+  PLA_PLUS: {
+    material: "PLA_PLUS",
+    densityGPerCm3: 1.24,
+    lineWidthMm: 0.42,
+    wallLoops: 3,
+    topBottomLayers: 5,
+    layerHeightMm: 0.2,
+    infillDensity: 0.17,
+    flowRatio: 0.98,
+    speedFactor: 0.96,
     supportWasteRatio: 0.06
   },
   PETG: {

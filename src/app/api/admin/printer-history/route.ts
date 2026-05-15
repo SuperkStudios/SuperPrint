@@ -28,7 +28,7 @@ const actionSchema = z.object({
 });
 
 export async function POST() {
-  const { response } = await requireAdmin();
+  const { response } = await requireAdmin("history");
   if (response) return response;
   const printer = await prisma.printer.findFirst({ orderBy: { publicName: "asc" } });
   if (!printer) {
@@ -59,7 +59,7 @@ export async function POST() {
 }
 
 export async function PATCH(request: Request) {
-  const { session, response } = await requireAdmin();
+  const { session, response } = await requireAdmin("history");
   if (response) return response;
   const body = actionSchema.parse(await request.json());
   if (body.action === "ignore") {

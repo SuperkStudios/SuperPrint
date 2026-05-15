@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { type Dispatch, type SetStateAction, useEffect, useState } from "react";
 import { buildThemeCssVariables, normalizePrimaryColor } from "@/domain/theme";
 import { maskStripeSecret } from "@/domain/stripe-settings";
 import { Button } from "@/components/ui/button";
@@ -23,6 +23,41 @@ type PublicNotificationSettings = {
   configured: boolean;
 };
 
+type PublicPricingSettings = {
+  machineHourlyRateCents: number;
+  laborHourlyRateCents: number;
+  electricityHourlyRateCents: number;
+  maintenanceReservePercent: number;
+  failureReservePercent: number;
+  defaultProfitMultiplier: number;
+  paymentProcessingPercent: number;
+  paymentProcessingFixedCents: number;
+  taxPercentEstimate?: number | null;
+  minimumOrderPriceCents: number;
+};
+
+type AdminSettingsDraft = {
+  brandName: string;
+  primaryColor: string;
+  lowFilamentThresholdGrams: number;
+  stripe: PublicStripeSettings;
+  notifications: PublicNotificationSettings;
+  pricing: PublicPricingSettings;
+};
+
+const defaultPricingSettings: PublicPricingSettings = {
+  machineHourlyRateCents: 250,
+  laborHourlyRateCents: 1800,
+  electricityHourlyRateCents: 20,
+  maintenanceReservePercent: 0.08,
+  failureReservePercent: 0.12,
+  defaultProfitMultiplier: 2,
+  paymentProcessingPercent: 0.029,
+  paymentProcessingFixedCents: 30,
+  taxPercentEstimate: null,
+  minimumOrderPriceCents: 500
+};
+
 export function AdminSettingsForm({
   brandName,
   primaryColor,
@@ -40,13 +75,15 @@ export function AdminSettingsForm({
     sms: "",
     webhookUrl: "",
     configured: false
-  }
+  },
+  pricingSettings = defaultPricingSettings
 }: {
   brandName: string;
   primaryColor: string;
   lowFilamentThresholdGrams: number;
   stripeSettings?: PublicStripeSettings;
   notificationSettings?: PublicNotificationSettings;
+  pricingSettings?: PublicPricingSettings;
 }) {
   const [draft, setDraft] = useState({
     brandName,
@@ -57,7 +94,8 @@ export function AdminSettingsForm({
       secretKey: maskStripeSecret(stripeSettings.secretKey),
       webhookSecret: maskStripeSecret(stripeSettings.webhookSecret)
     },
-    notifications: notificationSettings
+    notifications: notificationSettings,
+    pricing: pricingSettings
   });
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
@@ -83,7 +121,7 @@ export function AdminSettingsForm({
   }
 
   return (
-    <div className="grid gap-5 rounded-lg border bg-white p-5 md:grid-cols-2">
+    <div className="grid gap-5 rounded-lg border bg-card p-5 text-card-foreground shadow-sm md:grid-cols-2">
       <div className="grid gap-2">
         <Label htmlFor="brand-name">Public brand name</Label>
         <Input id="brand-name" value={draft.brandName} onChange={(event) => setDraft((current) => ({ ...current, brandName: event.target.value }))} />
@@ -125,7 +163,7 @@ export function AdminSettingsForm({
           <Label htmlFor="stripe-mode">Stripe mode</Label>
           <select
             id="stripe-mode"
-            className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+            className="h-10 rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
             value={draft.stripe.mode}
             onChange={(event) => setDraft((current) => ({ ...current, stripe: { ...current.stripe, mode: event.target.value as "test" | "live" } }))}
           >
@@ -207,12 +245,72 @@ export function AdminSettingsForm({
         </div>
       </div>
 
+      <div className="grid gap-4 border-t pt-5 md:col-span-2 md:grid-cols-3">
+        <div className="md:col-span-3">
+          <h3 className="font-semibold">Pricing settings</h3>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Used by dynamic product pricing, admin previews, checkout, and order pricing snapshots.
+          </p>
+        </div>
+        <PricingField label="Machine hourly rate" field="machineHourlyRateCents" draft={draft} setDraft={setDraft} />
+        <PricingField label="Labor hourly rate" field="laborHourlyRateCents" draft={draft} setDraft={setDraft} />
+        <PricingField label="Electricity hourly rate" field="electricityHourlyRateCents" draft={draft} setDraft={setDraft} />
+        <PricingField label="Maintenance reserve %" field="maintenanceReservePercent" draft={draft} setDraft={setDraft} percent />
+        <PricingField label="Failure reserve %" field="failureReservePercent" draft={draft} setDraft={setDraft} percent />
+        <PricingField label="Profit multiplier" field="defaultProfitMultiplier" draft={draft} setDraft={setDraft} step="0.01" />
+        <PricingField label="Payment processing %" field="paymentProcessingPercent" draft={draft} setDraft={setDraft} percent />
+        <PricingField label="Fixed payment fee" field="paymentProcessingFixedCents" draft={draft} setDraft={setDraft} />
+        <PricingField label="Tax estimate %" field="taxPercentEstimate" draft={draft} setDraft={setDraft} percent optional />
+        <PricingField label="Minimum order price" field="minimumOrderPriceCents" draft={draft} setDraft={setDraft} />
+      </div>
+
       <div className="flex items-end gap-3">
         <Button type="button" onClick={save} disabled={saving}>
           {saving ? "Saving..." : "Save settings"}
         </Button>
         {message ? <p className="text-sm text-muted-foreground">{message}</p> : null}
       </div>
+    </div>
+  );
+}
+
+function PricingField({
+  label,
+  field,
+  draft,
+  setDraft,
+  percent = false,
+  optional = false,
+  step = "1"
+}: {
+  label: string;
+  field: keyof PublicPricingSettings;
+  draft: { pricing: PublicPricingSettings };
+  setDraft: Dispatch<SetStateAction<AdminSettingsDraft>>;
+  percent?: boolean;
+  optional?: boolean;
+  step?: string;
+}) {
+  const value = draft.pricing[field];
+  return (
+    <div className="grid gap-2">
+      <Label htmlFor={`pricing-${field}`}>{label}</Label>
+      <Input
+        id={`pricing-${field}`}
+        type="number"
+        step={percent ? "0.01" : step}
+        value={value == null ? "" : percent ? Number(value) * 100 : Number(value)}
+        onChange={(event) => {
+          const parsed = event.target.value === "" && optional ? null : Number(event.target.value);
+          setDraft((current) => ({
+            ...current,
+            pricing: {
+              ...current.pricing,
+              [field]: percent && typeof parsed === "number" ? parsed / 100 : parsed
+            }
+          }));
+        }}
+      />
     </div>
   );
 }

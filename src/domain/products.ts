@@ -12,10 +12,22 @@ export const productInputSchema = z.object({
   imageStorageKey: z.string().trim().optional(),
   productFileStorageKey: z.string().trim().optional(),
   priceCents: z.number().int().positive(),
+  pricingMode: z.enum(["FIXED", "DYNAMIC"]).default("DYNAMIC"),
+  fixedPriceCents: z.number().int().positive().optional().nullable(),
+  baseLaborMinutes: z.number().int().nonnegative().default(10),
+  basePackagingCents: z.number().int().nonnegative().default(150),
   estimatedPrintMinutes: z.number().int().positive(),
   estimatedGrams: z.number().int().positive(),
   materialCostCents: z.number().int().nonnegative().optional(),
-  defaultMaterial: z.enum(["PLA", "PETG", "ABS", "TPU", "NYLON", "RESIN"]),
+  defaultMaterial: z.enum(["PLA", "PLA_PLUS", "PETG", "ABS", "ASA", "TPU", "NYLON", "RESIN", "CARBON_FIBER_PETG"]),
+  defaultFilamentMaterialId: z.string().optional().nullable(),
+  allowedFilaments: z.array(z.object({
+    filamentMaterialId: z.string(),
+    estimatedGramsOverride: z.number().int().positive().optional().nullable(),
+    estimatedPrintMinutesOverride: z.number().int().positive().optional().nullable(),
+    priceAdjustmentCents: z.number().int().default(0),
+    enabled: z.boolean().default(true)
+  })).default([]),
   status: z.enum(["ACTIVE", "ARCHIVED"]).default("ACTIVE")
 });
 
@@ -25,7 +37,8 @@ export function normalizeProductInput(input: ProductInput) {
   const product = productInputSchema.parse(input);
   return {
     ...product,
-    slug: product.slug ? slugify(product.slug) : slugify(product.name)
+    slug: product.slug ? slugify(product.slug) : slugify(product.name),
+    fixedPriceCents: product.pricingMode === "FIXED" ? product.fixedPriceCents ?? product.priceCents : product.fixedPriceCents
   };
 }
 

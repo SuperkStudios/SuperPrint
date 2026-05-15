@@ -404,7 +404,7 @@ export function SetupForm() {
                       onChange={(event) => updateSpool(spool.localId, "material", event.target.value)}
                       className="h-10 rounded-md border bg-background px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
-                      {["PLA", "PETG", "ABS", "TPU", "NYLON", "RESIN"].map((material) => (
+                      {["PLA", "PLA_PLUS", "PETG", "ABS", "TPU", "NYLON", "RESIN"].map((material) => (
                         <option key={material}>{material}</option>
                       ))}
                     </select>

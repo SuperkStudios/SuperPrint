@@ -2,11 +2,13 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { AdminProductForm } from "@/components/admin-product-form";
 import { Button } from "@/components/ui/button";
+import { requireAdminPage } from "@/lib/admin-permissions";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
 export default async function NewProductPage() {
+  await requireAdminPage("products");
   const materials = await loadMaterialOptions();
 
   return (
@@ -30,13 +32,13 @@ export default async function NewProductPage() {
 
 async function loadMaterialOptions() {
   const spools = await prisma.filamentSpool.findMany({ orderBy: [{ material: "asc" }, { remainingGrams: "desc" }] });
-  return [...spools.reduce((map, spool) => {
-    const existing = map.get(spool.material);
-    if (existing) {
-      if (!existing.colors.includes(spool.color)) existing.colors.push(spool.color);
-    } else {
-      map.set(spool.material, { material: spool.material, rollCostCents: spool.rollCostCents, colors: [spool.color] });
-    }
-    return map;
-  }, new Map<string, { material: string; rollCostCents: number; colors: string[] }>()).values()];
+  return spools.map((spool) => ({
+    id: spool.id,
+    material: spool.material,
+    rollCostCents: spool.rollCostCents,
+    color: spool.color,
+    brand: spool.brand,
+    remainingGrams: spool.remainingGrams,
+    requiresAdminApproval: spool.requiresAdminApproval
+  }));
 }

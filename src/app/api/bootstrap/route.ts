@@ -3,7 +3,7 @@ import { z } from "zod";
 import { runOwnerBootstrap } from "@/lib/bootstrap";
 
 const filamentSchema = z.object({
-  material: z.enum(["PLA", "PETG", "ABS", "TPU", "NYLON", "RESIN"]),
+  material: z.enum(["PLA", "PLA_PLUS", "PETG", "ABS", "TPU", "NYLON", "RESIN"]),
   color: z.string().min(1),
   brand: z.string().min(1),
   startingGrams: z.number().int().positive().optional(),

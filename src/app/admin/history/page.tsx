@@ -1,10 +1,12 @@
 import { AdminPrinterHistoryPanel } from "@/components/admin-printer-history-panel";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { requireAdminPage } from "@/lib/admin-permissions";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminHistoryPage() {
+  await requireAdminPage("history");
   const spools = await prisma.filamentSpool.findMany({ orderBy: [{ material: "asc" }, { color: "asc" }] });
 
   return (

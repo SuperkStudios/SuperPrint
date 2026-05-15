@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
-import { getCurrentSession, hasAdminRole } from "./auth";
+import type { StaffPermission } from "@/domain/navigation";
+import { getCurrentSession, hasAnyStaffPermission, hasStaffPermission } from "./auth";
 
-export async function requireAdmin() {
+export async function requireAdmin(permission?: StaffPermission) {
   const session = await getCurrentSession();
-  if (!hasAdminRole(session?.user.role)) {
+  const allowed = permission ? hasStaffPermission(session, permission) : hasAnyStaffPermission(session);
+  if (!allowed) {
     return {
       session: null,
-      response: NextResponse.json({ error: "Admin role required" }, { status: 403 })
+      response: NextResponse.json({ error: "Admin permission required" }, { status: 403 })
     };
   }
 

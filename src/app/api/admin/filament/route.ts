@@ -6,7 +6,7 @@ import { recordPlatformEvent } from "@/services/events";
 
 const filamentSchema = z.object({
   id: z.string().optional(),
-  material: z.enum(["PLA", "PETG", "ABS", "TPU", "NYLON", "RESIN"]),
+  material: z.enum(["PLA", "PLA_PLUS", "PETG", "ABS", "TPU", "NYLON", "RESIN"]),
   color: z.string(),
   brand: z.string(),
   startingGrams: z.number().int().positive().default(1000),
@@ -17,7 +17,7 @@ const filamentSchema = z.object({
 });
 
 export async function GET() {
-  const { response } = await requireAdmin();
+  const { response } = await requireAdmin("filament");
   if (response) return response;
 
   return NextResponse.json({
@@ -26,13 +26,19 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const { session, response } = await requireAdmin();
+  const { session, response } = await requireAdmin("filament");
   if (response) return response;
 
   const body = filamentSchema.parse(await request.json());
+  const data = {
+    ...body,
+    type: body.material,
+    costPerSpoolCents: body.rollCostCents,
+    costPerGramCents: body.rollCostCents / Math.max(1, body.startingGrams)
+  };
   const spool = body.id
-    ? await prisma.filamentSpool.update({ where: { id: body.id }, data: body })
-    : await prisma.filamentSpool.create({ data: body });
+    ? await prisma.filamentSpool.update({ where: { id: body.id }, data })
+    : await prisma.filamentSpool.create({ data });
 
   if (spool.remainingGrams <= spool.thresholdGrams) {
     await recordPlatformEvent({

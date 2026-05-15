@@ -16,14 +16,14 @@ export function OperatorStartButton({ printJobId, orderNumber }: { printJobId: s
 
   if (!expanded) {
     return (
-      <button type="button" className="rounded-md border bg-white px-3 py-2 text-sm font-medium hover:bg-muted" onClick={() => setExpanded(true)}>
+      <button type="button" className="rounded-md border bg-background px-3 py-2 text-sm font-medium hover:bg-muted" onClick={() => setExpanded(true)}>
         Start Physical Print
       </button>
     );
   }
 
   return (
-    <div className="grid gap-2 rounded border bg-white p-3 text-sm">
+    <div className="grid gap-2 rounded border bg-card p-3 text-sm text-card-foreground shadow-sm">
       <p className="font-medium">Operator safety checklist</p>
       {[
         "Correct filament loaded",

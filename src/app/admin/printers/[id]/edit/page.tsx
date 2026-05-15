@@ -1,10 +1,12 @@
 import { notFound } from "next/navigation";
 import { PrinterProfileForm } from "@/components/printer-profile-form";
+import { requireAdminPage } from "@/lib/admin-permissions";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
 export default async function EditPrinterPage({ params }: { params: Promise<{ id: string }> }) {
+  await requireAdminPage("printers");
   const { id } = await params;
   const [printer, spools] = await Promise.all([
     prisma.printer.findUnique({ where: { id } }),

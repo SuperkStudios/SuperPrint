@@ -9,6 +9,7 @@ import { createProductCheckout } from "@/services/checkout";
 const createOrderSchema = z.object({
   productId: z.string().optional(),
   uploadId: z.string().optional(),
+  selectedFilamentMaterialId: z.string().optional(),
   selectedMaterial: z.string().optional(),
   selectedColor: z.string().optional()
 });
@@ -41,6 +42,7 @@ export async function POST(request: Request) {
       productId: body.productId,
       customerId: session!.user.id,
       customerEmail: session!.user.email,
+      selectedFilamentMaterialId: body.selectedFilamentMaterialId,
       selectedMaterial: body.selectedMaterial,
       selectedColor: body.selectedColor
     });

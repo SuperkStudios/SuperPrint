@@ -70,7 +70,7 @@ export function PrinterProfileForm({ printer, spools }: PrinterProfileFormProps)
   }
 
   return (
-    <form onSubmit={submit} className="grid gap-5 rounded-lg border bg-white p-5 md:grid-cols-2">
+    <form onSubmit={submit} className="grid gap-5 rounded-lg border bg-card p-5 text-card-foreground shadow-sm md:grid-cols-2">
       <Field name="name" label="Internal name" defaultValue={printer?.name ?? ""} />
       <Field name="publicName" label="Public name" defaultValue={printer?.publicName ?? ""} />
       <Field name="modelName" label="Model name" defaultValue={printer?.modelName ?? "Elegoo Centauri Carbon"} />
@@ -82,7 +82,7 @@ export function PrinterProfileForm({ printer, spools }: PrinterProfileFormProps)
         <Label>Supported materials</Label>
         <div className="grid grid-cols-3 gap-2 text-sm">
           {filamentMaterials.map((material) => (
-            <label key={material} className="flex items-center gap-2 rounded border px-3 py-2">
+            <label key={material} className="flex items-center gap-2 rounded border bg-background px-3 py-2">
               <input
                 name="supportedMaterials"
                 value={material}
@@ -96,7 +96,7 @@ export function PrinterProfileForm({ printer, spools }: PrinterProfileFormProps)
       </div>
       <div className="grid gap-2">
         <Label htmlFor="currentFilamentId">Active filament spool</Label>
-        <select id="currentFilamentId" name="currentFilamentId" defaultValue={printer?.currentFilamentId ?? ""} className="h-10 rounded-md border bg-white px-3 text-sm">
+        <select id="currentFilamentId" name="currentFilamentId" defaultValue={printer?.currentFilamentId ?? ""} className="h-10 rounded-md border bg-background px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring">
           <option value="">No active spool</option>
           {spools.map((spool) => (
             <option key={spool.id} value={spool.id}>{spool.color} {spool.material} · {spool.brand}</option>

@@ -24,7 +24,7 @@ export function ProfileForm({ user }: { user: { name: string; image?: string | n
   }
 
   return (
-    <form action={submit} className="space-y-4 rounded border bg-white p-5">
+    <form action={submit} className="space-y-4 rounded border bg-card p-5 text-card-foreground shadow-sm">
       <div className="grid gap-2">
         <Label htmlFor="name">Display name</Label>
         <Input id="name" name="name" defaultValue={user.name} />
@@ -39,7 +39,7 @@ export function ProfileForm({ user }: { user: { name: string; image?: string | n
       </div>
       <div className="grid gap-2">
         <Label htmlFor="bio">Bio</Label>
-        <textarea id="bio" name="bio" defaultValue={user.bio ?? ""} className="min-h-28 rounded-md border border-input bg-background px-3 py-2 text-sm" />
+        <textarea id="bio" name="bio" defaultValue={user.bio ?? ""} className="min-h-28 rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring" />
       </div>
       <Button type="submit">Save profile</Button>
       {message ? <p className="text-sm text-muted-foreground">{message}</p> : null}

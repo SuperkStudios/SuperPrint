@@ -9,7 +9,7 @@ const actionSchema = z.object({
 });
 
 export async function POST(request: Request) {
-  const { session, response } = await requireAdmin();
+  const { session, response } = await requireAdmin("uploads");
   if (response) return response;
 
   const body = actionSchema.parse(await request.json());

@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { recordPlatformEvent } from "@/services/events";
 
 export async function GET() {
-  const { response } = await requireAdmin();
+  const { response } = await requireAdmin("printers");
   if (response) return response;
 
   const printers = await prisma.printer.findMany({
@@ -16,7 +16,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const { session, response } = await requireAdmin();
+  const { session, response } = await requireAdmin("printers");
   if (response) return response;
 
   const body = await request.json();

@@ -31,13 +31,13 @@ const actionSchema = z.object({
 });
 
 export async function GET() {
-  const { response } = await requireAdmin();
+  const { response } = await requireAdmin("queue");
   if (response) return response;
   return NextResponse.json({ jobs: await getAdminQueueState() });
 }
 
 export async function POST(request: Request) {
-  const { session, response } = await requireAdmin();
+  const { session, response } = await requireAdmin("queue");
   if (response) return response;
 
   const body = actionSchema.parse(await request.json());

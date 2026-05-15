@@ -2,11 +2,13 @@ import { AdminActionButton } from "@/components/admin-action-button";
 import { AdminFilamentForm } from "@/components/admin-filament-form";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { requireAdminPage } from "@/lib/admin-permissions";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminFilamentPage() {
+  await requireAdminPage("filament");
   const spools = await prisma.filamentSpool.findMany({ orderBy: { remainingGrams: "asc" } });
 
   return (

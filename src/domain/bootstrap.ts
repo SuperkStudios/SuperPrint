@@ -1,5 +1,5 @@
 export type BootstrapFilamentInput = {
-  material: "PLA" | "PETG" | "ABS" | "TPU" | "NYLON" | "RESIN";
+  material: "PLA" | "PLA_PLUS" | "PETG" | "ABS" | "TPU" | "NYLON" | "RESIN";
   color: string;
   brand: string;
   startingGrams: number;
@@ -320,6 +320,10 @@ export async function createBootstrapOwner(input: BootstrapInputDraft, repo: Boo
     for (const filament of normalized.filaments) {
       await tx.createFilament({
         ...filament,
+        type: filament.material,
+        spoolWeightGrams: filament.startingGrams,
+        costPerSpoolCents: filament.rollCostCents,
+        costPerGramCents: filament.rollCostCents / Math.max(1, filament.startingGrams),
         thresholdGrams: normalized.company.lowFilamentThresholdGrams,
         location: "bootstrap"
       });

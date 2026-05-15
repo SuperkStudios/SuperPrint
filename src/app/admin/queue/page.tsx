@@ -2,11 +2,13 @@ import { AdminActionButton } from "@/components/admin-action-button";
 import { OperatorStartButton } from "@/components/operator-start-button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { requireAdminPage } from "@/lib/admin-permissions";
 import { getAdminQueueState } from "@/services/queue";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminQueuePage() {
+  await requireAdminPage("queue");
   const jobs = await getAdminQueueState();
   const queuedIds = jobs.filter((job) => job.status === "QUEUED").map((job) => job.id);
 

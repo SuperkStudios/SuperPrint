@@ -2,11 +2,13 @@ import { AdminActionButton } from "@/components/admin-action-button";
 import { recommendedMaintenanceChecklist } from "@/domain/maintenance-schedule";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { requireAdminPage } from "@/lib/admin-permissions";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminMaintenancePage() {
+  await requireAdminPage("maintenance");
   const tasks = await prisma.maintenanceTask.findMany({
     include: { printer: true },
     orderBy: { dueAt: "asc" }

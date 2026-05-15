@@ -146,14 +146,14 @@ export function StlModelViewer({
   }, [src, file]);
 
   return (
-    <div className={`relative overflow-hidden rounded-md border bg-slate-50 ${className}`}>
+    <div className={`relative overflow-hidden rounded-md border bg-muted/20 ${className}`}>
       <div ref={containerRef} className="h-full min-h-52 w-full" />
       {status ? (
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-slate-50/80 text-sm text-muted-foreground">
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-background/80 text-sm text-muted-foreground">
           {status}
         </div>
       ) : (
-        <div className="pointer-events-none absolute bottom-3 left-3 rounded bg-white/85 px-2 py-1 text-xs font-medium text-slate-600 shadow-sm">
+        <div className="pointer-events-none absolute bottom-3 left-3 rounded border bg-background/85 px-2 py-1 text-xs font-medium text-muted-foreground shadow-sm">
           Drag to rotate
         </div>
       )}

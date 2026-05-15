@@ -15,7 +15,7 @@ const maintenanceSchema = z.object({
 });
 
 export async function GET() {
-  const { response } = await requireAdmin();
+  const { response } = await requireAdmin("maintenance");
   if (response) return response;
 
   const tasks = await prisma.maintenanceTask.findMany({
@@ -26,7 +26,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const { session, response } = await requireAdmin();
+  const { session, response } = await requireAdmin("maintenance");
   if (response) return response;
 
   const body = maintenanceSchema.parse(await request.json());

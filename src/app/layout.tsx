@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import "./globals.css";
-import { mainNavigation, buildUserNavigation } from "@/domain/navigation";
+import { mainNavigation } from "@/domain/navigation";
 import { getCurrentSession } from "@/lib/auth";
 import { getPlatformTheme } from "@/lib/platform-theme";
+import { AppSidebar } from "@/components/app-sidebar";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 export const metadata: Metadata = {
@@ -13,7 +14,6 @@ export const metadata: Metadata = {
 
 export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   const [theme, session] = await Promise.all([getPlatformTheme().catch(() => null), getCurrentSession().catch(() => null)]);
-  const userNavigation = buildUserNavigation(session?.user.role);
 
   return (
     <html lang="en" style={theme?.cssVariables} suppressHydrationWarning>
@@ -38,21 +38,23 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
                 </Link>
               ))}
             </nav>
-            <nav aria-label="User navigation" className="flex flex-wrap items-center justify-end gap-2">
+            <nav aria-label="Account actions" className="flex flex-wrap items-center justify-end gap-2">
               <ThemeToggle />
-              {userNavigation.map((item, index) => (
+              {!session?.user.id ? (
                 <Link
-                  key={item.href}
-                  href={item.href}
-                  className={index === 0 ? "rounded bg-primary px-3 py-2 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90" : "rounded border bg-card/60 px-3 py-2 text-sm font-medium hover:bg-muted"}
+                  href="/login"
+                  className="rounded bg-primary px-3 py-2 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90"
                 >
-                  {item.label}
+                  Sign in
                 </Link>
-              ))}
+              ) : null}
             </nav>
           </div>
         </header>
-        {children}
+        <div className="lg:grid lg:grid-cols-[auto_1fr]">
+          <AppSidebar role={session?.user.role} staffPermissions={session?.user.staffPermissions} />
+          <main className="min-w-0">{children}</main>
+        </div>
       </body>
     </html>
   );

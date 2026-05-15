@@ -9,13 +9,17 @@ export function StoreBuyButton({
   signedIn,
   selectedMaterial,
   selectedColor,
-  loginNext
+  selectedFilamentMaterialId,
+  loginNext,
+  disabled = false
 }: {
   productId: string;
   signedIn: boolean;
   selectedMaterial?: string;
   selectedColor?: string;
+  selectedFilamentMaterialId?: string;
   loginNext?: string;
+  disabled?: boolean;
 }) {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
@@ -30,7 +34,7 @@ export function StoreBuyButton({
     const response = await fetch("/api/orders", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ productId, selectedMaterial, selectedColor })
+      body: JSON.stringify({ productId, selectedMaterial, selectedColor, selectedFilamentMaterialId })
     });
     const body = await response.json().catch(() => null);
     setLoading(false);
@@ -48,7 +52,7 @@ export function StoreBuyButton({
 
   return (
     <div>
-      <Button size="sm" onClick={buy} disabled={loading}>
+      <Button size="sm" onClick={buy} disabled={loading || disabled}>
         <ShoppingCart className="size-4" />
         {loading ? "Opening..." : "Checkout"}
       </Button>

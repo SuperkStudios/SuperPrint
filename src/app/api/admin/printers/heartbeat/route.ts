@@ -3,7 +3,7 @@ import { requireAdmin } from "@/lib/http";
 import { refreshAllPrinterHeartbeats } from "@/services/printer-heartbeat";
 
 export async function POST() {
-  const { response } = await requireAdmin();
+  const { response } = await requireAdmin("printers");
   if (response) return response;
 
   const printers = await refreshAllPrinterHeartbeats();

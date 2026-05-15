@@ -61,7 +61,7 @@ export function UploadReviewActions({
       <Field name="estimatedPriceCents" label="Price cents" type="number" defaultValue="4200" />
       <div className="grid gap-2">
         <Label htmlFor={`material-${uploadId}`}>Material</Label>
-        <select id={`material-${uploadId}`} name="selectedMaterial" className="h-10 rounded-md border bg-white px-3 text-sm">
+        <select id={`material-${uploadId}`} name="selectedMaterial" className="h-10 rounded-md border bg-background px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring">
           {["PLA", "PETG", "ABS", "TPU", "NYLON", "RESIN"].map((material) => (
             <option key={material}>{material}</option>
           ))}
@@ -69,7 +69,7 @@ export function UploadReviewActions({
       </div>
       <div className="grid gap-2">
         <Label htmlFor={`printer-${uploadId}`}>Printer profile</Label>
-        <select id={`printer-${uploadId}`} name="selectedPrinterId" className="h-10 rounded-md border bg-white px-3 text-sm">
+        <select id={`printer-${uploadId}`} name="selectedPrinterId" className="h-10 rounded-md border bg-background px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring">
           {printers.map((printer) => (
             <option key={printer.id} value={printer.id}>
               {printer.publicName} · {printer.modelName}

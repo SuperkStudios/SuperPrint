@@ -18,7 +18,7 @@ const actionSchema = z.object({
 });
 
 export async function GET() {
-  const { response } = await requireAdmin();
+  const { response } = await requireAdmin("uploads");
   if (response) return response;
 
   const uploads = await prisma.modelUpload.findMany({
@@ -29,7 +29,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const { session, response } = await requireAdmin();
+  const { session, response } = await requireAdmin("uploads");
   if (response) return response;
 
   const body = actionSchema.parse(await request.json());

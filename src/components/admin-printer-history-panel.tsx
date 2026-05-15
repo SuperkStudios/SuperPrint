@@ -111,7 +111,7 @@ export function AdminPrinterHistoryPanel({ spools }: { spools: Spool[] }) {
             <select
               value={assignments[print.id] ?? ""}
               onChange={(event) => setAssignments((current) => ({ ...current, [print.id]: event.target.value }))}
-              className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+              className="h-9 rounded-md border border-input bg-background px-2 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <option value="">Select roll</option>
               {spools.map((spool) => <option key={spool.id} value={spool.id}>{spool.label}</option>)}

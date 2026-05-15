@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-const materials = ["PLA", "PETG", "ABS", "TPU", "NYLON", "RESIN"];
+const materials = ["PLA", "PLA_PLUS", "PETG", "ABS", "TPU", "NYLON", "RESIN"];
 
 export function AdminFilamentForm() {
   const [message, setMessage] = useState("");
@@ -32,11 +32,11 @@ export function AdminFilamentForm() {
   }
 
   return (
-    <form action={submit} className="grid gap-4 rounded border bg-white p-4">
+    <form action={submit} className="grid gap-4 rounded border bg-card p-4 text-card-foreground shadow-sm">
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="grid gap-2">
           <Label htmlFor="material">Material</Label>
-          <select id="material" name="material" className="h-10 rounded-md border border-input bg-background px-3 text-sm">
+          <select id="material" name="material" className="h-10 rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring">
             {materials.map((material) => <option key={material}>{material}</option>)}
           </select>
         </div>

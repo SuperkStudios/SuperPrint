@@ -7,11 +7,13 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { money } from "@/lib/utils";
+import { requireAdminPage } from "@/lib/admin-permissions";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminProductsPage() {
+  await requireAdminPage("products");
   const [products, spools] = await Promise.all([
     prisma.product.findMany({ orderBy: { createdAt: "desc" } }),
     prisma.filamentSpool.findMany({ orderBy: [{ material: "asc" }, { remainingGrams: "desc" }] })
@@ -49,7 +51,7 @@ export default async function AdminProductsPage() {
         <Stat label="Print files" value={stats.withPrintFiles} />
       </div>
 
-      <div className="overflow-x-auto rounded-md border bg-white">
+      <div className="overflow-x-auto rounded-md border bg-card text-card-foreground shadow-sm">
         <div className="min-w-[760px]">
         <div className="grid grid-cols-[88px_1fr_120px_130px_120px] items-center gap-4 bg-muted px-4 py-3 text-xs font-medium uppercase text-muted-foreground">
           <span>Preview</span>
@@ -60,7 +62,7 @@ export default async function AdminProductsPage() {
         </div>
         {products.length ? products.map((product) => (
           <div key={product.id} className="grid grid-cols-[88px_1fr_120px_130px_120px] items-center gap-4 border-t px-4 py-3">
-            <div className="h-16 overflow-hidden rounded border bg-slate-50">
+            <div className="h-16 overflow-hidden rounded border bg-muted/20">
               {product.productFileStorageKey && /\.stl$/i.test(product.productFileStorageKey) ? (
                 <StlModelViewer
                   src={`/api/products/${product.id}/model`}

@@ -3,13 +3,19 @@ import { AdminSettingsForm } from "@/components/admin-settings-form";
 import { prisma } from "@/lib/prisma";
 import { publicStripeSettings, resolveStripeSettings, stripeSettingKeys } from "@/domain/stripe-settings";
 import { notificationSettingKeys, publicNotificationSettings } from "@/domain/notification-settings";
+import { requireAdminPage } from "@/lib/admin-permissions";
+import { getPricingSettings } from "@/services/pricing";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminSettingsPage() {
-  const settings = await prisma.systemSetting.findMany({
+  await requireAdminPage("settings");
+  const [settings, pricingSettings] = await Promise.all([
+    prisma.systemSetting.findMany({
     where: { key: { in: ["company.brandName", "company.primaryColor", "filament.lowThresholdGrams", ...stripeSettingKeys(), ...notificationSettingKeys()] } }
-  });
+    }),
+    getPricingSettings()
+  ]);
   const values = Object.fromEntries(settings.map((setting) => [setting.key, setting.value]));
   const stripeSettings = publicStripeSettings(resolveStripeSettings({ settings: values }));
   const notificationSettings = publicNotificationSettings(values);
@@ -28,6 +34,7 @@ export default async function AdminSettingsPage() {
         lowFilamentThresholdGrams={typeof values["filament.lowThresholdGrams"] === "number" ? values["filament.lowThresholdGrams"] : 150}
         stripeSettings={stripeSettings}
         notificationSettings={notificationSettings}
+        pricingSettings={pricingSettings}
       />
     </div>
   );

@@ -25,7 +25,7 @@ export function StoreProductCard({
   return (
     <Card className="overflow-hidden transition hover:-translate-y-0.5 hover:shadow-lg">
       <CardHeader>
-        <Link href={`/store/${product.slug}`} className="mb-4 block h-56 overflow-hidden rounded-md bg-slate-50">
+        <Link href={`/store/${product.slug}`} className="mb-4 block h-56 overflow-hidden rounded-md bg-muted/20">
           {product.modelUrl ? (
             <StlModelViewer src={product.modelUrl} className="h-full border-0" />
           ) : (

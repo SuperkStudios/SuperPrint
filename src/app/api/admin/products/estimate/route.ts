@@ -3,7 +3,7 @@ import { requireAdmin } from "@/lib/http";
 import { estimatePrintFile } from "@/services/slicer-estimates";
 
 export async function POST(request: Request) {
-  const { response } = await requireAdmin();
+  const { response } = await requireAdmin("products");
   if (response) return response;
 
   const formData = await request.formData();

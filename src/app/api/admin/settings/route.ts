@@ -5,6 +5,7 @@ import { buildStripeSettingsUpdate, stripeSettingKeys } from "@/domain/stripe-se
 import { buildNotificationSettingsUpdate, notificationSettingKeys } from "@/domain/notification-settings";
 import { requireAdmin } from "@/lib/http";
 import { prisma } from "@/lib/prisma";
+import { updatePricingSettings } from "@/services/pricing";
 
 const settingsSchema = z.object({
   brandName: z.string().min(1).optional(),
@@ -20,15 +21,27 @@ const settingsSchema = z.object({
     email: z.string().optional(),
     sms: z.string().optional(),
     webhookUrl: z.string().optional()
+  }).optional(),
+  pricing: z.object({
+    machineHourlyRateCents: z.number().int().nonnegative().optional(),
+    laborHourlyRateCents: z.number().int().nonnegative().optional(),
+    electricityHourlyRateCents: z.number().int().nonnegative().optional(),
+    maintenanceReservePercent: z.number().nonnegative().optional(),
+    failureReservePercent: z.number().nonnegative().optional(),
+    defaultProfitMultiplier: z.number().positive().optional(),
+    paymentProcessingPercent: z.number().nonnegative().optional(),
+    paymentProcessingFixedCents: z.number().int().nonnegative().optional(),
+    taxPercentEstimate: z.number().nonnegative().nullable().optional(),
+    minimumOrderPriceCents: z.number().int().nonnegative().optional()
   }).optional()
 });
 
 export async function POST(request: Request) {
-  const { response } = await requireAdmin();
+  const { response } = await requireAdmin("settings");
   if (response) return response;
 
   const body = settingsSchema.parse(await request.json());
-  const updates = [
+  const updates: Promise<unknown>[] = [
     upsertSetting("company.primaryColor", normalizePrimaryColor(body.primaryColor))
   ];
 
@@ -53,6 +66,9 @@ export async function POST(request: Request) {
     for (const [key, value] of Object.entries(notificationUpdates)) {
       updates.push(upsertSetting(key, value));
     }
+  }
+  if (body.pricing) {
+    updates.push(updatePricingSettings(body.pricing));
   }
 
   await Promise.all(updates);

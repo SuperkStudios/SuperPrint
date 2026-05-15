@@ -2,11 +2,13 @@ import { AdminActionButton } from "@/components/admin-action-button";
 import { UploadReviewActions } from "@/components/upload-review-actions";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { requireAdminPage } from "@/lib/admin-permissions";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminUploadsPage() {
+  await requireAdminPage("uploads");
   const uploads = await prisma.modelUpload.findMany({
     include: { customer: true, sliceJobs: true, selectedPrinter: true },
     orderBy: { createdAt: "desc" }
