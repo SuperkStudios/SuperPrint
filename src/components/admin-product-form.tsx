@@ -4,6 +4,7 @@ import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { Clock3, Coins, Scale3D } from "lucide-react";
 import { filamentColorToHex } from "@/lib/filament-colors";
 import { calculateProductMaterialCostCents, parseProductPrintFileEstimates } from "@/domain/products";
+import { shippingPackagePresetById, shippingPackagePresets } from "@/domain/shipping-packages";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -23,6 +24,12 @@ type ProductDraft = {
   fixedPriceCents?: number | null;
   baseLaborMinutes?: number;
   basePackagingCents?: number;
+  shippingPackagePreset?: string;
+  shippingParcelTemplateId?: string | null;
+  shippingPackageLengthIn?: number;
+  shippingPackageWidthIn?: number;
+  shippingPackageHeightIn?: number;
+  shippingPackageWeightOz?: number;
   estimatedPrintMinutes: number;
   estimatedGrams: number;
   materialCostCents: number;
@@ -78,6 +85,12 @@ export function AdminProductForm({ product, materials = fallbackMaterials, prici
   const [estimatedPrintMinutes, setEstimatedPrintMinutes] = useState(product?.estimatedPrintMinutes ?? 60);
   const [baseLaborMinutes, setBaseLaborMinutes] = useState(product?.baseLaborMinutes ?? 10);
   const [basePackagingCents, setBasePackagingCents] = useState(product?.basePackagingCents ?? 150);
+  const initialPackagePreset = shippingPackagePresetById(product?.shippingPackagePreset);
+  const [shippingPackagePreset, setShippingPackagePreset] = useState(product?.shippingPackagePreset ?? initialPackagePreset.id);
+  const [shippingPackageLengthIn, setShippingPackageLengthIn] = useState(product?.shippingPackageLengthIn ?? initialPackagePreset.lengthIn);
+  const [shippingPackageWidthIn, setShippingPackageWidthIn] = useState(product?.shippingPackageWidthIn ?? initialPackagePreset.widthIn);
+  const [shippingPackageHeightIn, setShippingPackageHeightIn] = useState(product?.shippingPackageHeightIn ?? initialPackagePreset.heightIn);
+  const [shippingPackageWeightOz, setShippingPackageWeightOz] = useState(product?.shippingPackageWeightOz ?? initialPackagePreset.weightOz);
   const [pricingMode, setPricingMode] = useState<"FIXED" | "DYNAMIC">(product?.pricingMode ?? "DYNAMIC");
   const [fixedPriceDollars, setFixedPriceDollars] = useState(product?.fixedPriceCents ? (product.fixedPriceCents / 100).toFixed(2) : "");
   const [defaultFilamentId, setDefaultFilamentId] = useState(initialDefaultFilamentId);
@@ -148,6 +161,11 @@ export function AdminProductForm({ product, materials = fallbackMaterials, prici
     formData.set("defaultFilamentMaterialId", defaultFilamentId);
     formData.set("defaultMaterial", selectedDefaultFilament?.material ?? selectedMaterial);
     formData.set("materialCostCents", String(materialCostCents));
+    formData.set("shippingPackagePreset", shippingPackagePreset);
+    formData.set("shippingPackageLengthIn", String(shippingPackageLengthIn));
+    formData.set("shippingPackageWidthIn", String(shippingPackageWidthIn));
+    formData.set("shippingPackageHeightIn", String(shippingPackageHeightIn));
+    formData.set("shippingPackageWeightOz", String(shippingPackageWeightOz));
     const response = await fetch("/api/admin/products", {
       method: "POST",
       body: formData
@@ -263,6 +281,46 @@ export function AdminProductForm({ product, materials = fallbackMaterials, prici
         <div className="grid gap-2">
           <Label htmlFor="basePackagingCents">Packaging cents</Label>
           <Input id="basePackagingCents" name="basePackagingCents" type="number" min="0" value={basePackagingCents} onChange={(event) => setBasePackagingCents(Math.max(0, Math.round(Number(event.target.value) || 0)))} />
+        </div>
+        <div className="grid gap-2">
+          <Label htmlFor="shippingPackagePreset">Package tier</Label>
+          <select
+            id="shippingPackagePreset"
+            name="shippingPackagePreset"
+            value={shippingPackagePreset}
+            onChange={(event) => {
+              const preset = shippingPackagePresetById(event.target.value);
+              setShippingPackagePreset(preset.id);
+              setShippingPackageLengthIn(preset.lengthIn);
+              setShippingPackageWidthIn(preset.widthIn);
+              setShippingPackageHeightIn(preset.heightIn);
+              setShippingPackageWeightOz(preset.weightOz);
+              setBasePackagingCents(preset.packagingCents);
+            }}
+            className="h-10 rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            {shippingPackagePresets.map((preset) => <option key={preset.id} value={preset.id}>{preset.name}</option>)}
+          </select>
+        </div>
+        <div className="grid gap-2">
+          <Label htmlFor="shippingParcelTemplateId">Shippo parcel template ID</Label>
+          <Input id="shippingParcelTemplateId" name="shippingParcelTemplateId" defaultValue={product?.shippingParcelTemplateId ?? ""} placeholder="optional Shippo template object ID" />
+        </div>
+        <div className="grid gap-2">
+          <Label htmlFor="shippingPackageLengthIn">Package length in</Label>
+          <Input id="shippingPackageLengthIn" name="shippingPackageLengthIn" type="number" min="0.1" step="0.1" value={shippingPackageLengthIn} onChange={(event) => setShippingPackageLengthIn(Math.max(0.1, Number(event.target.value) || 0.1))} />
+        </div>
+        <div className="grid gap-2">
+          <Label htmlFor="shippingPackageWidthIn">Package width in</Label>
+          <Input id="shippingPackageWidthIn" name="shippingPackageWidthIn" type="number" min="0.1" step="0.1" value={shippingPackageWidthIn} onChange={(event) => setShippingPackageWidthIn(Math.max(0.1, Number(event.target.value) || 0.1))} />
+        </div>
+        <div className="grid gap-2">
+          <Label htmlFor="shippingPackageHeightIn">Package height in</Label>
+          <Input id="shippingPackageHeightIn" name="shippingPackageHeightIn" type="number" min="0.1" step="0.1" value={shippingPackageHeightIn} onChange={(event) => setShippingPackageHeightIn(Math.max(0.1, Number(event.target.value) || 0.1))} />
+        </div>
+        <div className="grid gap-2">
+          <Label htmlFor="shippingPackageWeightOz">Packed weight oz</Label>
+          <Input id="shippingPackageWeightOz" name="shippingPackageWeightOz" type="number" min="0.1" step="0.1" value={shippingPackageWeightOz} onChange={(event) => setShippingPackageWeightOz(Math.max(0.1, Number(event.target.value) || 0.1))} />
         </div>
         <div className="grid gap-2">
           <Label htmlFor="defaultFilamentMaterialId">Default filament</Label>

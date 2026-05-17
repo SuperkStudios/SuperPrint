@@ -2,6 +2,7 @@ import { normalizePrimaryColor } from "@/domain/theme";
 import { AdminSettingsForm } from "@/components/admin-settings-form";
 import { prisma } from "@/lib/prisma";
 import { publicStripeSettings, resolveStripeSettings, stripeSettingKeys } from "@/domain/stripe-settings";
+import { publicShippoSettings, resolveShippoSettings, shippoSettingKeys } from "@/domain/shippo-settings";
 import { notificationSettingKeys, publicNotificationSettings } from "@/domain/notification-settings";
 import { requireAdminPage } from "@/lib/admin-permissions";
 import { getPricingSettings } from "@/services/pricing";
@@ -12,12 +13,13 @@ export default async function AdminSettingsPage() {
   await requireAdminPage("settings");
   const [settings, pricingSettings] = await Promise.all([
     prisma.systemSetting.findMany({
-    where: { key: { in: ["company.brandName", "company.primaryColor", "filament.lowThresholdGrams", ...stripeSettingKeys(), ...notificationSettingKeys()] } }
+    where: { key: { in: ["company.brandName", "company.primaryColor", "filament.lowThresholdGrams", ...stripeSettingKeys(), ...shippoSettingKeys(), ...notificationSettingKeys()] } }
     }),
     getPricingSettings()
   ]);
   const values = Object.fromEntries(settings.map((setting) => [setting.key, setting.value]));
   const stripeSettings = publicStripeSettings(resolveStripeSettings({ settings: values }));
+  const shippoSettings = publicShippoSettings(resolveShippoSettings({ settings: values }));
   const notificationSettings = publicNotificationSettings(values);
 
   return (
@@ -33,6 +35,7 @@ export default async function AdminSettingsPage() {
         primaryColor={normalizePrimaryColor(values["company.primaryColor"])}
         lowFilamentThresholdGrams={typeof values["filament.lowThresholdGrams"] === "number" ? values["filament.lowThresholdGrams"] : 150}
         stripeSettings={stripeSettings}
+        shippoSettings={shippoSettings}
         notificationSettings={notificationSettings}
         pricingSettings={pricingSettings}
       />

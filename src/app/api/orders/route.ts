@@ -11,7 +11,21 @@ const createOrderSchema = z.object({
   uploadId: z.string().optional(),
   selectedFilamentMaterialId: z.string().optional(),
   selectedMaterial: z.string().optional(),
-  selectedColor: z.string().optional()
+  selectedColor: z.string().optional(),
+  fulfillment: z.object({
+    method: z.enum(["SHIP", "PICKUP"]),
+    address: z.object({
+      name: z.string().optional(),
+      street1: z.string().optional(),
+      street2: z.string().optional(),
+      city: z.string().optional(),
+      state: z.string().optional(),
+      zip: z.string().optional(),
+      country: z.string().optional(),
+      phone: z.string().optional(),
+      email: z.string().optional()
+    }).optional()
+  }).optional()
 });
 
 export async function GET() {
@@ -38,15 +52,20 @@ export async function POST(request: Request) {
 
   const body = createOrderSchema.parse(await request.json());
   if (body.productId) {
-    const checkout = await createProductCheckout({
-      productId: body.productId,
-      customerId: session!.user.id,
-      customerEmail: session!.user.email,
-      selectedFilamentMaterialId: body.selectedFilamentMaterialId,
-      selectedMaterial: body.selectedMaterial,
-      selectedColor: body.selectedColor
-    });
-    return NextResponse.json(checkout, { status: 201 });
+    try {
+      const checkout = await createProductCheckout({
+        productId: body.productId,
+        customerId: session!.user.id,
+        customerEmail: session!.user.email,
+        selectedFilamentMaterialId: body.selectedFilamentMaterialId,
+        selectedMaterial: body.selectedMaterial,
+        selectedColor: body.selectedColor,
+        fulfillment: body.fulfillment ?? { method: "SHIP" }
+      });
+      return NextResponse.json(checkout, { status: 201 });
+    } catch (error) {
+      return NextResponse.json({ error: error instanceof Error ? error.message : "Checkout failed." }, { status: 400 });
+    }
   }
   const product = body.productId ? await prisma.product.findUnique({ where: { id: body.productId } }) : null;
   const upload = body.uploadId ? await prisma.modelUpload.findUnique({ where: { id: body.uploadId } }) : null;
@@ -70,7 +89,6 @@ export async function POST(request: Request) {
     payload: { orderNumber: order.orderNumber, customerEmail: session!.user.email }
   });
 
-  // TODO: Create payment provider checkout session and store provider IDs server-side.
-  // TODO: Create shipping quotes and labels after successful payment.
+  // TODO: Create payment provider checkout session for custom upload orders.
   return NextResponse.json({ order, checkoutReady: true }, { status: 201 });
 }

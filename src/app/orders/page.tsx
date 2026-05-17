@@ -57,8 +57,13 @@ export default async function OrdersPage({ searchParams }: { searchParams?: Prom
               </div>
               <Badge>{order.status}</Badge>
             </CardHeader>
-            <CardContent className="grid gap-4 md:grid-cols-4">
+            <CardContent className="grid gap-4 md:grid-cols-5">
               <p className="text-sm"><span className="text-muted-foreground">Total</span><br />{money(order.totalCents)}</p>
+              <p className="text-sm">
+                <span className="text-muted-foreground">Delivery</span><br />
+                {order.fulfillmentMethod === "PICKUP" ? "Fort Collins pickup" : `${order.shippingProvider ?? "Shipping"} ${order.shippingService ?? ""}`}
+                {order.trackingUrl ? <><br /><a className="text-primary underline-offset-4 hover:underline" href={order.trackingUrl}>Track package</a></> : null}
+              </p>
               <p className="text-sm">
                 <span className="text-muted-foreground">Upload</span><br />
                 {order.upload ? `${order.upload.status}${order.upload.rejectionReason ? `: ${order.upload.rejectionReason}` : ""}` : "Product order"}

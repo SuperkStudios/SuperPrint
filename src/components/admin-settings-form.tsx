@@ -3,6 +3,7 @@
 import { type Dispatch, type SetStateAction, useEffect, useState } from "react";
 import { buildThemeCssVariables, normalizePrimaryColor } from "@/domain/theme";
 import { maskStripeSecret } from "@/domain/stripe-settings";
+import { maskShippoSecret } from "@/domain/shippo-settings";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -23,6 +24,30 @@ type PublicNotificationSettings = {
   configured: boolean;
 };
 
+type PublicShippoSettings = {
+  apiToken: string;
+  configured: boolean;
+  source?: "admin" | "env" | "none";
+  freeShippingThresholdCents: number | null;
+  pickupCity: string;
+  pickupState: string;
+  autoCreateLabelAfterPrint: boolean;
+  autoPrintLabelAfterPrint: boolean;
+  printCommand: string;
+  labelFileType: "PDF" | "PNG" | "PDF_4x6" | "ZPLII";
+  originAddress: {
+    name: string;
+    street1: string;
+    street2?: string | null;
+    city: string;
+    state: string;
+    zip: string;
+    country: string;
+    phone?: string | null;
+    email?: string | null;
+  } | null;
+};
+
 type PublicPricingSettings = {
   machineHourlyRateCents: number;
   laborHourlyRateCents: number;
@@ -41,6 +66,7 @@ type AdminSettingsDraft = {
   primaryColor: string;
   lowFilamentThresholdGrams: number;
   stripe: PublicStripeSettings;
+  shippo: PublicShippoSettings;
   notifications: PublicNotificationSettings;
   pricing: PublicPricingSettings;
 };
@@ -70,6 +96,19 @@ export function AdminSettingsForm({
     configured: false,
     source: "none"
   },
+  shippoSettings = {
+    apiToken: "",
+    configured: false,
+    source: "none",
+    freeShippingThresholdCents: null,
+    pickupCity: "Fort Collins",
+    pickupState: "CO",
+    autoCreateLabelAfterPrint: false,
+    autoPrintLabelAfterPrint: false,
+    printCommand: "lpr",
+    labelFileType: "PDF_4x6",
+    originAddress: null
+  },
   notificationSettings = {
     email: "",
     sms: "",
@@ -82,10 +121,11 @@ export function AdminSettingsForm({
   primaryColor: string;
   lowFilamentThresholdGrams: number;
   stripeSettings?: PublicStripeSettings;
+  shippoSettings?: PublicShippoSettings;
   notificationSettings?: PublicNotificationSettings;
   pricingSettings?: PublicPricingSettings;
 }) {
-  const [draft, setDraft] = useState({
+  const [draft, setDraft] = useState<AdminSettingsDraft>({
     brandName,
     primaryColor,
     lowFilamentThresholdGrams,
@@ -93,6 +133,21 @@ export function AdminSettingsForm({
       ...stripeSettings,
       secretKey: maskStripeSecret(stripeSettings.secretKey),
       webhookSecret: maskStripeSecret(stripeSettings.webhookSecret)
+    },
+    shippo: {
+      ...shippoSettings,
+      apiToken: maskShippoSecret(shippoSettings.apiToken),
+      originAddress: shippoSettings.originAddress ?? {
+        name: "",
+        street1: "",
+        street2: "",
+        city: "Fort Collins",
+        state: "CO",
+        zip: "",
+        country: "US",
+        phone: "",
+        email: ""
+      }
     },
     notifications: notificationSettings,
     pricing: pricingSettings
@@ -207,6 +262,80 @@ export function AdminSettingsForm({
 
       <div className="grid gap-4 border-t pt-5 md:col-span-2 md:grid-cols-3">
         <div className="md:col-span-3">
+          <h3 className="font-semibold">Shippo shipping</h3>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Used to quote checkout shipping, buy labels after payment, and print labels when orders are ready to pack.
+          </p>
+        </div>
+
+        <div className="grid gap-2 md:col-span-2">
+          <Label htmlFor="shippo-api-token">API token</Label>
+          <Input
+            id="shippo-api-token"
+            value={draft.shippo.apiToken}
+            placeholder="shippo_test_..."
+            autoComplete="off"
+            onChange={(event) => setDraft((current) => ({ ...current, shippo: { ...current.shippo, apiToken: event.target.value } }))}
+          />
+        </div>
+        <div className="grid gap-2">
+          <Label htmlFor="shippo-free-threshold">Free shipping over ($)</Label>
+          <Input
+            id="shippo-free-threshold"
+            type="number"
+            step="0.01"
+            value={draft.shippo.freeShippingThresholdCents == null ? "" : draft.shippo.freeShippingThresholdCents / 100}
+            onChange={(event) => setDraft((current) => ({ ...current, shippo: { ...current.shippo, freeShippingThresholdCents: event.target.value === "" ? null : Math.round(Number(event.target.value) * 100) } }))}
+          />
+        </div>
+
+        <ShippoAddressField label="Origin name" field="name" draft={draft} setDraft={setDraft} />
+        <ShippoAddressField label="Origin street" field="street1" draft={draft} setDraft={setDraft} />
+        <ShippoAddressField label="Origin suite" field="street2" draft={draft} setDraft={setDraft} />
+        <ShippoAddressField label="Origin city" field="city" draft={draft} setDraft={setDraft} />
+        <ShippoAddressField label="Origin state" field="state" draft={draft} setDraft={setDraft} />
+        <ShippoAddressField label="Origin ZIP" field="zip" draft={draft} setDraft={setDraft} />
+        <ShippoAddressField label="Origin phone" field="phone" draft={draft} setDraft={setDraft} />
+        <ShippoAddressField label="Origin email" field="email" draft={draft} setDraft={setDraft} />
+
+        <ShippoField label="Pickup city" field="pickupCity" draft={draft} setDraft={setDraft} />
+        <ShippoField label="Pickup state" field="pickupState" draft={draft} setDraft={setDraft} />
+        <div className="grid gap-2">
+          <Label htmlFor="shippo-label-file-type">Label format</Label>
+          <select
+            id="shippo-label-file-type"
+            className="h-10 rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            value={draft.shippo.labelFileType}
+            onChange={(event) => setDraft((current) => ({ ...current, shippo: { ...current.shippo, labelFileType: event.target.value as PublicShippoSettings["labelFileType"] } }))}
+          >
+            <option value="PDF_4x6">PDF 4x6</option>
+            <option value="PDF">PDF</option>
+            <option value="PNG">PNG</option>
+            <option value="ZPLII">ZPLII</option>
+          </select>
+        </div>
+
+        <ShippoField label="Print command" field="printCommand" draft={draft} setDraft={setDraft} />
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={draft.shippo.autoCreateLabelAfterPrint}
+            onChange={(event) => setDraft((current) => ({ ...current, shippo: { ...current.shippo, autoCreateLabelAfterPrint: event.target.checked } }))}
+          />
+          Buy label when print completes
+        </label>
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={draft.shippo.autoPrintLabelAfterPrint}
+            onChange={(event) => setDraft((current) => ({ ...current, shippo: { ...current.shippo, autoPrintLabelAfterPrint: event.target.checked } }))}
+          />
+          Print label automatically
+        </label>
+      </div>
+
+      <div className="grid gap-4 border-t pt-5 md:col-span-2 md:grid-cols-3">
+        <div className="md:col-span-3">
           <h3 className="font-semibold">Operations notifications</h3>
           <p className="mt-1 text-sm text-muted-foreground">
             Alerts are sent when prints fail, spaghetti is detected, maintenance is due, or filament changes are needed.
@@ -310,6 +439,61 @@ function PricingField({
             }
           }));
         }}
+      />
+    </div>
+  );
+}
+
+function ShippoField({
+  label,
+  field,
+  draft,
+  setDraft
+}: {
+  label: string;
+  field: keyof Pick<PublicShippoSettings, "pickupCity" | "pickupState" | "printCommand">;
+  draft: { shippo: PublicShippoSettings };
+  setDraft: Dispatch<SetStateAction<AdminSettingsDraft>>;
+}) {
+  return (
+    <div className="grid gap-2">
+      <Label htmlFor={`shippo-${field}`}>{label}</Label>
+      <Input
+        id={`shippo-${field}`}
+        value={String(draft.shippo[field] ?? "")}
+        onChange={(event) => setDraft((current) => ({ ...current, shippo: { ...current.shippo, [field]: event.target.value } }))}
+      />
+    </div>
+  );
+}
+
+function ShippoAddressField({
+  label,
+  field,
+  draft,
+  setDraft
+}: {
+  label: string;
+  field: keyof NonNullable<PublicShippoSettings["originAddress"]>;
+  draft: { shippo: PublicShippoSettings };
+  setDraft: Dispatch<SetStateAction<AdminSettingsDraft>>;
+}) {
+  return (
+    <div className="grid gap-2">
+      <Label htmlFor={`shippo-origin-${field}`}>{label}</Label>
+      <Input
+        id={`shippo-origin-${field}`}
+        value={String(draft.shippo.originAddress?.[field] ?? "")}
+        onChange={(event) => setDraft((current) => ({
+          ...current,
+          shippo: {
+            ...current.shippo,
+            originAddress: {
+              ...(current.shippo.originAddress ?? { name: "", street1: "", city: "", state: "", zip: "", country: "US" }),
+              [field]: event.target.value
+            }
+          }
+        }))}
       />
     </div>
   );

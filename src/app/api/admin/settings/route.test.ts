@@ -87,4 +87,47 @@ describe("admin settings route", () => {
       update: { value: "https://hooks.example.com/superprint" }
     }));
   });
+
+  it("saves Shippo shipping settings while preserving masked token", async () => {
+    findManyMock.mockResolvedValue([
+      { key: "shippo.apiToken", value: "shippo_test_existing" }
+    ]);
+
+    const response = await POST(new Request("http://localhost/api/admin/settings", {
+      method: "POST",
+      body: JSON.stringify({
+        primaryColor: "#0f8f7f",
+        shippo: {
+          apiToken: "shippo_te••••••••ting",
+          freeShippingThresholdCents: 7500,
+          pickupCity: "Fort Collins",
+          pickupState: "CO",
+          autoCreateLabelAfterPrint: true,
+          autoPrintLabelAfterPrint: false,
+          printCommand: "lpr",
+          originAddress: {
+            name: "SuperPrint",
+            street1: "123 College Ave",
+            city: "Fort Collins",
+            state: "CO",
+            zip: "80524",
+            country: "US"
+          }
+        }
+      })
+    }));
+
+    expect(response.status).toBe(200);
+    expect(upsertMock).not.toHaveBeenCalledWith(expect.objectContaining({
+      where: { key: "shippo.apiToken" }
+    }));
+    expect(upsertMock).toHaveBeenCalledWith(expect.objectContaining({
+      where: { key: "shippo.freeShippingThresholdCents" },
+      update: { value: 7500 }
+    }));
+    expect(upsertMock).toHaveBeenCalledWith(expect.objectContaining({
+      where: { key: "shippo.autoCreateLabelAfterPrint" },
+      update: { value: true }
+    }));
+  });
 });

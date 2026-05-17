@@ -4,7 +4,7 @@ import "./globals.css";
 import { mainNavigation } from "@/domain/navigation";
 import { getCurrentSession } from "@/lib/auth";
 import { getPlatformTheme } from "@/lib/platform-theme";
-import { AppSidebar } from "@/components/app-sidebar";
+import { AppFrame } from "@/components/app-frame";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 export const metadata: Metadata = {
@@ -51,10 +51,9 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
             </nav>
           </div>
         </header>
-        <div className="lg:grid lg:grid-cols-[auto_1fr]">
-          <AppSidebar role={session?.user.role} staffPermissions={session?.user.staffPermissions} />
-          <main className="min-w-0">{children}</main>
-        </div>
+        <AppFrame role={session?.user.role} staffPermissions={session?.user.staffPermissions}>
+          {children}
+        </AppFrame>
       </body>
     </html>
   );

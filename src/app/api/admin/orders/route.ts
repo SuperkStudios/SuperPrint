@@ -2,10 +2,11 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdmin } from "@/lib/http";
 import { prisma } from "@/lib/prisma";
+import { buyLabelForOrder, printOrderLabel } from "@/services/shipping";
 
 const orderActionSchema = z.object({
   orderId: z.string(),
-  action: z.enum(["markPacking", "markShipped", "markDelivered"])
+  action: z.enum(["markPacking", "markShipped", "markDelivered", "buyLabel", "printLabel", "buyAndPrintLabel"])
 });
 
 const shippingStatusByAction = {
@@ -30,9 +31,22 @@ export async function POST(request: Request) {
   if (response) return response;
 
   const body = orderActionSchema.parse(await request.json());
+  if (body.action === "buyLabel") {
+    const order = await buyLabelForOrder(body.orderId);
+    return NextResponse.json({ order });
+  }
+  if (body.action === "printLabel") {
+    const order = await printOrderLabel(body.orderId);
+    return NextResponse.json({ order });
+  }
+  if (body.action === "buyAndPrintLabel") {
+    const order = await buyLabelForOrder(body.orderId, { print: true });
+    return NextResponse.json({ order });
+  }
+  const shippingStatus = shippingStatusByAction[body.action as keyof typeof shippingStatusByAction];
   const order = await prisma.order.update({
     where: { id: body.orderId },
-    data: { shippingStatus: shippingStatusByAction[body.action] }
+    data: { shippingStatus }
   });
   return NextResponse.json({ order });
 }

@@ -119,8 +119,8 @@ Order media links are served through signed local tokens at `/api/media/[token]`
 ## Production TODO Seams
 
 - Real printer agent: replace `src/workers/print-worker.ts` with a secure agent protocol that owns internal printer credentials, telemetry, and G-code dispatch.
-- Payment provider: replace the checkout placeholder in `src/app/api/orders/route.ts` with Stripe/Adyen/etc. checkout sessions and webhook verification.
-- Shipping: add rate shopping, label purchase, address validation, and fulfillment webhooks after payment success.
+- Custom uploads: product checkout uses Stripe, but custom STL upload orders still need a payment checkout path after review and customer approval.
+- Shipping: Shippo rate shopping, free-shipping thresholds, label purchase, and label printing are wired for product orders. Remaining production work is carrier webhooks, richer address validation, and exception handling for refunded/voided labels.
 - Local volume storage: add richer file processing, thumbnail generation, and private media authorization policy.
 - Social Blade bucket upload: replace `SOCIAL_BLADE_UPLOAD_COMMAND` with the real bucket CLI/API once credentials and endpoint behavior are available.
 

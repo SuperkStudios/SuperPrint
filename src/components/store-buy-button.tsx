@@ -10,6 +10,7 @@ export function StoreBuyButton({
   selectedMaterial,
   selectedColor,
   selectedFilamentMaterialId,
+  fulfillment,
   loginNext,
   disabled = false
 }: {
@@ -18,6 +19,20 @@ export function StoreBuyButton({
   selectedMaterial?: string;
   selectedColor?: string;
   selectedFilamentMaterialId?: string;
+  fulfillment: {
+    method: "SHIP" | "PICKUP";
+    address: {
+      name: string;
+      street1: string;
+      street2?: string;
+      city: string;
+      state: string;
+      zip: string;
+      country: string;
+      phone?: string;
+      email?: string;
+    };
+  };
   loginNext?: string;
   disabled?: boolean;
 }) {
@@ -34,7 +49,7 @@ export function StoreBuyButton({
     const response = await fetch("/api/orders", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ productId, selectedMaterial, selectedColor, selectedFilamentMaterialId })
+      body: JSON.stringify({ productId, selectedMaterial, selectedColor, selectedFilamentMaterialId, fulfillment })
     });
     const body = await response.json().catch(() => null);
     setLoading(false);

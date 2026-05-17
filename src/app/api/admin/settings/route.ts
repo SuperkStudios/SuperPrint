@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { normalizePrimaryColor } from "@/domain/theme";
 import { buildStripeSettingsUpdate, stripeSettingKeys } from "@/domain/stripe-settings";
+import { buildShippoSettingsUpdate, shippoSettingKeys } from "@/domain/shippo-settings";
 import { buildNotificationSettingsUpdate, notificationSettingKeys } from "@/domain/notification-settings";
 import { requireAdmin } from "@/lib/http";
 import { prisma } from "@/lib/prisma";
@@ -16,6 +17,27 @@ const settingsSchema = z.object({
     secretKey: z.string().optional(),
     publishableKey: z.string().optional(),
     webhookSecret: z.string().optional()
+  }).optional(),
+  shippo: z.object({
+    apiToken: z.string().optional(),
+    freeShippingThresholdCents: z.number().int().nonnegative().nullable().optional(),
+    pickupCity: z.string().optional(),
+    pickupState: z.string().optional(),
+    autoCreateLabelAfterPrint: z.boolean().optional(),
+    autoPrintLabelAfterPrint: z.boolean().optional(),
+    printCommand: z.string().optional(),
+    labelFileType: z.enum(["PDF", "PNG", "PDF_4x6", "ZPLII"]).optional(),
+    originAddress: z.object({
+      name: z.string().optional(),
+      street1: z.string().optional(),
+      street2: z.string().optional().nullable(),
+      city: z.string().optional(),
+      state: z.string().optional(),
+      zip: z.string().optional(),
+      country: z.string().optional(),
+      phone: z.string().optional().nullable(),
+      email: z.string().optional().nullable()
+    }).optional().nullable()
   }).optional(),
   notifications: z.object({
     email: z.string().optional(),
@@ -61,6 +83,16 @@ export async function POST(request: Request) {
       updates.push(upsertSetting(key, value));
     }
   }
+  if (body.shippo) {
+    const existingShippoSettings = await prisma.systemSetting.findMany({
+      where: { key: { in: shippoSettingKeys() } }
+    });
+    const existingValues = Object.fromEntries(existingShippoSettings.map((setting) => [setting.key, setting.value]));
+    const shippoUpdates = buildShippoSettingsUpdate(body.shippo, existingValues);
+    for (const [key, value] of Object.entries(shippoUpdates)) {
+      updates.push(upsertSetting(key, value));
+    }
+  }
   if (body.notifications) {
     const notificationUpdates = buildNotificationSettingsUpdate(body.notifications);
     for (const [key, value] of Object.entries(notificationUpdates)) {
@@ -75,7 +107,7 @@ export async function POST(request: Request) {
   return NextResponse.json({ ok: true, primaryColor: normalizePrimaryColor(body.primaryColor) });
 }
 
-function upsertSetting(key: string, value: string | number) {
+function upsertSetting(key: string, value: string | number | boolean) {
   return prisma.systemSetting.upsert({
     where: { key },
     update: { value },

@@ -10,16 +10,31 @@ export function buildStripeProductLineItem(input: {
 
   return {
     price_data: {
-        currency: "usd",
-        product_data: {
-          name: input.name,
-          description: input.description,
-          ...buildStripeProductImages(input.imageUrl)
-        },
-        unit_amount: input.priceCents
+      currency: "usd",
+      product_data: {
+        name: input.name,
+        description: input.description,
+        ...buildStripeProductImages(input.imageUrl)
       },
-      quantity: 1
-    };
+      unit_amount: input.priceCents
+    },
+    quantity: 1
+  };
+}
+
+export function buildStripeShippingLineItem(input: { amountCents: number; description?: string | null }) {
+  if (input.amountCents <= 0) return null;
+  return {
+    price_data: {
+      currency: "usd",
+      product_data: {
+        name: "Shipping",
+        description: input.description ?? "Best available Shippo shipping rate"
+      },
+      unit_amount: input.amountCents
+    },
+    quantity: 1
+  };
 }
 
 function buildStripeProductImages(imageUrl: string) {

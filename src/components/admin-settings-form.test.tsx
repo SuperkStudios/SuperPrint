@@ -47,4 +47,39 @@ describe("AdminSettingsForm", () => {
     expect(html).toContain("owner@example.com");
     expect(html).toContain("+15555550123");
   });
+
+  it("renders Shippo shipping settings", () => {
+    const html = renderToStaticMarkup(
+      <AdminSettingsForm
+        brandName="SuperPrint"
+        primaryColor="#0f8f7f"
+        lowFilamentThresholdGrams={150}
+        shippoSettings={{
+          apiToken: "shippo_test_1234567890",
+          configured: true,
+          source: "admin",
+          freeShippingThresholdCents: 7500,
+          pickupCity: "Fort Collins",
+          pickupState: "CO",
+          autoCreateLabelAfterPrint: true,
+          autoPrintLabelAfterPrint: false,
+          printCommand: "lpr",
+          labelFileType: "PDF_4x6",
+          originAddress: {
+            name: "SuperPrint",
+            street1: "123 College Ave",
+            city: "Fort Collins",
+            state: "CO",
+            zip: "80524",
+            country: "US"
+          }
+        }}
+      />
+    );
+
+    expect(html).toContain("Shippo shipping");
+    expect(html).toContain("Free shipping over");
+    expect(html).toContain("SuperPrint");
+    expect(html).not.toContain("shippo_test_1234567890");
+  });
 });

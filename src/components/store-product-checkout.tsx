@@ -23,7 +23,8 @@ type MaterialOption = {
 export function StoreProductCheckout({
   product,
   materials,
-  signedIn
+  signedIn,
+  savedShippingAddress
 }: {
   product: {
     id: string;
@@ -39,6 +40,17 @@ export function StoreProductCheckout({
   };
   materials: MaterialOption[];
   signedIn: boolean;
+  savedShippingAddress?: {
+    name?: string | null;
+    street1?: string | null;
+    street2?: string | null;
+    city?: string | null;
+    state?: string | null;
+    zip?: string | null;
+    country?: string | null;
+    phone?: string | null;
+    email?: string | null;
+  } | null;
 }) {
   const materialOptions = materials.length ? materials : [{
     id: product.defaultMaterial,
@@ -53,11 +65,43 @@ export function StoreProductCheckout({
     marginWarning: null
   }];
   const [selectedFilamentId, setSelectedFilamentId] = useState(materialOptions[0].id);
+  const [fulfillmentMethod, setFulfillmentMethod] = useState<"SHIP" | "PICKUP">("SHIP");
+  const shippingAddress = {
+    name: savedShippingAddress?.name ?? "",
+    street1: savedShippingAddress?.street1 ?? "",
+    street2: savedShippingAddress?.street2 ?? "",
+    city: savedShippingAddress?.city ?? "",
+    state: savedShippingAddress?.state ?? "CO",
+    zip: savedShippingAddress?.zip ?? "",
+    country: savedShippingAddress?.country ?? "US",
+    phone: savedShippingAddress?.phone ?? "",
+    email: savedShippingAddress?.email ?? ""
+  };
+  const savedAddressReady = Boolean(
+    savedShippingAddress?.name &&
+    savedShippingAddress?.street1 &&
+    savedShippingAddress?.city &&
+    savedShippingAddress?.state &&
+    savedShippingAddress?.zip
+  );
   const selectedOption = materialOptions.find((option) => option.id === selectedFilamentId) ?? materialOptions[0];
   const selectedMaterial = selectedOption.material;
   const selectedColor = selectedOption.color;
   const previewColor = filamentColorToHex(selectedColor);
-  const checkoutDisabled = Boolean(selectedOption.unavailableReason || selectedOption.requiresAdminApproval);
+  const fulfillmentAddress = fulfillmentMethod === "PICKUP"
+    ? {
+        ...shippingAddress,
+        street1: shippingAddress.street1 || "Local pickup",
+        city: "Fort Collins",
+        state: "CO",
+        zip: shippingAddress.zip || "80521"
+      }
+    : shippingAddress;
+  const addressReady = fulfillmentMethod === "PICKUP"
+    ? Boolean(fulfillmentAddress.name && fulfillmentAddress.city && fulfillmentAddress.state)
+    : savedAddressReady;
+  const checkoutDisabled = Boolean(selectedOption.unavailableReason || selectedOption.requiresAdminApproval || (signedIn && !addressReady));
+  const savedAddressSummary = formatSavedAddress(shippingAddress);
 
   return (
     <div className="grid gap-8 lg:grid-cols-[1.08fr_0.92fr]">
@@ -90,6 +134,7 @@ export function StoreProductCheckout({
               selectedFilamentMaterialId={selectedFilamentId}
               selectedMaterial={selectedMaterial}
               selectedColor={selectedColor}
+              fulfillment={{ method: fulfillmentMethod, address: fulfillmentAddress }}
               loginNext={`/store/${product.slug}`}
               disabled={checkoutDisabled}
             />
@@ -124,7 +169,72 @@ export function StoreProductCheckout({
             </p>
           </div>
         </div>
+
+        <div className="grid gap-4 rounded-md border bg-card p-4 text-card-foreground shadow-sm">
+          <div>
+            <p className="text-sm font-medium">Delivery</p>
+            <div className="mt-2 grid grid-cols-2 rounded-md border p-1 text-sm">
+              <button
+                type="button"
+                onClick={() => setFulfillmentMethod("SHIP")}
+                className={`rounded px-3 py-2 font-medium ${fulfillmentMethod === "SHIP" ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}
+              >
+                Ship
+              </button>
+              <button
+                type="button"
+                onClick={() => setFulfillmentMethod("PICKUP")}
+                className={`rounded px-3 py-2 font-medium ${fulfillmentMethod === "PICKUP" ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}
+              >
+                Pickup
+              </button>
+            </div>
+          </div>
+
+          {fulfillmentMethod === "SHIP" && savedAddressReady ? (
+            <div className="rounded-md border bg-background p-3 text-sm">
+              <p className="font-medium">Using saved delivery address</p>
+              <p className="mt-1 text-muted-foreground">{savedAddressSummary}</p>
+              <a href="/profile" className="mt-3 inline-flex text-sm font-medium text-primary hover:underline">Change in profile</a>
+            </div>
+          ) : fulfillmentMethod === "SHIP" ? (
+            <div className="rounded-md border border-dashed bg-background p-3 text-sm">
+              <p className="font-medium">Add a delivery address in your profile before checkout.</p>
+              <a href="/profile" className="mt-2 inline-flex text-sm font-medium text-primary hover:underline">Open profile settings</a>
+            </div>
+          ) : (
+            <div className="rounded-md border bg-background p-3 text-sm">
+              <p className="font-medium">Free pickup in Fort Collins, CO</p>
+              <p className="mt-1 text-muted-foreground">We will use your account name and email for pickup orders.</p>
+            </div>
+          )}
+          <p className="text-sm text-muted-foreground">
+            {fulfillmentMethod === "PICKUP" ? "Pickup is free for Fort Collins, CO customers." : "Shipping is quoted at checkout with the lowest Shippo rate available."}
+          </p>
+        </div>
       </section>
     </div>
   );
+}
+
+function formatSavedAddress(address: {
+  name: string;
+  street1: string;
+  street2: string;
+  city: string;
+  state: string;
+  zip: string;
+  phone: string;
+}) {
+  const cityLine = [
+    address.city,
+    [address.state, address.zip].filter(Boolean).join(" ")
+  ].filter(Boolean).join(", ");
+  return [
+    address.name,
+    address.street1,
+    address.street2,
+    cityLine,
+    address.phone
+  ].filter(Boolean).join(" · ");
 }

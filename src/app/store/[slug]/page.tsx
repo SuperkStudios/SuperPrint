@@ -18,6 +18,7 @@ export default async function StoreProductPage({ params }: { params: Promise<{ s
     getCurrentSession().catch(() => null)
   ]);
   if (!product) notFound();
+  const savedUser = session?.user.id ? await prisma.user.findUnique({ where: { id: session.user.id } }) : null;
 
   const quotes = await calculateProductPriceOptions(product.id);
   const quoteByFilament = new Map(quotes.map((quote) => [quote.filamentMaterialId, quote]));
@@ -43,6 +44,17 @@ export default async function StoreProductPage({ params }: { params: Promise<{ s
         <StoreProductCheckout
           signedIn={Boolean(session?.user.id)}
           materials={materials}
+          savedShippingAddress={savedUser ? {
+            name: savedUser.shippingName ?? savedUser.name,
+            street1: savedUser.shippingStreet1,
+            street2: savedUser.shippingStreet2,
+            city: savedUser.shippingCity,
+            state: savedUser.shippingState,
+            zip: savedUser.shippingZip,
+            country: savedUser.shippingCountry,
+            phone: savedUser.shippingPhone,
+            email: savedUser.email
+          } : null}
           product={{
             id: product.id,
             slug: product.slug,

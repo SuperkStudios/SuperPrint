@@ -27,7 +27,8 @@ export function AdminActionButton({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload)
     });
-    setMessage(response.ok ? "Updated" : "Blocked");
+    const body = await response.json().catch(() => null);
+    setMessage(response.ok ? "Updated" : body?.error ?? "Blocked");
   }
 
   return (

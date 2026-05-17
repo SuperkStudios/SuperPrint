@@ -1,4 +1,4 @@
-import { PackageCheck, Truck } from "lucide-react";
+import { PackageCheck, Printer, Tag, Truck } from "lucide-react";
 import { AdminActionButton } from "@/components/admin-action-button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -45,7 +45,18 @@ function OrderCard({ order }: { order: {
   orderNumber: string;
   status: string;
   shippingStatus: string;
+  fulfillmentMethod: string;
   totalCents: number;
+  shippingAmountCents: number;
+  shippingRateCents: number;
+  shippingProvider: string | null;
+  shippingService: string | null;
+  shippingLabelUrl: string | null;
+  trackingNumber: string | null;
+  labelPrintedAt: Date | null;
+  shippingCity: string | null;
+  shippingState: string | null;
+  shippingZip: string | null;
   selectedColor: string | null;
   selectedMaterial: string | null;
   customer?: { email: string } | null;
@@ -68,7 +79,7 @@ function OrderCard({ order }: { order: {
         </div>
         <div className="flex flex-wrap justify-end gap-2">
           <Badge>{order.status}</Badge>
-          <Badge className="bg-secondary">{order.shippingStatus}</Badge>
+          <Badge className="bg-secondary">{order.fulfillmentMethod === "PICKUP" ? "PICKUP" : order.shippingStatus}</Badge>
         </div>
       </CardHeader>
       <CardContent className="grid gap-4 md:grid-cols-[1fr_auto]">
@@ -77,15 +88,37 @@ function OrderCard({ order }: { order: {
           <span><span className="text-muted-foreground">Material</span><br />{order.selectedColor ?? latestJob?.filament?.color ?? "-"} {order.selectedMaterial ?? latestJob?.filament?.material ?? ""}</span>
           <span><span className="text-muted-foreground">Printer</span><br />{latestJob?.printer?.publicName ?? "Unassigned"}</span>
           <span><span className="text-muted-foreground">Queue</span><br />{latestJob?.queuePosition ? `#${latestJob.queuePosition}` : latestJob?.status ?? "Not queued"}</span>
+          <span><span className="text-muted-foreground">Delivery</span><br />{order.fulfillmentMethod === "PICKUP" ? `${order.shippingCity ?? "Fort Collins"}, ${order.shippingState ?? "CO"}` : `${order.shippingProvider ?? "Shippo"} ${order.shippingService ?? ""}`}</span>
+          <span><span className="text-muted-foreground">Shipping paid</span><br />{money(order.shippingAmountCents)}{order.shippingRateCents > order.shippingAmountCents ? ` (${money(order.shippingRateCents)} label)` : ""}</span>
+          <span><span className="text-muted-foreground">Tracking</span><br />{order.trackingNumber ?? (order.shippingLabelUrl ? "Label ready" : "-")}</span>
+          <span><span className="text-muted-foreground">Label</span><br />{order.labelPrintedAt ? "Printed" : order.shippingLabelUrl ? "Ready" : "Not bought"}</span>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <AdminActionButton endpoint="/api/admin/orders" payload={{ action: "markPacking", orderId: order.id }}>
             <PackageCheck className="h-4 w-4" />
             Packing
           </AdminActionButton>
+          {order.fulfillmentMethod === "SHIP" && order.status === "COMPLETED" && !order.shippingLabelUrl ? (
+            <>
+              <AdminActionButton endpoint="/api/admin/orders" payload={{ action: "buyAndPrintLabel", orderId: order.id }} confirm={`Buy and print Shippo label for ${order.orderNumber}?`}>
+                <Printer className="h-4 w-4" />
+                Buy & print
+              </AdminActionButton>
+              <AdminActionButton endpoint="/api/admin/orders" payload={{ action: "buyLabel", orderId: order.id }} confirm={`Buy Shippo label for ${order.orderNumber}?`}>
+                <Tag className="h-4 w-4" />
+                Buy only
+              </AdminActionButton>
+            </>
+          ) : null}
+          {order.fulfillmentMethod === "SHIP" && order.status === "COMPLETED" && order.shippingLabelUrl ? (
+            <AdminActionButton endpoint="/api/admin/orders" payload={{ action: "printLabel", orderId: order.id }}>
+              <Printer className="h-4 w-4" />
+              Print label
+            </AdminActionButton>
+          ) : null}
           <AdminActionButton endpoint="/api/admin/orders" payload={{ action: "markShipped", orderId: order.id }} confirm={`Mark ${order.orderNumber} shipped?`}>
             <Truck className="h-4 w-4" />
-            Shipped
+            {order.fulfillmentMethod === "PICKUP" ? "Picked up" : "Shipped"}
           </AdminActionButton>
         </div>
       </CardContent>

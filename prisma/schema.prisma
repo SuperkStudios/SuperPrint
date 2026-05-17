@@ -133,6 +133,14 @@ model User {
   image        String?
   username     String?       @unique
   bio          String?
+  shippingName String?
+  shippingStreet1 String?
+  shippingStreet2 String?
+  shippingCity String?
+  shippingState String?
+  shippingZip String?
+  shippingCountry String?    @default("US")
+  shippingPhone String?
   passwordHash String?
   role         UserRole      @default(CUSTOMER)
   staffPermissions Json      @default("[]")
@@ -203,6 +211,12 @@ model Product {
   defaultFilamentMaterial FilamentSpool? @relation("DefaultProductFilament", fields: [defaultFilamentMaterialId], references: [id])
   baseLaborMinutes     Int           @default(10)
   basePackagingCents   Int           @default(150)
+  shippingPackagePreset String        @default("polymailer_4x8")
+  shippingParcelTemplateId String?
+  shippingPackageLengthIn Float       @default(8)
+  shippingPackageWidthIn  Float       @default(4)
+  shippingPackageHeightIn Float       @default(1)
+  shippingPackageWeightOz Float       @default(8)
   priceCents           Int
   pricingMode          PricingMode   @default(DYNAMIC)
   fixedPriceCents      Int?
@@ -275,6 +289,27 @@ model Order {
   totalCents     Int
   paymentStatus  String      @default("PENDING")
   shippingStatus String      @default("NOT_STARTED")
+  fulfillmentMethod String   @default("SHIP")
+  shippingName   String?
+  shippingStreet1 String?
+  shippingStreet2 String?
+  shippingCity   String?
+  shippingState  String?
+  shippingZip    String?
+  shippingCountry String?    @default("US")
+  shippingPhone  String?
+  shippingEmail  String?
+  shippoShipmentId String?
+  shippoRateId   String?
+  shippoTransactionId String?
+  shippingProvider String?
+  shippingService String?
+  shippingRateCents Int      @default(0)
+  shippingAmountCents Int    @default(0)
+  shippingLabelUrl String?
+  trackingNumber String?
+  trackingUrl    String?
+  labelPrintedAt DateTime?
   selectedMaterial FilamentMaterial?
   selectedColor   String?
   selectedFilamentMaterialId String?

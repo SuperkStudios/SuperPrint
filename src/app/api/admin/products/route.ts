@@ -8,6 +8,7 @@ import { prisma } from "@/lib/prisma";
 import { buildLocalStorageKey, resolveLocalStoragePath } from "@/lib/storage";
 import { upsertProduct } from "@/services/products";
 import { calculateProductMaterialCostCents } from "@/domain/products";
+import { shippingPackagePresetById } from "@/domain/shipping-packages";
 import { estimatePrintFile } from "@/services/slicer-estimates";
 
 const schema = z.object({
@@ -23,6 +24,12 @@ const schema = z.object({
   fixedPriceCents: z.number().optional().nullable(),
   baseLaborMinutes: z.number().int().nonnegative().default(10),
   basePackagingCents: z.number().int().nonnegative().default(150),
+  shippingPackagePreset: z.string().default("polymailer_4x8"),
+  shippingParcelTemplateId: z.string().optional().nullable(),
+  shippingPackageLengthIn: z.number().positive().default(8),
+  shippingPackageWidthIn: z.number().positive().default(4),
+  shippingPackageHeightIn: z.number().positive().default(1),
+  shippingPackageWeightOz: z.number().positive().default(8),
   estimatedPrintMinutes: z.number(),
   estimatedGrams: z.number(),
   materialCostCents: z.number().optional(),
@@ -97,6 +104,7 @@ async function readProductRequest(request: Request) {
   const allowedFilaments = parseAllowedFilaments(formData, defaultFilamentMaterialId ?? spool?.id);
   const fixedPriceCents = optionalCents(formData.get("fixedPriceCents"));
   const fallbackPriceCents = Number(formData.get("priceCents") ?? 0);
+  const preset = shippingPackagePresetById(stringValue(formData.get("shippingPackagePreset")));
 
   return {
     id: stringValue(formData.get("id")),
@@ -111,6 +119,12 @@ async function readProductRequest(request: Request) {
     fixedPriceCents,
     baseLaborMinutes: Number(formData.get("baseLaborMinutes") ?? 10),
     basePackagingCents: Number(formData.get("basePackagingCents") ?? 150),
+    shippingPackagePreset: stringValue(formData.get("shippingPackagePreset")) ?? preset.id,
+    shippingParcelTemplateId: stringValue(formData.get("shippingParcelTemplateId")) ?? null,
+    shippingPackageLengthIn: optionalPositiveNumber(formData.get("shippingPackageLengthIn")) ?? preset.lengthIn,
+    shippingPackageWidthIn: optionalPositiveNumber(formData.get("shippingPackageWidthIn")) ?? preset.widthIn,
+    shippingPackageHeightIn: optionalPositiveNumber(formData.get("shippingPackageHeightIn")) ?? preset.heightIn,
+    shippingPackageWeightOz: optionalPositiveNumber(formData.get("shippingPackageWeightOz")) ?? preset.weightOz,
     estimatedPrintMinutes: parsedPrintFile?.estimatedPrintMinutes ?? Number(formData.get("estimatedPrintMinutes") ?? 0),
     estimatedGrams,
     materialCostCents: calculateProductMaterialCostCents({ estimatedGrams, rollCostCents: spool?.rollCostCents ?? 0 }),
@@ -133,6 +147,11 @@ function optionalCents(value: FormDataEntryValue | null) {
 
 function optionalPositiveInt(value: FormDataEntryValue | null) {
   const parsed = Math.round(Number(value ?? 0));
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function optionalPositiveNumber(value: FormDataEntryValue | null) {
+  const parsed = Number(value ?? 0);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 

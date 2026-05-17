@@ -1,0 +1,7 @@
+ALTER TABLE "Product"
+  ADD COLUMN "shippingPackagePreset" TEXT NOT NULL DEFAULT 'polymailer_4x8',
+  ADD COLUMN "shippingParcelTemplateId" TEXT,
+  ADD COLUMN "shippingPackageLengthIn" DOUBLE PRECISION NOT NULL DEFAULT 8,
+  ADD COLUMN "shippingPackageWidthIn" DOUBLE PRECISION NOT NULL DEFAULT 4,
+  ADD COLUMN "shippingPackageHeightIn" DOUBLE PRECISION NOT NULL DEFAULT 1,
+  ADD COLUMN "shippingPackageWeightOz" DOUBLE PRECISION NOT NULL DEFAULT 8;
