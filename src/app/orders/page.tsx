@@ -38,6 +38,10 @@ export default async function OrdersPage({ searchParams }: { searchParams?: Prom
     include: { product: true, upload: true, printJobs: true, videos: true },
     orderBy: { createdAt: "desc" }
   });
+  const rewardsBalance = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { rewardsPointsBalance: true }
+  });
 
   return (
     <PageShell>
@@ -45,7 +49,7 @@ export default async function OrdersPage({ searchParams }: { searchParams?: Prom
       <PageHero
         eyebrow="Customer workspace"
         title="Order history"
-        copy="Track production status and retrieve finished print videos, timelapses, and thumbnails."
+        copy={`Track production status, rewards, and finished print media. Rewards balance: ${rewardsBalance?.rewardsPointsBalance ?? 0} points.`}
       />
       <div className="mt-8 grid gap-4">
         {orders.length ? orders.map((order) => (
@@ -57,8 +61,14 @@ export default async function OrdersPage({ searchParams }: { searchParams?: Prom
               </div>
               <Badge>{order.status}</Badge>
             </CardHeader>
-            <CardContent className="grid gap-4 md:grid-cols-5">
+            <CardContent className="grid gap-4 md:grid-cols-6">
               <p className="text-sm"><span className="text-muted-foreground">Total</span><br />{money(order.totalCents)}</p>
+              <p className="text-sm">
+                <span className="text-muted-foreground">Rewards</span><br />
+                {order.rewardDiscountCents > 0 ? `${order.rewardPointsRedeemed} used, ${money(order.rewardDiscountCents)} off` : "No points used"}
+                <br />
+                {order.rewardPointsEarned > 0 ? `${order.rewardPointsEarned} earned` : "Pending payment"}
+              </p>
               <p className="text-sm">
                 <span className="text-muted-foreground">Delivery</span><br />
                 {order.fulfillmentMethod === "PICKUP" ? "Fort Collins pickup" : `${order.shippingProvider ?? "Shipping"} ${order.shippingService ?? ""}`}

@@ -49,30 +49,6 @@ export function CyberHomepage({
   stats: HomepageStats;
   filament: HomepageFilament[];
 }) {
-  const live = useLiveManufacturing(events);
-  const livePrinter = usePrinterFeedStatus();
-  const current = queue.current;
-  const printer = current?.printer ?? queue.printers[0] ?? null;
-  const centauriTelemetry = livePrinter?.telemetry?.state === "LIVE" ? livePrinter.telemetry : null;
-  const telemetry = centauriTelemetry ?? (current?.telemetry?.state === "LIVE" ? current.telemetry : null);
-  const printerName = current?.printer?.name ?? queue.printers[0]?.name ?? "SuperPrint cell";
-  const currentPrint = current?.orderNumber ?? "Awaiting next approved job";
-  const heroProgressPercent = current?.progressPercent ?? (current?.telemetry?.state === "LIVE" ? current.telemetry.progressPercent : 0) ?? 0;
-  const progressPercent = current?.progressPercent ?? telemetry?.progressPercent ?? 0;
-  const isPrinting = Boolean(current) || centauriTelemetry?.machineStatus === 1;
-  const activeStatusLabel = isPrinting ? "Now Printing" : "No Active Print";
-  const activePrintTitle = current?.orderNumber ?? (centauriTelemetry?.machineStatus === 1 ? (centauriTelemetry.currentFileName ?? "Printer active outside SuperPrint queue") : "Awaiting next approved job");
-  const activePrintDetails = current?.filament
-    ? `${current.filament.color} ${current.filament.material} · ETA ${current.etaMinutes}m`
-    : centauriTelemetry?.machineStatus === 1
-      ? `Live printer job · ${formatRemaining(centauriTelemetry.remainingSeconds)} remaining`
-      : "No approved print is currently assigned.";
-  const printerStatus = livePrinter?.online ? centauriTelemetry?.machineStatusLabel ?? "Online" : current?.status ?? "IDLE";
-  const currentLayer = telemetry && "currentLayer" in telemetry ? telemetry.currentLayer : null;
-  const totalLayer = centauriTelemetry?.totalLayer ?? null;
-  const material = current?.filament ?? queue.printers[0]?.filament ?? null;
-  const liveEvents = live.events.length ? live.events : events;
-
   return (
     <main className="app-shell overflow-hidden text-foreground">
       <section className="relative">
@@ -105,12 +81,47 @@ export function CyberHomepage({
           <motion.div initial={{ opacity: 0, scale: 0.96, y: 26 }} animate={{ opacity: 1, scale: 1, y: 0 }} transition={{ duration: 0.8, delay: 0.1 }} className="relative">
             <div className="absolute -inset-10 rounded-full bg-primary/10 blur-3xl" />
             <div className="cyber-surface relative rounded-[1.5rem] p-4">
-              <PrinterHeroVisual progressPercent={heroProgressPercent} />
+              <PrinterHeroVisual progressPercent={queue.current?.progressPercent ?? (queue.current?.telemetry?.state === "LIVE" ? queue.current.telemetry.progressPercent : 0) ?? 0} />
             </div>
           </motion.div>
         </div>
       </section>
 
+      <LiveFactorySection queue={queue} events={events} />
+      <HowItWorks />
+      <FeatureGrid />
+      <InventorySection filament={filament} />
+      <StatsSection stats={stats} />
+      <RoadmapSection />
+      <FinalCta />
+    </main>
+  );
+}
+
+export function LiveFactorySection({ queue, events }: { queue: QueueState; events: PublicEvent[] }) {
+  const live = useLiveManufacturing(events);
+  const livePrinter = usePrinterFeedStatus();
+  const current = queue.current;
+  const centauriTelemetry = livePrinter?.telemetry?.state === "LIVE" ? livePrinter.telemetry : null;
+  const telemetry = centauriTelemetry ?? (current?.telemetry?.state === "LIVE" ? current.telemetry : null);
+  const printerName = current?.printer?.name ?? queue.printers[0]?.name ?? "SuperPrint cell";
+  const currentPrint = current?.orderNumber ?? "Awaiting next approved job";
+  const progressPercent = current?.progressPercent ?? telemetry?.progressPercent ?? 0;
+  const isPrinting = Boolean(current) || centauriTelemetry?.machineStatus === 1;
+  const activeStatusLabel = isPrinting ? "Now Printing" : "No Active Print";
+  const activePrintTitle = current?.orderNumber ?? (centauriTelemetry?.machineStatus === 1 ? (centauriTelemetry.currentFileName ?? "Printer active outside SuperPrint queue") : "Awaiting next approved job");
+  const activePrintDetails = current?.filament
+    ? `${current.filament.color} ${current.filament.material} · ETA ${current.etaMinutes}m`
+    : centauriTelemetry?.machineStatus === 1
+      ? `Live printer job · ${formatRemaining(centauriTelemetry.remainingSeconds)} remaining`
+      : "No approved print is currently assigned.";
+  const printerStatus = livePrinter?.online ? centauriTelemetry?.machineStatusLabel ?? "Online" : current?.status ?? "IDLE";
+  const currentLayer = telemetry && "currentLayer" in telemetry ? telemetry.currentLayer : null;
+  const totalLayer = centauriTelemetry?.totalLayer ?? null;
+  const material = current?.filament ?? queue.printers[0]?.filament ?? null;
+  const liveEvents = live.events.length ? live.events : events;
+
+  return (
       <section className="relative border-y bg-card/45 py-16 dark:bg-zinc-950/90 lg:py-24">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_0%,hsl(var(--primary)/0.12),transparent_32%),radial-gradient(circle_at_80%_20%,rgba(249,115,22,0.08),transparent_30%)]" />
         <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
@@ -184,14 +195,6 @@ export function CyberHomepage({
           </div>
         </div>
       </section>
-
-      <HowItWorks />
-      <FeatureGrid />
-      <InventorySection filament={filament} />
-      <StatsSection stats={stats} />
-      <RoadmapSection />
-      <FinalCta />
-    </main>
   );
 }
 

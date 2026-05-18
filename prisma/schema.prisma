@@ -42,6 +42,20 @@ enum OrderStatus {
   CANCELED
 }
 
+enum RewardTransactionType {
+  EARNED
+  REDEEM_RESERVED
+  REDEEMED
+  RESERVATION_RELEASED
+  ADJUSTMENT
+}
+
+enum RewardTransactionStatus {
+  PENDING
+  POSTED
+  VOID
+}
+
 enum PrintJobStatus {
   QUEUED
   READY_ON_NODE
@@ -144,10 +158,12 @@ model User {
   passwordHash String?
   role         UserRole      @default(CUSTOMER)
   staffPermissions Json      @default("[]")
+  rewardsPointsBalance Int   @default(0)
   sessions     Session[]
   accounts     Account[]
   uploads      ModelUpload[]
   orders       Order[]
+  rewardTransactions RewardTransaction[]
   events       PlatformEvent[]
   operatorPrintStarts PrintJob[] @relation("OperatorPrintStarts")
   createdAt    DateTime      @default(now())
@@ -306,6 +322,9 @@ model Order {
   shippingService String?
   shippingRateCents Int      @default(0)
   shippingAmountCents Int    @default(0)
+  rewardPointsRedeemed Int   @default(0)
+  rewardDiscountCents Int    @default(0)
+  rewardPointsEarned Int     @default(0)
   shippingLabelUrl String?
   trackingNumber String?
   trackingUrl    String?
@@ -317,8 +336,30 @@ model Order {
   pricingSnapshot OrderPricingSnapshot?
   printJobs      PrintJob[]
   videos         OrderVideo[]
+  rewardTransactions RewardTransaction[]
   createdAt      DateTime    @default(now())
   updatedAt      DateTime    @updatedAt
+}
+
+model RewardTransaction {
+  id          String                  @id @default(cuid())
+  userId      String
+  user        User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orderId     String?
+  order       Order?                  @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  type        RewardTransactionType
+  status      RewardTransactionStatus @default(POSTED)
+  points      Int
+  centsBasis  Int                     @default(0)
+  description String
+  expiresAt   DateTime?
+  finalizedAt DateTime?
+  createdAt   DateTime                @default(now())
+  updatedAt   DateTime                @updatedAt
+
+  @@index([userId, createdAt])
+  @@index([orderId, type])
+  @@index([status, expiresAt])
 }
 
 model Printer {
@@ -565,6 +606,8 @@ model OrderPricingSnapshot {
   paymentFeeCents            Int
   taxCents                   Int
   shippingCents              Int
+  preRewardCustomerPriceCents Int          @default(0)
+  rewardDiscountCents        Int           @default(0)
   finalCustomerPriceCents    Int
   internalCostCents          Int           @default(0)
   marginCents                Int           @default(0)

@@ -5,6 +5,7 @@ import { getCurrentSession } from "@/lib/auth";
 import { getBootstrapStatus } from "@/lib/bootstrap";
 import { prisma } from "@/lib/prisma";
 import { calculateProductPriceOptions } from "@/services/pricing";
+import { getRewardsSettings } from "@/services/rewards";
 
 export const dynamic = "force-dynamic";
 
@@ -13,9 +14,10 @@ export default async function StoreProductPage({ params }: { params: Promise<{ s
     redirect("/setup");
   }
   const { slug } = await params;
-  const [product, session] = await Promise.all([
+  const [product, session, rewardsSettings] = await Promise.all([
     prisma.product.findFirst({ where: { slug, status: "ACTIVE" }, include: { allowedFilaments: { where: { enabled: true }, include: { filamentMaterial: true } } } }),
-    getCurrentSession().catch(() => null)
+    getCurrentSession().catch(() => null),
+    getRewardsSettings()
   ]);
   if (!product) notFound();
   const savedUser = session?.user.id ? await prisma.user.findUnique({ where: { id: session.user.id } }) : null;
@@ -44,6 +46,7 @@ export default async function StoreProductPage({ params }: { params: Promise<{ s
         <StoreProductCheckout
           signedIn={Boolean(session?.user.id)}
           materials={materials}
+          publicRewardsSettings={rewardsSettings}
           savedShippingAddress={savedUser ? {
             name: savedUser.shippingName ?? savedUser.name,
             street1: savedUser.shippingStreet1,

@@ -52,7 +52,7 @@ describe("product pricing", () => {
       settings
     });
 
-    expect(quote.finalCustomerPriceCents).toBeGreaterThanOrEqual(1000);
+    expect(quote.finalCustomerPriceCents).toBe(1000);
     expect(quote.internalCostCents).toBeGreaterThan(0);
     expect(quote.marginWarning).toContain("Fixed price");
   });

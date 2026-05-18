@@ -130,4 +130,38 @@ describe("admin settings route", () => {
       update: { value: true }
     }));
   });
+
+  it("saves rewards settings", async () => {
+    findManyMock.mockResolvedValue([]);
+
+    const response = await POST(new Request("http://localhost/api/admin/settings", {
+      method: "POST",
+      body: JSON.stringify({
+        primaryColor: "#0f8f7f",
+        rewards: {
+          pointsPerDollar: 12,
+          redemptionPointsPerDollar: 100,
+          maxDiscountPercent: 0.2,
+          minimumRedemptionPoints: 500,
+          earnOnDiscountedAmount: true,
+          includeShippingInEarnBasis: false,
+          reservationTtlMinutes: 60
+        }
+      })
+    }));
+
+    expect(response.status).toBe(200);
+    expect(upsertMock).toHaveBeenCalledWith(expect.objectContaining({
+      where: { key: "rewards.pointsPerDollar" },
+      update: { value: 12 }
+    }));
+    expect(upsertMock).toHaveBeenCalledWith(expect.objectContaining({
+      where: { key: "rewards.maxDiscountPercent" },
+      update: { value: 0.2 }
+    }));
+    expect(upsertMock).toHaveBeenCalledWith(expect.objectContaining({
+      where: { key: "rewards.includeShippingInEarnBasis" },
+      update: { value: false }
+    }));
+  });
 });

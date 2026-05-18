@@ -61,6 +61,17 @@ type PublicPricingSettings = {
   minimumOrderPriceCents: number;
 };
 
+type PublicRewardsSettings = {
+  pointsPerDollar: number;
+  redemptionPointsPerDollar: number;
+  maxDiscountPercent: number;
+  minimumRedemptionPoints: number;
+  earnOnDiscountedAmount: boolean;
+  includeShippingInEarnBasis: boolean;
+  reservationTtlMinutes: number;
+};
+type NumericRewardsField = Exclude<keyof PublicRewardsSettings, "earnOnDiscountedAmount" | "includeShippingInEarnBasis">;
+
 type AdminSettingsDraft = {
   brandName: string;
   primaryColor: string;
@@ -69,6 +80,7 @@ type AdminSettingsDraft = {
   shippo: PublicShippoSettings;
   notifications: PublicNotificationSettings;
   pricing: PublicPricingSettings;
+  rewards: PublicRewardsSettings;
 };
 
 const defaultPricingSettings: PublicPricingSettings = {
@@ -82,6 +94,16 @@ const defaultPricingSettings: PublicPricingSettings = {
   paymentProcessingFixedCents: 30,
   taxPercentEstimate: null,
   minimumOrderPriceCents: 500
+};
+
+const defaultRewardsSettings: PublicRewardsSettings = {
+  pointsPerDollar: 10,
+  redemptionPointsPerDollar: 100,
+  maxDiscountPercent: 0.2,
+  minimumRedemptionPoints: 500,
+  earnOnDiscountedAmount: true,
+  includeShippingInEarnBasis: false,
+  reservationTtlMinutes: 60
 };
 
 export function AdminSettingsForm({
@@ -115,7 +137,8 @@ export function AdminSettingsForm({
     webhookUrl: "",
     configured: false
   },
-  pricingSettings = defaultPricingSettings
+  pricingSettings = defaultPricingSettings,
+  rewardsSettings = defaultRewardsSettings
 }: {
   brandName: string;
   primaryColor: string;
@@ -124,6 +147,7 @@ export function AdminSettingsForm({
   shippoSettings?: PublicShippoSettings;
   notificationSettings?: PublicNotificationSettings;
   pricingSettings?: PublicPricingSettings;
+  rewardsSettings?: PublicRewardsSettings;
 }) {
   const [draft, setDraft] = useState<AdminSettingsDraft>({
     brandName,
@@ -150,7 +174,8 @@ export function AdminSettingsForm({
       }
     },
     notifications: notificationSettings,
-    pricing: pricingSettings
+    pricing: pricingSettings,
+    rewards: rewardsSettings
   });
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
@@ -393,12 +418,81 @@ export function AdminSettingsForm({
         <PricingField label="Minimum order price" field="minimumOrderPriceCents" draft={draft} setDraft={setDraft} />
       </div>
 
+      <div className="grid gap-4 border-t pt-5 md:col-span-2 md:grid-cols-3">
+        <div className="md:col-span-3">
+          <h3 className="font-semibold">Rewards settings</h3>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Margin-safe defaults: earn 10 points per $1, redeem 100 points for $1 off, capped to product discounts.
+          </p>
+        </div>
+        <RewardsField label="Points earned per $1" field="pointsPerDollar" draft={draft} setDraft={setDraft} step="0.1" />
+        <RewardsField label="Points per $1 discount" field="redemptionPointsPerDollar" draft={draft} setDraft={setDraft} />
+        <RewardsField label="Max product discount %" field="maxDiscountPercent" draft={draft} setDraft={setDraft} percent />
+        <RewardsField label="Minimum redemption points" field="minimumRedemptionPoints" draft={draft} setDraft={setDraft} />
+        <RewardsField label="Reservation expiry minutes" field="reservationTtlMinutes" draft={draft} setDraft={setDraft} />
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={draft.rewards.earnOnDiscountedAmount}
+            onChange={(event) => setDraft((current) => ({ ...current, rewards: { ...current.rewards, earnOnDiscountedAmount: event.target.checked } }))}
+          />
+          Earn on discounted product amount
+        </label>
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={draft.rewards.includeShippingInEarnBasis}
+            onChange={(event) => setDraft((current) => ({ ...current, rewards: { ...current.rewards, includeShippingInEarnBasis: event.target.checked } }))}
+          />
+          Include shipping when earning points
+        </label>
+      </div>
+
       <div className="flex items-end gap-3">
         <Button type="button" onClick={save} disabled={saving}>
           {saving ? "Saving..." : "Save settings"}
         </Button>
         {message ? <p className="text-sm text-muted-foreground">{message}</p> : null}
       </div>
+    </div>
+  );
+}
+
+function RewardsField({
+  label,
+  field,
+  draft,
+  setDraft,
+  percent = false,
+  step = "1"
+}: {
+  label: string;
+  field: NumericRewardsField;
+  draft: { rewards: PublicRewardsSettings };
+  setDraft: Dispatch<SetStateAction<AdminSettingsDraft>>;
+  percent?: boolean;
+  step?: string;
+}) {
+  const value = draft.rewards[field];
+  return (
+    <div className="grid gap-2">
+      <Label htmlFor={`rewards-${field}`}>{label}</Label>
+      <Input
+        id={`rewards-${field}`}
+        type="number"
+        step={percent ? "0.01" : step}
+        value={percent ? Number(value) * 100 : Number(value)}
+        onChange={(event) => {
+          const parsed = Number(event.target.value);
+          setDraft((current) => ({
+            ...current,
+            rewards: {
+              ...current.rewards,
+              [field]: percent ? parsed / 100 : parsed
+            }
+          }));
+        }}
+      />
     </div>
   );
 }

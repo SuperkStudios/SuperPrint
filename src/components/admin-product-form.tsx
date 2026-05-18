@@ -156,8 +156,9 @@ export function AdminProductForm({ product, materials = fallbackMaterials, prici
   async function submit(formData: FormData) {
     setMessage("");
     if (product?.id) formData.set("id", product.id);
-    formData.set("priceCents", String(suggestedPriceCents ?? product?.priceCents ?? 1));
-    formData.set("fixedPriceCents", pricingMode === "FIXED" ? String(Math.round(Number(fixedPriceDollars) * 100)) : "");
+    const fixedPriceCents = pricingMode === "FIXED" ? Math.round(Number(fixedPriceDollars) * 100) : null;
+    formData.set("priceCents", String(fixedPriceCents && fixedPriceCents > 0 ? fixedPriceCents : suggestedPriceCents ?? product?.priceCents ?? 1));
+    formData.set("fixedPriceCents", fixedPriceCents && fixedPriceCents > 0 ? String(fixedPriceCents) : "");
     formData.set("defaultFilamentMaterialId", defaultFilamentId);
     formData.set("defaultMaterial", selectedDefaultFilament?.material ?? selectedMaterial);
     formData.set("materialCostCents", String(materialCostCents));

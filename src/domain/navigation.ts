@@ -33,6 +33,7 @@ export const userNavigation: NavItem[] = [
   { href: "/store", label: "Store" },
   { href: "/upload", label: "Upload STL" },
   { href: "/orders", label: "Orders" },
+  { href: "/rewards", label: "Rewards" },
   { href: "/profile", label: "Profile" }
 ];
 

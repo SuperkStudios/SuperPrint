@@ -109,7 +109,9 @@ export function calculateProductPrice(input: {
   const paymentFeeCents = roundMoney(priceBeforeTaxAndFeesCents * normalizePercent(input.settings.paymentProcessingPercent) + input.settings.paymentProcessingFixedCents);
   const taxCents = roundMoney(priceBeforeTaxAndFeesCents * normalizePercent(input.settings.taxPercentEstimate));
   const finalBeforeMinimum = priceBeforeTaxAndFeesCents + paymentFeeCents + taxCents;
-  const finalCustomerPriceCents = Math.max(finalBeforeMinimum, input.settings.minimumOrderPriceCents);
+  const finalCustomerPriceCents = input.product.pricingMode === "FIXED"
+    ? priceBeforeTaxAndFeesCents
+    : Math.max(finalBeforeMinimum, input.settings.minimumOrderPriceCents);
   const subtotalCostCents = baseCost;
   const profitMarkupCents = Math.max(0, priceBeforeTaxAndFeesCents - internalCostCents);
   const marginCents = finalCustomerPriceCents - internalCostCents - paymentFeeCents - taxCents;

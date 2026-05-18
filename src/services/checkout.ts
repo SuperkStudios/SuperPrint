@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getStripe, getStripeBaseUrl } from "@/lib/stripe";
 import { enqueuePrintJob } from "@/lib/queue-broker";
 import { calculateProductPrice, createPricingSnapshot } from "@/services/pricing";
+import { applyRewardRedemptionToOrder, awardOrderPoints, finalizeRewardRedemption, getRewardsSettings } from "@/services/rewards";
 import { prepareCheckoutShipping, type CheckoutFulfillmentInput } from "@/services/shipping";
 import { recordPlatformEvent } from "./events";
 
@@ -34,37 +35,57 @@ export async function createProductCheckout(input: { productId: string; customer
     customerEmail: input.customerEmail,
     fulfillment: input.fulfillment
   });
-  const totalCents = quote.finalCustomerPriceCents + shipping.shippingAmountCents;
+  const rewardsSettings = await getRewardsSettings();
+  const preRewardProductCents = quote.finalCustomerPriceCents;
+  const preRewardTotalCents = preRewardProductCents + shipping.shippingAmountCents;
 
-  const order = await prisma.order.create({
-    data: {
-      orderNumber: `SP-${Date.now().toString().slice(-6)}`,
-      customerId: input.customerId,
-      productId: product.id,
-      totalCents,
-      status: "CHECKOUT_READY",
-      paymentStatus: "PENDING",
-      shippingStatus: shipping.method === "PICKUP" ? "PICKUP" : "QUOTE_READY",
-      fulfillmentMethod: shipping.method,
-      shippingName: shipping.address.name,
-      shippingStreet1: shipping.address.street1,
-      shippingStreet2: shipping.address.street2,
-      shippingCity: shipping.address.city,
-      shippingState: shipping.address.state,
-      shippingZip: shipping.address.zip,
-      shippingCountry: shipping.address.country,
-      shippingPhone: shipping.address.phone,
-      shippingEmail: shipping.address.email,
-      shippoShipmentId: shipping.shippoShipmentId,
-      shippoRateId: shipping.rate?.object_id,
-      shippingProvider: shipping.rate?.provider,
-      shippingService: shipping.rate?.servicelevel?.name ?? shipping.rate?.servicelevel_name,
-      shippingRateCents: shipping.shippingRateCents,
-      shippingAmountCents: shipping.shippingAmountCents,
-      selectedMaterial: selection.selectedMaterial as never,
-      selectedColor: selection.selectedColor,
-      selectedFilamentMaterialId: selectedAllowed.filamentMaterialId
-    }
+  const order = await prisma.$transaction(async (tx) => {
+    const created = await tx.order.create({
+      data: {
+        orderNumber: `SP-${Date.now().toString().slice(-6)}`,
+        customerId: input.customerId,
+        productId: product.id,
+        totalCents: preRewardTotalCents,
+        status: "CHECKOUT_READY",
+        paymentStatus: "PENDING",
+        shippingStatus: shipping.method === "PICKUP" ? "PICKUP" : "QUOTE_READY",
+        fulfillmentMethod: shipping.method,
+        shippingName: shipping.address.name,
+        shippingStreet1: shipping.address.street1,
+        shippingStreet2: shipping.address.street2,
+        shippingCity: shipping.address.city,
+        shippingState: shipping.address.state,
+        shippingZip: shipping.address.zip,
+        shippingCountry: shipping.address.country,
+        shippingPhone: shipping.address.phone,
+        shippingEmail: shipping.address.email,
+        shippoShipmentId: shipping.shippoShipmentId,
+        shippoRateId: shipping.rate?.object_id,
+        shippingProvider: shipping.rate?.provider,
+        shippingService: shipping.rate?.servicelevel?.name ?? shipping.rate?.servicelevel_name,
+        shippingRateCents: shipping.shippingRateCents,
+        shippingAmountCents: shipping.shippingAmountCents,
+        selectedMaterial: selection.selectedMaterial as never,
+        selectedColor: selection.selectedColor,
+        selectedFilamentMaterialId: selectedAllowed.filamentMaterialId
+      }
+    });
+    const reward = await applyRewardRedemptionToOrder({
+      tx,
+      userId: input.customerId,
+      orderId: created.id,
+      productSubtotalCents: preRewardProductCents,
+      settings: rewardsSettings
+    });
+    if (!reward.discountCents) return created;
+    return tx.order.update({
+      where: { id: created.id },
+      data: {
+        totalCents: preRewardTotalCents - reward.discountCents,
+        rewardPointsRedeemed: reward.pointsRedeemed,
+        rewardDiscountCents: reward.discountCents
+      }
+    });
   });
   if (shipping.method === "SHIP") {
     await prisma.user.update({
@@ -81,7 +102,12 @@ export async function createProductCheckout(input: { productId: string; customer
       }
     });
   }
-  await createPricingSnapshot({ orderId: order.id, quote: { ...quote, shippingCents: shipping.shippingAmountCents, finalCustomerPriceCents: totalCents } });
+  await createPricingSnapshot({
+    orderId: order.id,
+    quote: { ...quote, shippingCents: shipping.shippingAmountCents, finalCustomerPriceCents: order.totalCents },
+    preRewardCustomerPriceCents: preRewardTotalCents,
+    rewardDiscountCents: order.rewardDiscountCents
+  });
 
   await recordPlatformEvent({
     type: "ORDER_CREATED",
@@ -92,7 +118,9 @@ export async function createProductCheckout(input: { productId: string; customer
       productName: product.name,
       material: selection.selectedMaterial,
       color: selection.selectedColor,
-      priceCents: totalCents,
+      priceCents: order.totalCents,
+      rewardDiscountCents: order.rewardDiscountCents,
+      rewardPointsRedeemed: order.rewardPointsRedeemed,
       fulfillmentMethod: shipping.method,
       shippingCents: shipping.shippingAmountCents,
       shippingProvider: shipping.rate?.provider,
@@ -110,7 +138,7 @@ export async function createProductCheckout(input: { productId: string; customer
   }
 
   const baseUrl = getStripeBaseUrl();
-  const productLineItem = buildStripeProductLineItem({ ...product, priceCents: quote.finalCustomerPriceCents });
+  const productLineItem = buildStripeProductLineItem({ ...product, priceCents: preRewardProductCents - order.rewardDiscountCents });
   const shippingLineItem = buildStripeShippingLineItem({
     amountCents: shipping.shippingAmountCents,
     description: shipping.rate ? `${shipping.rate.provider ?? "Carrier"} ${shipping.rate.servicelevel?.name ?? shipping.rate.servicelevel_name ?? "shipping"}` : "Free local pickup"
@@ -119,13 +147,16 @@ export async function createProductCheckout(input: { productId: string; customer
     mode: "payment",
     customer_email: input.customerEmail ?? undefined,
     line_items: shippingLineItem ? [productLineItem, shippingLineItem] : [productLineItem],
+    ...(order.rewardPointsRedeemed > 0 ? { expires_at: Math.floor(Date.now() / 1000) + Math.min(1440, Math.max(30, rewardsSettings.reservationTtlMinutes)) * 60 } : {}),
     metadata: {
       orderId: order.id,
       productId: product.id,
       selectedMaterial: selection.selectedMaterial,
       selectedColor: selection.selectedColor ?? "",
       selectedFilamentMaterialId: selectedAllowed.filamentMaterialId,
-      fulfillmentMethod: shipping.method
+      fulfillmentMethod: shipping.method,
+      rewardPointsRedeemed: String(order.rewardPointsRedeemed),
+      rewardDiscountCents: String(order.rewardDiscountCents)
     },
     success_url: buildStripeCheckoutSuccessUrl(baseUrl, order.id),
     cancel_url: `${baseUrl}/store?checkout=cancelled`
@@ -153,7 +184,21 @@ export async function markOrderPaidAndQueue(orderId: string, actorId?: string) {
     include: { product: { include: { allowedFilaments: true } }, printJobs: true, pricingSnapshot: true }
   });
   if (!order.product) throw new Error("Only product orders can be queued automatically");
-  if (order.printJobs.length) return order;
+  const rewardsSettings = await getRewardsSettings();
+  if (order.printJobs.length) {
+    await prisma.$transaction(async (tx) => {
+      await finalizeRewardRedemption({ tx, orderId, userId: order.customerId });
+      await awardOrderPoints({
+        tx,
+        orderId,
+        userId: order.customerId,
+        paidProductSubtotalCents: paidProductSubtotalCents(order, rewardsSettings.earnOnDiscountedAmount),
+        shippingCents: order.shippingAmountCents,
+        settings: rewardsSettings
+      });
+    });
+    return order;
+  }
 
   const queueJobs = await prisma.printJob.findMany({
     where: { status: { in: ["QUEUED", "READY_ON_NODE", "AWAITING_OPERATOR_START", "PRINTING", "PAUSED"] } },
@@ -207,6 +252,18 @@ export async function markOrderPaidAndQueue(orderId: string, actorId?: string) {
     });
   });
 
+  await prisma.$transaction(async (tx) => {
+    await finalizeRewardRedemption({ tx, orderId, userId: order.customerId });
+    await awardOrderPoints({
+      tx,
+      orderId,
+      userId: order.customerId,
+      paidProductSubtotalCents: paidProductSubtotalCents(order, rewardsSettings.earnOnDiscountedAmount),
+      shippingCents: order.shippingAmountCents,
+      settings: rewardsSettings
+    });
+  });
+
   await recordPlatformEvent({
     type: "QUEUE_ADMITTED",
     actorId,
@@ -228,4 +285,9 @@ export async function markOrderPaidAndQueue(orderId: string, actorId?: string) {
   }
 
   return updated;
+}
+
+function paidProductSubtotalCents(order: { totalCents: number; shippingAmountCents: number; rewardDiscountCents: number }, earnOnDiscountedAmount: boolean) {
+  const paidProductCents = Math.max(0, order.totalCents - order.shippingAmountCents);
+  return earnOnDiscountedAmount ? paidProductCents : paidProductCents + order.rewardDiscountCents;
 }

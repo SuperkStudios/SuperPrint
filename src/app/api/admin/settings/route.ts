@@ -4,6 +4,7 @@ import { normalizePrimaryColor } from "@/domain/theme";
 import { buildStripeSettingsUpdate, stripeSettingKeys } from "@/domain/stripe-settings";
 import { buildShippoSettingsUpdate, shippoSettingKeys } from "@/domain/shippo-settings";
 import { buildNotificationSettingsUpdate, notificationSettingKeys } from "@/domain/notification-settings";
+import { buildRewardsSettingsUpdate } from "@/domain/rewards";
 import { requireAdmin } from "@/lib/http";
 import { prisma } from "@/lib/prisma";
 import { updatePricingSettings } from "@/services/pricing";
@@ -55,6 +56,15 @@ const settingsSchema = z.object({
     paymentProcessingFixedCents: z.number().int().nonnegative().optional(),
     taxPercentEstimate: z.number().nonnegative().nullable().optional(),
     minimumOrderPriceCents: z.number().int().nonnegative().optional()
+  }).optional(),
+  rewards: z.object({
+    pointsPerDollar: z.number().nonnegative().optional(),
+    redemptionPointsPerDollar: z.number().positive().optional(),
+    maxDiscountPercent: z.number().nonnegative().optional(),
+    minimumRedemptionPoints: z.number().int().nonnegative().optional(),
+    earnOnDiscountedAmount: z.boolean().optional(),
+    includeShippingInEarnBasis: z.boolean().optional(),
+    reservationTtlMinutes: z.number().positive().optional()
   }).optional()
 });
 
@@ -101,6 +111,12 @@ export async function POST(request: Request) {
   }
   if (body.pricing) {
     updates.push(updatePricingSettings(body.pricing));
+  }
+  if (body.rewards) {
+    const rewardUpdates = buildRewardsSettingsUpdate(body.rewards);
+    for (const [key, value] of Object.entries(rewardUpdates)) {
+      updates.push(upsertSetting(key, value));
+    }
   }
 
   await Promise.all(updates);

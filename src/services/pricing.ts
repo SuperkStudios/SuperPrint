@@ -122,7 +122,7 @@ export async function calculateProductPricePreview(input: {
   });
 }
 
-export async function createPricingSnapshot(input: { orderId: string; quote: ProductPriceQuote }) {
+export async function createPricingSnapshot(input: { orderId: string; quote: ProductPriceQuote; preRewardCustomerPriceCents?: number; rewardDiscountCents?: number }) {
   return prisma.orderPricingSnapshot.create({
     data: {
       orderId: input.orderId,
@@ -141,6 +141,8 @@ export async function createPricingSnapshot(input: { orderId: string; quote: Pro
       paymentFeeCents: input.quote.paymentFeeCents,
       taxCents: input.quote.taxCents,
       shippingCents: input.quote.shippingCents,
+      preRewardCustomerPriceCents: input.preRewardCustomerPriceCents ?? input.quote.finalCustomerPriceCents,
+      rewardDiscountCents: input.rewardDiscountCents ?? 0,
       finalCustomerPriceCents: input.quote.finalCustomerPriceCents,
       marginCents: input.quote.marginCents,
       marginPercent: input.quote.marginPercent,

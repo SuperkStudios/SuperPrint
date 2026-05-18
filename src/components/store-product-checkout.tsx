@@ -20,11 +20,22 @@ type MaterialOption = {
   marginWarning: string | null;
 };
 
+type RewardsSummary = {
+  balance: number;
+  settings: {
+    pointsPerDollar: number;
+    redemptionPointsPerDollar: number;
+    maxDiscountPercent: number;
+    minimumRedemptionPoints: number;
+  };
+};
+
 export function StoreProductCheckout({
   product,
   materials,
   signedIn,
-  savedShippingAddress
+  savedShippingAddress,
+  publicRewardsSettings
 }: {
   product: {
     id: string;
@@ -40,6 +51,7 @@ export function StoreProductCheckout({
   };
   materials: MaterialOption[];
   signedIn: boolean;
+  publicRewardsSettings?: RewardsSummary["settings"];
   savedShippingAddress?: {
     name?: string | null;
     street1?: string | null;
@@ -85,6 +97,8 @@ export function StoreProductCheckout({
     savedShippingAddress?.zip
   );
   const selectedOption = materialOptions.find((option) => option.id === selectedFilamentId) ?? materialOptions[0];
+  const rewardSettings = publicRewardsSettings ?? { pointsPerDollar: 10, redemptionPointsPerDollar: 100, maxDiscountPercent: 0.2, minimumRedemptionPoints: 500 };
+  const earnedPoints = Math.floor((selectedOption.finalCustomerPriceCents / 100) * rewardSettings.pointsPerDollar);
   const selectedMaterial = selectedOption.material;
   const selectedColor = selectedOption.color;
   const previewColor = filamentColorToHex(selectedColor);
@@ -142,6 +156,9 @@ export function StoreProductCheckout({
           {selectedOption.unavailableReason ? <p className="text-sm text-destructive">{selectedOption.unavailableReason}</p> : null}
           {selectedOption.requiresAdminApproval ? <p className="text-sm text-secondary-foreground">This material requires approval before checkout.</p> : null}
           {!signedIn ? <p className="text-sm text-muted-foreground">Create an account or sign in before checkout so we can attach the order to your queue and media.</p> : null}
+          <p className="text-sm text-muted-foreground">
+            Earn {earnedPoints} points from this print.
+          </p>
         </div>
 
         <div className="grid gap-4 rounded-md border bg-card p-4 text-card-foreground shadow-sm">

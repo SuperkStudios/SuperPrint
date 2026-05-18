@@ -103,6 +103,7 @@ async function readProductRequest(request: Request) {
   const spool = defaultSpool ?? await prisma.filamentSpool.findFirst({ where: { material: material as never }, orderBy: { rollCostCents: "desc" } });
   const allowedFilaments = parseAllowedFilaments(formData, defaultFilamentMaterialId ?? spool?.id);
   const fixedPriceCents = optionalCents(formData.get("fixedPriceCents"));
+  const pricingMode = String(formData.get("pricingMode") ?? "DYNAMIC");
   const fallbackPriceCents = Number(formData.get("priceCents") ?? 0);
   const preset = shippingPackagePresetById(stringValue(formData.get("shippingPackagePreset")));
 
@@ -114,8 +115,8 @@ async function readProductRequest(request: Request) {
     imageUrl: imageStorageKey ? "__LOCAL_IMAGE__" : undefined,
     imageStorageKey,
     productFileStorageKey: parsedPrintFile?.storageKey,
-    priceCents: fallbackPriceCents || fixedPriceCents || 1,
-    pricingMode: String(formData.get("pricingMode") ?? "DYNAMIC"),
+    priceCents: pricingMode === "FIXED" ? fixedPriceCents || fallbackPriceCents || 1 : fallbackPriceCents || fixedPriceCents || 1,
+    pricingMode,
     fixedPriceCents,
     baseLaborMinutes: Number(formData.get("baseLaborMinutes") ?? 10),
     basePackagingCents: Number(formData.get("basePackagingCents") ?? 150),
