@@ -19,7 +19,13 @@ export const platformEventTypes = [
   "PRINT_FAILED",
   "FILAMENT_LOW",
   "MAINTENANCE_DUE",
-  "VIDEO_READY"
+  "VIDEO_READY",
+  "FACTORY_CONTRIBUTION_CREATED",
+  "FACTORY_GOAL_FUNDED",
+  "FACTORY_GOAL_COMPLETED",
+  "FACTORY_SUPPORTER_JOINED",
+  "FACTORY_MILESTONE_COMPLETED",
+  "FACTORY_UPGRADE_UNLOCKED"
 ] as const;
 
 export type PlatformEventType = (typeof platformEventTypes)[number];

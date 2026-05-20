@@ -1,0 +1,24 @@
+{
+  "name": "SuperPrint",
+  "positioning": "Community-powered manufacturing infrastructure",
+  "tagline": "Live manufacturing. Transparent by design.",
+  "colors": {
+    "electricCyan": "#00E5FF",
+    "manufacturingOrange": "#FF6A00",
+    "liveGreen": "#22C55E",
+    "cleanWhite": "#FFFFFF",
+    "steelGray": "#8A94A3",
+    "graphite900": "#0B0F14"
+  },
+  "assets": {
+    "primaryLockup": "/brand/superprint-primary-lockup.png",
+    "navLockup": "/brand/superprint-full-lockup-transparent.png",
+    "compactLockup": "/brand/superprint-compact-lockup.png",
+    "mark": "/brand/superprint-mark.png",
+    "faviconMark": "/brand/superprint-favicon-mark.png",
+    "favicon": "/favicon.png",
+    "appleIcon": "/apple-icon.png",
+    "icon192": "/icon-192.png",
+    "icon512": "/icon-512.png"
+  }
+}

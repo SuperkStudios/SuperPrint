@@ -137,6 +137,57 @@ enum PlatformEventType {
   FILAMENT_LOW
   MAINTENANCE_DUE
   VIDEO_READY
+  FACTORY_CONTRIBUTION_CREATED
+  FACTORY_GOAL_FUNDED
+  FACTORY_GOAL_COMPLETED
+  FACTORY_SUPPORTER_JOINED
+  FACTORY_MILESTONE_COMPLETED
+  FACTORY_UPGRADE_UNLOCKED
+}
+
+enum FactoryUpgradeCategory {
+  printer
+  material
+  camera
+  automation
+  facility
+  livestream
+  quality
+  experimental
+}
+
+enum FactoryUpgradeStatus {
+  active
+  funded
+  installing
+  completed
+  cancelled
+}
+
+enum FactoryVisibility {
+  public
+  private
+}
+
+enum FactoryActivityType {
+  CONTRIBUTION_CREATED
+  GOAL_FUNDED
+  GOAL_INSTALLING
+  GOAL_COMPLETED
+  SUPPORTER_JOINED
+  MILESTONE_COMPLETED
+  UPGRADE_UNLOCKED
+  MANUAL_PROGRESS_ADJUSTED
+}
+
+enum FactoryMilestoneMetric {
+  completed_prints
+  filament_grams
+  queue_watch_hours
+  printer_uptime_hours
+  contribution_cents
+  livestream_engagement
+  custom
 }
 
 model User {
@@ -166,10 +217,158 @@ model User {
   uploads      ModelUpload[]
   orders       Order[]
   rewardTransactions RewardTransaction[]
+  factoryContributions FactoryContribution[]
+  supporterProfile UserSupporterProfile?
   events       PlatformEvent[]
   operatorPrintStarts PrintJob[] @relation("OperatorPrintStarts")
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
+}
+
+model FactoryUpgradeGoal {
+  id                 String                 @id @default(cuid())
+  slug               String                 @unique
+  title              String
+  description        String
+  category           FactoryUpgradeCategory
+  status             FactoryUpgradeStatus   @default(active)
+  visibility         FactoryVisibility      @default(public)
+  targetAmountCents  Int
+  currentAmountCents Int                    @default(0)
+  contributionCount  Int                    @default(0)
+  unlockBenefits     Json                   @default("[]")
+  imageUrl           String?
+  displayOrder       Int                    @default(0)
+  featured           Boolean                @default(false)
+  contributions      FactoryContribution[]
+  activities         FactoryActivityEvent[]
+  unlockedUpgrades   FactoryUnlockedUpgrade[]
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+  completedAt        DateTime?
+
+  @@index([visibility, status, displayOrder])
+  @@index([featured, displayOrder])
+}
+
+model FactoryContribution {
+  id                    String              @id @default(cuid())
+  userId                String
+  user                  User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  goalId                String
+  goal                  FactoryUpgradeGoal  @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  amountCents           Int
+  message               String?
+  anonymous             Boolean             @default(false)
+  stripeCheckoutSessionId String?           @unique
+  stripePaymentIntentId String?             @unique
+  paymentStatus         String              @default("manual")
+  createdAt             DateTime            @default(now())
+
+  @@index([goalId, createdAt])
+  @@index([userId, createdAt])
+}
+
+model SupporterTier {
+  id                String                  @id @default(cuid())
+  slug              String                  @unique
+  title             String
+  description       String                  @default("")
+  monthlyPriceCents Int?
+  oneTimePriceCents Int?
+  perks             Json                    @default("[]")
+  badgeIcon         String
+  badgeColor        String
+  priorityWeight    Float                   @default(1)
+  displayOrder      Int                     @default(0)
+  active            Boolean                 @default(true)
+  profiles          UserSupporterProfile[]
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+}
+
+model UserSupporterProfile {
+  userId                    String          @id
+  user                      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tierId                    String?
+  tier                      SupporterTier?   @relation(fields: [tierId], references: [id], onDelete: SetNull)
+  lifetimeContributionCents Int             @default(0)
+  badges                    Json            @default("[]")
+  supporterSince            DateTime        @default(now())
+  founder                   Boolean         @default(false)
+  queuePriorityMultiplier   Float           @default(1)
+  createdAt                 DateTime        @default(now())
+  updatedAt                 DateTime        @updatedAt
+}
+
+model FactoryMilestone {
+  id            String                 @id @default(cuid())
+  slug          String                 @unique
+  title         String
+  description   String
+  metric        FactoryMilestoneMetric @default(custom)
+  targetValue   Int
+  currentValue  Int                    @default(0)
+  unitLabel     String                 @default("")
+  visibility    FactoryVisibility      @default(public)
+  completed     Boolean                @default(false)
+  displayOrder  Int                    @default(0)
+  activities    FactoryActivityEvent[]
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
+  completedAt   DateTime?
+
+  @@index([visibility, completed, displayOrder])
+}
+
+model FactoryActivityEvent {
+  id        String              @id @default(cuid())
+  type      FactoryActivityType
+  title     String
+  body      String?
+  goalId    String?
+  goal      FactoryUpgradeGoal? @relation(fields: [goalId], references: [id], onDelete: SetNull)
+  milestoneId String?
+  milestone FactoryMilestone?   @relation(fields: [milestoneId], references: [id], onDelete: SetNull)
+  actorName String?
+  amountCents Int?
+  public    Boolean             @default(true)
+  metadata  Json                @default("{}")
+  createdAt DateTime            @default(now())
+
+  @@index([public, createdAt])
+  @@index([type, createdAt])
+}
+
+model FactoryUnlockedUpgrade {
+  id          String              @id @default(cuid())
+  goalId      String?
+  goal        FactoryUpgradeGoal? @relation(fields: [goalId], references: [id], onDelete: SetNull)
+  title       String
+  description String
+  category    FactoryUpgradeCategory
+  imageUrl    String?
+  displayOrder Int                @default(0)
+  public      Boolean             @default(true)
+  unlockedAt  DateTime            @default(now())
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  @@index([public, unlockedAt])
+}
+
+model FactoryStat {
+  id           String            @id @default(cuid())
+  key          String            @unique
+  label        String
+  value        String
+  unit         String?
+  description  String?
+  icon         String            @default("gauge")
+  displayOrder Int               @default(0)
+  visibility   FactoryVisibility @default(public)
+  updatedAt    DateTime          @updatedAt
+  createdAt    DateTime          @default(now())
 }
 
 model Session {

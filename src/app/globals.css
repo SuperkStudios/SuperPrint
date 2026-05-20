@@ -3,59 +3,63 @@
 @tailwind utilities;
 
 :root {
-  --background: 210 22% 96%;
-  --foreground: 222 30% 12%;
+  --background: 210 20% 97%;
+  --foreground: 216 29% 6%;
   --card: 0 0% 100%;
-  --card-foreground: 222 30% 12%;
-  --primary: 172 66% 31%;
-  --primary-foreground: 0 0% 100%;
-  --secondary: 39 92% 56%;
-  --secondary-foreground: 222 30% 12%;
-  --muted: 210 18% 90%;
-  --muted-foreground: 222 12% 38%;
-  --accent: 262 55% 48%;
+  --card-foreground: 216 29% 6%;
+  --primary: 186 100% 50%;
+  --primary-foreground: 216 29% 6%;
+  --secondary: 25 100% 50%;
+  --secondary-foreground: 0 0% 100%;
+  --muted: 213 20% 91%;
+  --muted-foreground: 215 13% 42%;
+  --accent: 142 71% 45%;
   --accent-foreground: 0 0% 100%;
   --destructive: 0 72% 51%;
   --destructive-foreground: 0 0% 100%;
-  --border: 214 18% 82%;
-  --input: 214 18% 82%;
-  --ring: 172 66% 31%;
+  --border: 214 16% 80%;
+  --input: 214 16% 80%;
+  --ring: 186 100% 50%;
   --radius: 0.5rem;
 }
 
 .dark {
-  --background: 222 47% 4%;
+  --background: 216 29% 6%;
   --foreground: 210 40% 98%;
-  --card: 222 38% 7%;
+  --card: 214 30% 8%;
   --card-foreground: 210 40% 98%;
-  --secondary: 36 95% 58%;
-  --secondary-foreground: 222 47% 4%;
-  --muted: 222 24% 13%;
-  --muted-foreground: 215 18% 70%;
-  --accent: 190 90% 52%;
-  --accent-foreground: 222 47% 4%;
+  --primary: 186 100% 50%;
+  --primary-foreground: 216 29% 6%;
+  --secondary: 25 100% 50%;
+  --secondary-foreground: 0 0% 100%;
+  --muted: 215 24% 13%;
+  --muted-foreground: 216 13% 59%;
+  --accent: 142 71% 45%;
+  --accent-foreground: 0 0% 100%;
   --destructive: 0 72% 56%;
   --destructive-foreground: 0 0% 100%;
-  --border: 217 22% 18%;
-  --input: 217 22% 18%;
+  --border: 212 22% 18%;
+  --input: 212 22% 18%;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not(.light) {
-    --background: 222 47% 4%;
+    --background: 216 29% 6%;
     --foreground: 210 40% 98%;
-    --card: 222 38% 7%;
+    --card: 214 30% 8%;
     --card-foreground: 210 40% 98%;
-    --secondary: 36 95% 58%;
-    --secondary-foreground: 222 47% 4%;
-    --muted: 222 24% 13%;
-    --muted-foreground: 215 18% 70%;
-    --accent: 190 90% 52%;
-    --accent-foreground: 222 47% 4%;
+    --primary: 186 100% 50%;
+    --primary-foreground: 216 29% 6%;
+    --secondary: 25 100% 50%;
+    --secondary-foreground: 0 0% 100%;
+    --muted: 215 24% 13%;
+    --muted-foreground: 216 13% 59%;
+    --accent: 142 71% 45%;
+    --accent-foreground: 0 0% 100%;
     --destructive: 0 72% 56%;
     --destructive-foreground: 0 0% 100%;
-    --border: 217 22% 18%;
-    --input: 217 22% 18%;
+    --border: 212 22% 18%;
+    --input: 212 22% 18%;
   }
 }
 
@@ -71,33 +75,46 @@ body {
 .app-shell {
   min-height: 100vh;
   background:
-    radial-gradient(circle at 18% 0%, hsl(var(--primary) / 0.12), transparent 30rem),
-    radial-gradient(circle at 86% 8%, rgba(249, 115, 22, 0.1), transparent 26rem),
+    linear-gradient(115deg, hsl(var(--primary) / 0.08), transparent 28rem),
+    linear-gradient(245deg, hsl(var(--secondary) / 0.08), transparent 28rem),
     linear-gradient(180deg, hsl(var(--background)), hsl(var(--muted) / 0.42));
 }
 
 .cyber-surface {
   border: 1px solid hsl(var(--border));
   background: hsl(var(--card) / 0.78);
-  box-shadow: 0 24px 80px rgba(2, 6, 23, 0.08);
+  box-shadow: 0 24px 80px rgba(11, 15, 20, 0.08);
   backdrop-filter: blur(18px);
 }
 
 .dark .cyber-surface {
-  box-shadow: 0 24px 80px rgba(8, 47, 73, 0.24);
+  box-shadow: 0 24px 80px rgba(0, 229, 255, 0.12);
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not(.light) .cyber-surface {
-    box-shadow: 0 24px 80px rgba(8, 47, 73, 0.24);
+    box-shadow: 0 24px 80px rgba(0, 229, 255, 0.12);
   }
 }
 
 .factory-grid {
   background-image:
-    linear-gradient(rgba(255, 255, 255, 0.08) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.08) 1px, transparent 1px);
+    linear-gradient(hsl(var(--primary) / 0.09) 1px, transparent 1px),
+    linear-gradient(90deg, hsl(var(--primary) / 0.08) 1px, transparent 1px);
   background-size: 32px 32px;
+}
+
+.brand-toolpath {
+  background:
+    linear-gradient(135deg, transparent 0 44%, hsl(var(--primary) / 0.24) 44.5% 45%, transparent 45.5%),
+    linear-gradient(45deg, transparent 0 54%, hsl(var(--secondary) / 0.18) 54.5% 55%, transparent 55.5%),
+    linear-gradient(hsl(var(--primary) / 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, hsl(var(--primary) / 0.07) 1px, transparent 1px);
+  background-size: 96px 96px, 112px 112px, 24px 24px, 24px 24px;
+}
+
+.brand-glow-text {
+  text-shadow: 0 0 22px hsl(var(--primary) / 0.28);
 }
 
 .printer-sequence-scene {

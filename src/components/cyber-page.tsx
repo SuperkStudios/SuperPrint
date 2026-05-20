@@ -24,11 +24,11 @@ export function PageHero({
 }) {
   return (
     <div className={cn("relative overflow-hidden rounded-2xl border bg-card/70 p-6 shadow-2xl shadow-primary/5 backdrop-blur md:p-8", className)}>
-      <div className="factory-grid absolute inset-0 opacity-[0.07]" />
-      <div className="absolute right-0 top-0 h-44 w-44 rounded-full bg-primary/20 blur-3xl" />
+      <div className="brand-toolpath absolute inset-0 opacity-[0.12]" />
+      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary/70 to-transparent" />
       <div className="relative">
         <p className="text-sm font-medium uppercase tracking-[0.28em] text-primary">{eyebrow}</p>
-        <h1 className="mt-4 max-w-4xl text-4xl font-semibold tracking-tight sm:text-5xl lg:text-6xl">{title}</h1>
+        <h1 className="brand-glow-text mt-4 max-w-4xl text-4xl font-semibold tracking-tight sm:text-5xl lg:text-6xl">{title}</h1>
         <p className="mt-5 max-w-3xl text-base leading-7 text-muted-foreground sm:text-lg">{copy}</p>
         {children ? <div className="mt-7">{children}</div> : null}
       </div>

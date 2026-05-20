@@ -4,6 +4,7 @@ import { calculateHomepageStats } from "@/domain/factory-stats";
 import { getBootstrapStatus } from "@/lib/bootstrap";
 import { prisma } from "@/lib/prisma";
 import { listPublicEvents } from "@/services/events";
+import { getPublicFactoryEvolution } from "@/services/factory-evolution";
 import { getPublicQueueState } from "@/services/queue";
 
 export const dynamic = "force-dynamic";
@@ -13,14 +14,15 @@ export default async function HomePage() {
     redirect("/setup");
   }
 
-  const [queue, events, completedPrints, failedPrints, stoppedPrints, printers, filament] = await Promise.all([
+  const [queue, events, completedPrints, failedPrints, stoppedPrints, printers, filament, factoryEvolution] = await Promise.all([
     getPublicQueueState(),
     listPublicEvents(10),
     prisma.printJob.count({ where: { status: "COMPLETED" } }),
     prisma.printJob.count({ where: { status: "FAILED" } }),
     prisma.printJob.count({ where: { status: "STOPPED" } }),
     prisma.printer.findMany({ include: { currentFilament: true }, orderBy: { publicName: "asc" } }),
-    prisma.filamentSpool.findMany({ orderBy: { remainingGrams: "asc" }, take: 8 })
+    prisma.filamentSpool.findMany({ orderBy: { remainingGrams: "asc" }, take: 8 }),
+    getPublicFactoryEvolution()
   ]);
 
   const stats: HomepageStats = calculateHomepageStats({
@@ -41,5 +43,5 @@ export default async function HomePage() {
     active: activeSpoolIds.has(spool.id)
   }));
 
-  return <CyberHomepage queue={queue} events={events} stats={stats} filament={liveFilament} />;
+  return <CyberHomepage queue={queue} events={events} stats={stats} filament={liveFilament} factoryEvolution={factoryEvolution} />;
 }

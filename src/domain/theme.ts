@@ -1,4 +1,4 @@
-export const DEFAULT_PRIMARY_COLOR = "#0f8f7f";
+export const DEFAULT_PRIMARY_COLOR = "#00e5ff";
 
 export function normalizePrimaryColor(value?: unknown) {
   return typeof value === "string" && /^#[0-9a-fA-F]{6}$/.test(value) ? value.toLowerCase() : DEFAULT_PRIMARY_COLOR;

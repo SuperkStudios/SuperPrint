@@ -5,10 +5,12 @@ import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { ArrowRight, Boxes, Camera, CheckCircle2, CircuitBoard, Clock, Cpu, Eye, Factory, Gauge, Layers3, PackageCheck, Radio, ShieldCheck, Upload, Video } from "lucide-react";
 import { LiveBedFeed } from "@/components/live/live-bed-feed";
+import { FactoryEvolutionDashboard } from "@/components/factory/factory-evolution-dashboard";
 import { PrinterHeroVisual } from "@/components/homepage/printer-hero-visual";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { usePrinterFeedStatus } from "@/hooks/use-printer-feed-status";
+import type { getPublicFactoryEvolution } from "@/services/factory-evolution";
 
 type QueueState = Awaited<ReturnType<typeof import("@/services/queue").getPublicQueueState>>;
 type PublicEvent = Awaited<ReturnType<typeof import("@/services/events").listPublicEvents>>[number];
@@ -33,12 +35,14 @@ export function CyberHomepage({
   queue,
   events,
   stats,
-  filament
+  filament,
+  factoryEvolution
 }: {
   queue: QueueState;
   events: PublicEvent[];
   stats: HomepageStats;
   filament: HomepageFilament[];
+  factoryEvolution: Awaited<ReturnType<typeof getPublicFactoryEvolution>>;
 }) {
   return (
     <main className="app-shell overflow-hidden text-foreground">
@@ -46,9 +50,9 @@ export function CyberHomepage({
         <CyberBackground />
         <div className="relative mx-auto grid min-h-screen max-w-7xl items-center gap-12 px-4 py-20 sm:px-6 lg:grid-cols-[0.95fr_1.05fr] lg:px-8">
           <motion.div initial={{ opacity: 0, y: 22 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7 }}>
-            <Badge className="border-primary/30 bg-primary/10 text-primary">Transparent live manufacturing</Badge>
+            <Badge className="border-primary/30 bg-primary/10 text-primary">Live manufacturing. Transparent by design.</Badge>
             <h1 className="mt-6 max-w-4xl text-5xl font-semibold tracking-tight sm:text-7xl lg:text-8xl">
-              Real-Time 3D Manufacturing
+              Software-Defined 3D Manufacturing
             </h1>
             <p className="mt-6 max-w-2xl text-lg leading-8 text-muted-foreground sm:text-xl">
               Upload models, join the live queue, and watch production happen in real time on SuperPrint.
@@ -72,6 +76,7 @@ export function CyberHomepage({
           <motion.div initial={{ opacity: 0, scale: 0.96, y: 26 }} animate={{ opacity: 1, scale: 1, y: 0 }} transition={{ duration: 0.8, delay: 0.1 }} className="relative">
             <div className="absolute -inset-10 rounded-full bg-primary/10 blur-3xl" />
             <div className="cyber-surface relative rounded-[1.5rem] p-4">
+              <div className="absolute inset-x-8 top-4 z-10 h-px bg-gradient-to-r from-transparent via-primary/70 to-transparent" />
               <PrinterHeroVisual progressPercent={queue.current?.progressPercent ?? (queue.current?.telemetry?.state === "LIVE" ? queue.current.telemetry.progressPercent : 0) ?? 0} />
             </div>
           </motion.div>
@@ -79,6 +84,7 @@ export function CyberHomepage({
       </section>
 
       <LiveFactorySection queue={queue} events={events} />
+      <FactoryEvolutionDashboard data={factoryEvolution} compact />
       <HowItWorks />
       <FeatureGrid />
       <InventorySection filament={filament} />
@@ -190,8 +196,8 @@ export function LiveFactorySection({ queue, events: _events }: { queue: QueueSta
 function CyberBackground() {
   return (
     <div className="absolute inset-0">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_22%_22%,hsl(var(--primary)/0.18),transparent_28%),radial-gradient(circle_at_82%_18%,rgba(249,115,22,0.1),transparent_24%),linear-gradient(180deg,hsl(var(--background)),hsl(var(--muted)/0.52)_55%,hsl(var(--background)))] dark:bg-[radial-gradient(circle_at_22%_22%,rgba(34,211,238,0.22),transparent_28%),radial-gradient(circle_at_82%_18%,rgba(249,115,22,0.12),transparent_24%),linear-gradient(180deg,#020617,#03050a_55%,#070b12)]" />
-      <div className="factory-grid absolute inset-0 opacity-30 dark:opacity-20" />
+      <div className="absolute inset-0 bg-[linear-gradient(115deg,hsl(var(--primary)/0.16),transparent_32rem),linear-gradient(245deg,hsl(var(--secondary)/0.12),transparent_30rem),linear-gradient(180deg,hsl(var(--background)),hsl(var(--muted)/0.52)_55%,hsl(var(--background)))] dark:bg-[linear-gradient(115deg,rgba(0,229,255,0.16),transparent_32rem),linear-gradient(245deg,rgba(255,106,0,0.12),transparent_30rem),linear-gradient(180deg,#0B0F14,#070b10_55%,#0B0F14)]" />
+      <div className="brand-toolpath absolute inset-0 opacity-30 dark:opacity-20" />
       <div className="absolute inset-x-0 bottom-0 h-48 bg-gradient-to-t from-background to-transparent" />
       <motion.div className="absolute left-1/2 top-24 h-px w-[70vw] -translate-x-1/2 bg-primary/30" animate={{ opacity: [0.2, 0.8, 0.2], scaleX: [0.8, 1, 0.8] }} transition={{ repeat: Infinity, duration: 3 }} />
     </div>

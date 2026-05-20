@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { getStripe, getStripeSettings } from "@/lib/stripe";
 import { markOrderPaidAndQueue } from "@/services/checkout";
+import { activateSupporterTier, applyFactoryContribution } from "@/services/factory-evolution";
+import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
 
@@ -20,6 +22,22 @@ export async function POST(request: Request) {
     const session = event.data.object;
     const orderId = session.metadata?.orderId;
     if (orderId) await markOrderPaidAndQueue(orderId);
+    if (session.metadata?.kind === "factory_contribution") {
+      await applyFactoryContribution({
+        userId: session.metadata.userId!,
+        goalId: session.metadata.goalId!,
+        amountCents: Number(session.metadata.amountCents ?? 0),
+        message: session.metadata.message || undefined,
+        anonymous: session.metadata.anonymous === "true",
+        paymentStatus: "paid",
+        stripeCheckoutSessionId: session.id,
+        stripePaymentIntentId: typeof session.payment_intent === "string" ? session.payment_intent : undefined
+      });
+    }
+    if (session.metadata?.kind === "factory_supporter_tier") {
+      const tier = await prisma.supporterTier.findUnique({ where: { id: session.metadata.tierId! } });
+      if (tier) await activateSupporterTier(session.metadata.userId!, tier.id, tier.priorityWeight);
+    }
   }
   if (event.type === "payment_intent.succeeded") {
     const intent = event.data.object;
