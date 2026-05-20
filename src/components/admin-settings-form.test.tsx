@@ -63,7 +63,7 @@ describe("AdminSettingsForm", () => {
           pickupState: "CO",
           autoCreateLabelAfterPrint: true,
           autoPrintLabelAfterPrint: false,
-          printCommand: "lpr",
+          printCommand: "superprint-ble-a42bt",
           labelFileType: "PDF_4x6",
           originAddress: {
             name: "SuperPrint",

@@ -3,7 +3,7 @@
 import { type Dispatch, type SetStateAction, useEffect, useState } from "react";
 import { buildThemeCssVariables, normalizePrimaryColor } from "@/domain/theme";
 import { maskStripeSecret } from "@/domain/stripe-settings";
-import { maskShippoSecret } from "@/domain/shippo-settings";
+import { defaultShippoPrintCommand, maskShippoSecret } from "@/domain/shippo-settings";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -127,7 +127,7 @@ export function AdminSettingsForm({
     pickupState: "CO",
     autoCreateLabelAfterPrint: false,
     autoPrintLabelAfterPrint: false,
-    printCommand: "lpr",
+    printCommand: defaultShippoPrintCommand,
     labelFileType: "PDF_4x6",
     originAddress: null
   },

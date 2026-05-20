@@ -1,14 +1,11 @@
-import { execFile } from "node:child_process";
 import { tmpdir } from "node:os";
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
-import { promisify } from "node:util";
 import type { Product } from "@prisma/client";
 import { isPickupAddressEligible, type ResolvedShippoSettings, type ShippingAddress } from "@/domain/shippo-settings";
 import { prisma } from "@/lib/prisma";
 import { getShippoSettings, shippoRequest } from "@/lib/shippo";
-
-const execFileAsync = promisify(execFile);
+import { printShippingLabelFile } from "@/services/label-printer";
 
 type ShippoRate = {
   object_id: string;
@@ -155,10 +152,7 @@ export async function printOrderLabel(orderId: string) {
   const extension = labelExtension(order.shippingLabelUrl);
   const filePath = path.join(tmpdir(), `${order.orderNumber}-shipping-label.${extension}`);
   await writeFile(filePath, Buffer.from(await response.arrayBuffer()));
-  const commandParts = settings.printCommand.trim().split(/\s+/);
-  const command = commandParts[0] ?? "lpr";
-  const args = [...commandParts.slice(1), filePath];
-  await execFileAsync(command, args);
+  await printShippingLabelFile(filePath, settings);
   return prisma.order.update({
     where: { id: order.id },
     data: { labelPrintedAt: new Date(), shippingStatus: "LABEL_PRINTED" }

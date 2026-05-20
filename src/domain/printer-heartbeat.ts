@@ -89,13 +89,18 @@ export function parseCentauriStatusTelemetry(message: unknown, checkedAt = new D
   const currentTicks = readNumber(printInfo?.CurrentTicks);
   const totalTicks = readNumber(printInfo?.TotalTicks);
   const elapsedSeconds = currentTicks == null ? null : Math.round(currentTicks);
-  const remainingSeconds = currentTicks != null && totalTicks != null ? Math.round(Math.max(0, totalTicks - currentTicks)) : null;
   const currentLayer = readNumber(printInfo?.CurrentLayer);
   const totalLayer = readNumber(printInfo?.TotalLayer);
   const progressFromTicks = currentTicks != null && totalTicks ? Math.round((currentTicks / totalTicks) * 100) : null;
   const progressFromLayers = currentLayer != null && totalLayer ? Math.round((currentLayer / totalLayer) * 100) : null;
   const machineStatus = readNumber(Array.isArray(status.CurrentStatus) ? status.CurrentStatus[0] : status.CurrentStatus);
   const printStatus = readNumber(printInfo?.Status);
+  const remainingSeconds = isFinishedPrintStatus(printStatus)
+    ? 0
+    : currentTicks != null && totalTicks != null ? Math.round(Math.max(0, totalTicks - currentTicks)) : null;
+  const progressPercent = isFinishedPrintStatus(printStatus)
+    ? 100
+    : clampPercent(progressFromTicks ?? progressFromLayers);
 
   return {
     state: "LIVE",
@@ -110,7 +115,7 @@ export function parseCentauriStatusTelemetry(message: unknown, checkedAt = new D
     bedTargetC: roundOne(readNumber(status.TempTargetHotbed)),
     chamberTempC: roundOne(readNumber(status.TempOfBox)),
     chamberTargetC: roundOne(readNumber(status.TempTargetBox)),
-    progressPercent: clampPercent(progressFromTicks ?? progressFromLayers),
+    progressPercent,
     currentLayer,
     totalLayer,
     elapsedSeconds,
@@ -192,6 +197,10 @@ function printStatusLabel(status: number | null) {
     10: "File checking"
   };
   return status == null ? "Unknown" : labels[status] ?? `Print status ${status}`;
+}
+
+function isFinishedPrintStatus(status: number | null) {
+  return status === 9;
 }
 
 function generateCentauriRequestId() {

@@ -152,7 +152,8 @@ export async function startPrintJob(printJobId: string, actorId?: string) {
     data: {
       status: next.status,
       startedAt: next.startedAt,
-      queuePosition: next.queuePosition
+      queuePosition: next.queuePosition,
+      progressPercent: 0
     },
     include: { order: true, printer: true }
   });
@@ -217,6 +218,8 @@ export async function completePrintJob(printJobId: string, actorId?: string) {
       status: next.status,
       completedAt: next.completedAt,
       queuePosition: next.queuePosition,
+      progressPercent: 100,
+      remainingSeconds: 0,
       consumedFilamentGrams: accounting.consumedFilamentGrams,
       printer: job.printerId
         ? {
@@ -238,6 +241,7 @@ export async function completePrintJob(printJobId: string, actorId?: string) {
       orderNumber: updated.order.orderNumber,
       printerName: updated.printer?.publicName,
       status: updated.status,
+      progressPercent: 100,
       consumedFilamentGrams: accounting.consumedFilamentGrams,
       runtimeMinutes: accounting.runtimeMinutes
     }
@@ -510,6 +514,7 @@ export async function startAssignedQueuedJobOnPrinter(printJobId: string, actorI
       status: "PRINTING",
       startedAt: now,
       queuePosition: 0,
+      progressPercent: 0,
       assignmentBlockedReason: null,
       nodeLocalJobPath: gcodeLocalPath,
       printCommandAcknowledgedAt: now,

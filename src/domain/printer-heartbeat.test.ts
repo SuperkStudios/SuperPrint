@@ -151,4 +151,32 @@ describe("printer heartbeat", () => {
       remainingSeconds: 11201
     });
   });
+
+  it("treats Centauri complete status as 100 percent even when raw counters lag", () => {
+    const telemetry = parseCentauriStatusTelemetry(
+      {
+        Data: {
+          Status: {
+            CurrentStatus: 0,
+            PrintInfo: {
+              Status: 9,
+              CurrentLayer: 98,
+              TotalLayer: 100,
+              CurrentTicks: 590,
+              TotalTicks: 600,
+              Filename: "finished.gcode"
+            }
+          }
+        }
+      },
+      new Date("2026-05-12T16:00:00.000Z")
+    );
+
+    expect(telemetry).toMatchObject({
+      printStatus: 9,
+      printStatusLabel: "Complete",
+      progressPercent: 100,
+      remainingSeconds: 0
+    });
+  });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildShippoSettingsUpdate, isPickupAddressEligible, maskShippoSecret, resolveShippoSettings } from "./shippo-settings";
+import { buildShippoSettingsUpdate, defaultShippoPrintCommand, isPickupAddressEligible, maskShippoSecret, resolveShippoSettings } from "./shippo-settings";
 
 describe("Shippo settings", () => {
   it("resolves admin token and origin address", () => {
@@ -19,6 +19,7 @@ describe("Shippo settings", () => {
     expect(settings.apiToken).toBe("shippo_test_admin");
     expect(settings.configured).toBe(true);
     expect(settings.freeShippingThresholdCents).toBe(7500);
+    expect(settings.printCommand).toBe(defaultShippoPrintCommand);
   });
 
   it("preserves masked tokens when saving settings", () => {

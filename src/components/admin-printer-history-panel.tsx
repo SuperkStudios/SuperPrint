@@ -10,6 +10,7 @@ type HistoryPrint = {
   gramsUsed?: number;
   gramsSource?: string;
   completedAt?: string;
+  printTimeSeconds?: number;
   printedLayers?: number;
   totalLayers?: number;
   material?: string;

@@ -6,6 +6,7 @@ import type { CompletedPrinterHistoryItem } from "@/domain/filament-usage";
 import { requireAdmin } from "@/lib/http";
 import { prisma } from "@/lib/prisma";
 import { recordPlatformEvent } from "@/services/events";
+import { syncManualPrintEventsFromHistory } from "@/services/printer-heartbeat";
 
 export const runtime = "nodejs";
 
@@ -18,6 +19,7 @@ const printSchema = z.object({
   gramsSource: z.string().optional(),
   printedLayers: z.number().optional(),
   totalLayers: z.number().optional(),
+  printTimeSeconds: z.number().optional(),
   material: z.string().optional()
 });
 
@@ -44,13 +46,14 @@ export async function POST() {
       await cachePrinterHistory(enrichedPrints);
     }
     const fallbackPrints = enrichedPrints.length ? enrichedPrints : await readCachedPrinterHistory();
+    const syncedManualEvents = await syncManualPrintEventsFromHistory(fallbackPrints);
     const withGrams = fallbackPrints.filter((print) => typeof print.gramsUsed === "number" && print.gramsUsed > 0).length;
     const stopped = fallbackPrints.filter((print) => print.status === "STOPPED").length;
     const failed = fallbackPrints.filter((print) => print.status === "FAILED").length;
     return NextResponse.json({
       completedPrints: fallbackPrints,
       message: fallbackPrints.length
-        ? `${enrichedPrints.length ? "Found" : "Using last pulled"} ${fallbackPrints.length} printer-history row(s), including ${stopped} stopped and ${failed} failed. ${withGrams} include material usage.`
+        ? `${enrichedPrints.length ? "Found" : "Using last pulled"} ${fallbackPrints.length} printer-history row(s), including ${stopped} stopped and ${failed} failed. ${withGrams} include material usage. ${syncedManualEvents.updated} manual event(s) synced.`
         : "No printer-history entries were found."
     });
   } catch (error) {
@@ -102,7 +105,11 @@ export async function PATCH(request: Request) {
         etaMinutes: 0,
         completedAt: printWithGrams.completedAt ? new Date(printWithGrams.completedAt) : new Date(),
         failureReason: printStatus === "FAILED" ? `Imported failed printer-history entry` : undefined,
-        consumedFilamentGrams: Math.round(printWithGrams.gramsUsed)
+        consumedFilamentGrams: Math.round(printWithGrams.gramsUsed),
+        progressPercent: progressPercentForImportedHistory(printWithGrams),
+        currentLayer: printWithGrams.printedLayers,
+        elapsedSeconds: printWithGrams.printTimeSeconds,
+        remainingSeconds: printStatus === "COMPLETED" ? 0 : undefined
       }
     });
     return { order, job, spool };
@@ -115,6 +122,7 @@ export async function PATCH(request: Request) {
       orderNumber: result.order.orderNumber,
       importedHistoryId: body.print.id,
       fileName: body.print.name,
+      progressPercent: result.job.status === "COMPLETED" ? 100 : progressPercentForImportedHistory(body.print),
       consumedFilamentGrams: Math.round(printWithGrams.gramsUsed)
     }
   });
@@ -125,6 +133,14 @@ function toPrintJobStatus(status: string) {
   if (status === "FAILED") return "FAILED";
   if (status === "STOPPED") return "STOPPED";
   return "COMPLETED";
+}
+
+function progressPercentForImportedHistory(print: z.infer<typeof printSchema>) {
+  if (print.status === "COMPLETED") return 100;
+  if (typeof print.printedLayers === "number" && typeof print.totalLayers === "number" && print.totalLayers > 0) {
+    return Math.min(100, Math.max(0, Math.round((print.printedLayers / print.totalLayers) * 100)));
+  }
+  return undefined;
 }
 
 function hasUsableGrams(print: z.infer<typeof printSchema>): print is z.infer<typeof printSchema> & { gramsUsed: number } {

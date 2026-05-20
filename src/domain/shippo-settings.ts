@@ -1,5 +1,7 @@
 export type ShippoSettingsValues = Record<string, unknown>;
 
+export const defaultShippoPrintCommand = "superprint-ble-a42bt";
+
 export type ShippingAddress = {
   name: string;
   street1: string;
@@ -62,7 +64,7 @@ export function resolveShippoSettings(input: {
     pickupState: settingString(settings["shippo.pickupState"]) ?? "CO",
     autoCreateLabelAfterPrint: settingBoolean(settings["shippo.autoCreateLabelAfterPrint"]) ?? false,
     autoPrintLabelAfterPrint: settingBoolean(settings["shippo.autoPrintLabelAfterPrint"]) ?? false,
-    printCommand: settingString(settings["shippo.printCommand"]) ?? "lpr",
+    printCommand: settingString(settings["shippo.printCommand"]) ?? defaultShippoPrintCommand,
     labelFileType: normalizeLabelFileType(settingString(settings["shippo.labelFileType"])) ?? "PDF_4x6",
     originAddress
   };
