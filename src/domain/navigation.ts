@@ -31,6 +31,7 @@ export const mainNavigation: NavItem[] = [
 export const userNavigation: NavItem[] = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/store", label: "Store" },
+  { href: "/cart", label: "Cart" },
   { href: "/upload", label: "Upload STL" },
   { href: "/orders", label: "Orders" },
   { href: "/rewards", label: "Rewards" },

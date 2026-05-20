@@ -23,7 +23,7 @@ import { attachCompletedPrintTimelapse } from "./timelapse-media";
 import { maybeCreateLabelAfterPrint } from "./shipping";
 
 export async function getPublicQueueState() {
-  const [current, nextJobs, printers] = await Promise.all([
+  const [current, nextJobs, recentPrints, printers] = await Promise.all([
     prisma.printJob.findFirst({
       where: { status: "PRINTING" },
       include: { order: true, printer: true, filament: true },
@@ -35,6 +35,12 @@ export async function getPublicQueueState() {
       orderBy: { queuePosition: "asc" },
       take: 8
     }),
+    prisma.printJob.findMany({
+      where: { status: "COMPLETED", completedAt: { not: null } },
+      include: { order: true, printer: true, filament: true },
+      orderBy: { completedAt: "desc" },
+      take: 8
+    }),
     prisma.printer.findMany({
       include: { currentFilament: true },
       orderBy: { publicName: "asc" }
@@ -44,6 +50,7 @@ export async function getPublicQueueState() {
   return {
     current: current ? publicQueueJob(current) : null,
     nextJobs: nextJobs.map(publicQueueJob),
+    recentPrints: recentPrints.map(publicQueueJob),
     printers: printers.map((printer) => ({
       id: printer.id,
       name: printer.publicName,

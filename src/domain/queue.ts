@@ -131,6 +131,7 @@ export function publicQueueJob(job: {
   queuePosition: number | null;
   etaMinutes: number;
   startedAt?: Date | null;
+  completedAt?: Date | null;
   streamUrl: string | null;
   order: { orderNumber: string };
   printer: { publicName: string; status: string; healthDescription: string } | null;
@@ -151,6 +152,8 @@ export function publicQueueJob(job: {
     status: job.status,
     queuePosition: job.queuePosition,
     etaMinutes: job.etaMinutes,
+    startedAt: job.startedAt,
+    completedAt: job.completedAt,
     progressPercent,
     streamUrl: job.streamUrl,
     telemetry: publicPrintTelemetry(job),

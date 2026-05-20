@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Activity, CheckCircle2, Clock, Cpu, Radio, ShieldCheck, Zap } from "lucide-react";
+import { Activity, CheckCircle2, Clock, Cpu, PackageCheck, Radio, ShieldCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
@@ -105,17 +105,19 @@ export function LiveQueue({ queue, events = [] }: { queue: QueueState; events?: 
               </div>
             </div>
             <div className="rounded-lg border border-white/10 bg-zinc-900 p-5">
-              <h3 className="text-lg font-semibold">Recent events</h3>
+              <h3 className="text-lg font-semibold">Completed prints</h3>
               <div className="mt-4 space-y-3">
-                {events.length ? events.slice(0, 5).map((event) => (
-                  <div key={event.id} className="flex gap-3 rounded border border-white/10 bg-white/[0.03] p-3 text-sm">
-                    <Zap className="mt-0.5 size-4 text-amber-200" />
+                {queue.recentPrints.length ? queue.recentPrints.slice(0, 5).map((print) => (
+                  <div key={print.id} className="flex gap-3 rounded border border-white/10 bg-white/[0.03] p-3 text-sm">
+                    <PackageCheck className="mt-0.5 size-4 text-emerald-200" />
                     <div>
-                      <p className="font-medium">{event.type.replaceAll("_", " ")}</p>
-                      <p className="text-zinc-400">{new Date(event.createdAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</p>
+                      <p className="font-medium">{print.orderNumber}</p>
+                      <p className="text-zinc-400">
+                        {print.completedAt ? new Date(print.completedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "Time unknown"} · {formatPrintDuration(print.startedAt, print.completedAt)}
+                      </p>
                     </div>
                   </div>
-                )) : <EmptyDark label="Events will appear as jobs move" />}
+                )) : <EmptyDark label="Completed prints will appear here" />}
               </div>
             </div>
           </div>
@@ -132,6 +134,15 @@ function EmptyDark({ label }: { label: string }) {
       {label}
     </div>
   );
+}
+
+function formatPrintDuration(startedAt?: Date | string | null, completedAt?: Date | string | null) {
+  if (!startedAt || !completedAt) return "runtime unknown";
+  const minutes = Math.max(0, Math.round((new Date(completedAt).getTime() - new Date(startedAt).getTime()) / 60000));
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  return remainder ? `${hours}h ${remainder}m` : `${hours}h`;
 }
 
 function Metric({

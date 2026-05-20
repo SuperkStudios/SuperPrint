@@ -21,6 +21,11 @@ export async function POST(request: Request) {
     const orderId = session.metadata?.orderId;
     if (orderId) await markOrderPaidAndQueue(orderId);
   }
+  if (event.type === "payment_intent.succeeded") {
+    const intent = event.data.object;
+    const orderId = intent.metadata?.orderId;
+    if (orderId) await markOrderPaidAndQueue(orderId);
+  }
 
   return NextResponse.json({ received: true });
 }

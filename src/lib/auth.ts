@@ -28,6 +28,7 @@ const socialProviders = {
 export const auth = betterAuth({
   appName: "SuperPrint",
   baseURL: process.env.BETTER_AUTH_URL ?? process.env.NEXTAUTH_URL ?? "http://localhost:3000",
+  trustedOrigins: trustedAuthOrigins(),
   secret: process.env.BETTER_AUTH_SECRET ?? process.env.NEXTAUTH_SECRET ?? "dev-secret-change-me",
   database: prismaAdapter(prisma, {
     provider: "postgresql"
@@ -62,6 +63,20 @@ export const auth = betterAuth({
   },
   plugins: [nextCookies()]
 });
+
+function trustedAuthOrigins() {
+  return [
+    process.env.BETTER_AUTH_URL,
+    process.env.NEXTAUTH_URL,
+    process.env.NEXT_PUBLIC_APP_URL,
+    process.env.BETTER_AUTH_TRUSTED_ORIGINS,
+    "http://localhost:3000",
+    "http://127.0.0.1:3000"
+  ]
+    .flatMap((value) => value?.split(",") ?? [])
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
 
 export type AppSession = {
   session: { id: string; userId: string };

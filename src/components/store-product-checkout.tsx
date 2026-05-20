@@ -111,10 +111,7 @@ export function StoreProductCheckout({
         zip: shippingAddress.zip || "80521"
       }
     : shippingAddress;
-  const addressReady = fulfillmentMethod === "PICKUP"
-    ? Boolean(fulfillmentAddress.name && fulfillmentAddress.city && fulfillmentAddress.state)
-    : savedAddressReady;
-  const checkoutDisabled = Boolean(selectedOption.unavailableReason || selectedOption.requiresAdminApproval || (signedIn && !addressReady));
+  const checkoutDisabled = Boolean(selectedOption.unavailableReason || selectedOption.requiresAdminApproval);
   const savedAddressSummary = formatSavedAddress(shippingAddress);
 
   return (
@@ -226,7 +223,7 @@ export function StoreProductCheckout({
             </div>
           )}
           <p className="text-sm text-muted-foreground">
-            {fulfillmentMethod === "PICKUP" ? "Pickup is free for Fort Collins, CO customers." : "Shipping is quoted at checkout with the lowest Shippo rate available."}
+            Delivery address and payment are confirmed after you review the cart.
           </p>
         </div>
       </section>

@@ -10,11 +10,11 @@ import { AuthRequired } from "@/components/auth-required";
 import { getBootstrapStatus } from "@/lib/bootstrap";
 import { redirect } from "next/navigation";
 import { EmptyState, PageHero, PageSection, PageShell } from "@/components/cyber-page";
-import { reconcilePaidStripeCheckoutSession } from "@/services/checkout";
+import { reconcilePaidPaymentIntent, reconcilePaidStripeCheckoutSession } from "@/services/checkout";
 
 export const dynamic = "force-dynamic";
 
-export default async function OrdersPage({ searchParams }: { searchParams?: Promise<{ checkout?: string; order?: string; session_id?: string }> }) {
+export default async function OrdersPage({ searchParams }: { searchParams?: Promise<{ checkout?: string; order?: string; session_id?: string; payment_intent?: string }> }) {
   if (!(await getBootstrapStatus()).isComplete) {
     redirect("/setup");
   }
@@ -24,18 +24,24 @@ export default async function OrdersPage({ searchParams }: { searchParams?: Prom
   }
   const params = await searchParams;
   if (params?.checkout === "success") {
-    await reconcilePaidStripeCheckoutSession({
-      sessionId: params.session_id,
-      orderId: params.order,
-      actorId: session.user.id
-    }).catch((error) => {
+    try {
+      await reconcilePaidStripeCheckoutSession({
+        sessionId: params.session_id,
+        orderId: params.order,
+        actorId: session.user.id
+      });
+      await reconcilePaidPaymentIntent({
+        paymentIntentId: params.payment_intent,
+        actorId: session.user.id
+      });
+    } catch (error) {
       console.error("Stripe checkout reconciliation failed", error);
-    });
+    }
   }
 
   const orders = await prisma.order.findMany({
     where: { customerId: session.user.id },
-    include: { product: true, upload: true, printJobs: true, videos: true },
+    include: { product: true, items: { include: { product: true } }, upload: true, printJobs: true, videos: true },
     orderBy: { createdAt: "desc" }
   });
   const rewardsBalance = await prisma.user.findUnique({
@@ -57,7 +63,7 @@ export default async function OrdersPage({ searchParams }: { searchParams?: Prom
             <CardHeader className="flex-row items-start justify-between">
               <div>
                 <CardTitle>{order.orderNumber}</CardTitle>
-                <p className="mt-1 text-sm text-muted-foreground">{order.product?.name ?? order.upload?.fileName}</p>
+                <p className="mt-1 text-sm text-muted-foreground">{order.items.length ? order.items.map((item) => `${item.quantity} x ${item.product.name}`).join(", ") : order.product?.name ?? order.upload?.fileName}</p>
               </div>
               <Badge>{order.status}</Badge>
             </CardHeader>

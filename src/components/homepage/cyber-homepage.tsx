@@ -3,24 +3,15 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { AlertTriangle, ArrowRight, Boxes, Camera, CheckCircle2, CircuitBoard, Clock, Cpu, Eye, Factory, Gauge, Layers3, PackageCheck, PauseCircle, PlayCircle, Radio, RotateCcw, ShieldCheck, Sparkles, Upload, Video, XCircle } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
+import { ArrowRight, Boxes, Camera, CheckCircle2, CircuitBoard, Clock, Cpu, Eye, Factory, Gauge, Layers3, PackageCheck, Radio, ShieldCheck, Upload, Video } from "lucide-react";
 import { LiveBedFeed } from "@/components/live/live-bed-feed";
 import { PrinterHeroVisual } from "@/components/homepage/printer-hero-visual";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { useLiveManufacturing } from "@/hooks/use-live-manufacturing";
 import { usePrinterFeedStatus } from "@/hooks/use-printer-feed-status";
 
 type QueueState = Awaited<ReturnType<typeof import("@/services/queue").getPublicQueueState>>;
 type PublicEvent = Awaited<ReturnType<typeof import("@/services/events").listPublicEvents>>[number];
-type HistoryEvent = {
-  id: string;
-  type: string;
-  createdAt: string;
-  payload: Record<string, unknown>;
-};
-
 export type HomepageStats = {
   completedPrints: number;
   runtimeHours: number;
@@ -98,8 +89,7 @@ export function CyberHomepage({
   );
 }
 
-export function LiveFactorySection({ queue, events }: { queue: QueueState; events: PublicEvent[] }) {
-  const live = useLiveManufacturing(events);
+export function LiveFactorySection({ queue, events: _events }: { queue: QueueState; events: PublicEvent[] }) {
   const livePrinter = usePrinterFeedStatus();
   const current = queue.current;
   const centauriTelemetry = livePrinter?.telemetry?.state === "LIVE" ? livePrinter.telemetry : null;
@@ -119,7 +109,6 @@ export function LiveFactorySection({ queue, events }: { queue: QueueState; event
   const currentLayer = telemetry && "currentLayer" in telemetry ? telemetry.currentLayer : null;
   const totalLayer = centauriTelemetry?.totalLayer ?? null;
   const material = current?.filament ?? queue.printers[0]?.filament ?? null;
-  const liveEvents = live.events.length ? live.events : events;
 
   return (
       <section className="relative border-y bg-card/45 py-16 dark:bg-zinc-950/90 lg:py-24">
@@ -183,13 +172,13 @@ export function LiveFactorySection({ queue, events }: { queue: QueueState; event
             <div className="cyber-surface rounded-2xl p-5">
               <div className="flex items-center justify-between">
                 <h3 className="font-semibold">History</h3>
-                <Sparkles className="size-4 text-orange-500 dark:text-orange-200" />
+                <PackageCheck className="size-4 text-emerald-600 dark:text-emerald-200" />
               </div>
               <div className="mt-4 space-y-3">
-                {liveEvents.slice(0, 5).map((event) => (
-                  <HistoryEventRow key={event.id} event={event} />
+                {queue.recentPrints.slice(0, 5).map((print) => (
+                  <RecentPrintRow key={print.id} print={print} />
                 ))}
-                {!liveEvents.length ? <p className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">Events will appear as production moves.</p> : null}
+                {!queue.recentPrints.length ? <p className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">Completed prints will appear here.</p> : null}
               </div>
             </div>
           </div>
@@ -231,79 +220,36 @@ function LiveMetric({ icon: Icon, label, value, swatch }: { icon: typeof Boxes; 
   );
 }
 
-function HistoryEventRow({ event }: { event: HistoryEvent }) {
-  const meta = historyEventMeta(event);
-  const Icon = meta.icon;
+function RecentPrintRow({ print }: { print: QueueState["recentPrints"][number] }) {
+  const completedAt = print.completedAt ? new Date(print.completedAt) : null;
 
   return (
-    <motion.div key={event.id} layout className="flex items-start gap-3 rounded-xl border bg-background/35 p-3 text-sm">
-      <span className={`mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full ${meta.iconSurface}`}>
-        <Icon className={`size-4 ${meta.iconColor}`} />
+    <motion.div key={print.id} layout className="flex items-start gap-3 rounded-xl border bg-background/35 p-3 text-sm">
+      <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-emerald-500/10">
+        <CheckCircle2 className="size-4 text-emerald-600 dark:text-emerald-200" />
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block font-medium text-foreground">{meta.label}</span>
-        {meta.detail ? <span className="mt-1 block text-xs leading-5 text-muted-foreground">{meta.detail}</span> : null}
+        <span className="block font-medium text-foreground">{print.orderNumber}</span>
+        <span className="mt-1 block text-xs leading-5 text-muted-foreground">
+          Completed · {formatPrintDuration(print.startedAt, print.completedAt)} · {print.printer?.name ?? "Printer"}
+        </span>
       </span>
-      <span className="shrink-0 text-muted-foreground">{new Date(event.createdAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span>
+      <span className="shrink-0 text-muted-foreground">
+        {completedAt ? completedAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "--"}
+      </span>
     </motion.div>
   );
 }
 
-function historyEventMeta(event: HistoryEvent): { label: string; detail: string; icon: LucideIcon; iconColor: string; iconSurface: string } {
-  const statusMap: Record<string, { label: string; icon: LucideIcon; iconColor: string; iconSurface: string }> = {
-    PRINT_COMPLETED: { label: "Print completed", icon: CheckCircle2, iconColor: "text-emerald-600 dark:text-emerald-200", iconSurface: "bg-emerald-500/10" },
-    PRINT_FAILED: { label: "Print failed", icon: XCircle, iconColor: "text-red-600 dark:text-red-200", iconSurface: "bg-red-500/10" },
-    PRINT_STOPPED: { label: "Build stopped", icon: AlertTriangle, iconColor: "text-amber-600 dark:text-amber-200", iconSurface: "bg-amber-500/10" },
-    PRINT_PAUSED: { label: "Print paused", icon: PauseCircle, iconColor: "text-amber-600 dark:text-amber-200", iconSurface: "bg-amber-500/10" },
-    PRINT_STARTED: { label: "Print started", icon: PlayCircle, iconColor: "text-primary", iconSurface: "bg-primary/10" },
-    PRINT_REQUEUED: { label: "Print requeued", icon: RotateCcw, iconColor: "text-primary", iconSurface: "bg-primary/10" },
-    MANUAL_PRINT_DETECTED: { label: "Manual print detected", icon: Sparkles, iconColor: "text-orange-500 dark:text-orange-200", iconSurface: "bg-orange-500/10" },
-    QUEUE_ADMITTED: { label: "Added to queue", icon: Upload, iconColor: "text-primary", iconSurface: "bg-primary/10" },
-    MODEL_APPROVED: { label: "Model approved", icon: CheckCircle2, iconColor: "text-emerald-600 dark:text-emerald-200", iconSurface: "bg-emerald-500/10" },
-    MODEL_REJECTED: { label: "Model rejected", icon: XCircle, iconColor: "text-red-600 dark:text-red-200", iconSurface: "bg-red-500/10" },
-    SLICING_FAILED: { label: "Slicing failed", icon: XCircle, iconColor: "text-red-600 dark:text-red-200", iconSurface: "bg-red-500/10" },
-    SLICING_COMPLETE: { label: "Slicing complete", icon: CheckCircle2, iconColor: "text-emerald-600 dark:text-emerald-200", iconSurface: "bg-emerald-500/10" }
-  };
-  const fallback = { label: toTitleCase(event.type), icon: Sparkles, iconColor: "text-orange-500 dark:text-orange-200", iconSurface: "bg-orange-500/10" };
-  const base = statusMap[event.type] ?? fallback;
-
-  return {
-    ...base,
-    detail: eventDetail(event)
-  };
-}
-
-function eventDetail(event: HistoryEvent) {
-  const payload = event.payload;
-  const details = [
-    stringValue(payload.orderNumber),
-    stringValue(payload.fileName),
-    stringValue(payload.productName),
-    stringValue(payload.printerName)
-  ];
-
-  if (event.type === "PRINT_STOPPED") details.push("Interrupted by operator, not failed");
-  if (event.type === "PRINT_FAILED") details.push(stringValue(payload.failureReason));
-  if (payload.currentLayer != null || payload.totalLayer != null) details.push(`Layer ${payload.currentLayer ?? "?"}/${payload.totalLayer ?? "?"}`);
-  if (typeof payload.progressPercent === "number") details.push(`${Math.round(payload.progressPercent)}% complete`);
-  if (typeof payload.runtimeMinutes === "number") details.push(`${payload.runtimeMinutes}m runtime`);
-  if (typeof payload.consumedFilamentGrams === "number") details.push(`${Math.round(payload.consumedFilamentGrams)}g used`);
-  if (typeof payload.queuePosition === "number") details.push(`Queue #${payload.queuePosition}`);
-  if (typeof payload.etaMinutes === "number") details.push(`${payload.etaMinutes}m ETA`);
-
-  return details.filter(Boolean).slice(0, 4).join(" · ");
-}
-
-function stringValue(value: unknown) {
-  return typeof value === "string" && value.trim() ? value.trim() : null;
-}
-
-function toTitleCase(value: string) {
-  return value
-    .toLowerCase()
-    .split("_")
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
+function formatPrintDuration(startedAt?: Date | string | null, completedAt?: Date | string | null) {
+  if (!startedAt || !completedAt) return "runtime unknown";
+  const started = new Date(startedAt).getTime();
+  const completed = new Date(completedAt).getTime();
+  const minutes = Math.max(0, Math.round((completed - started) / 60000));
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  return remainder ? `${hours}h ${remainder}m` : `${hours}h`;
 }
 
 function formatLayerProgress(currentLayer?: number | null, totalLayer?: number | null, progressPercent?: number | null) {

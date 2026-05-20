@@ -46,30 +46,25 @@ export function StoreBuyButton({
     }
     setLoading(true);
     setMessage("");
-    const response = await fetch("/api/orders", {
+    const response = await fetch("/api/cart", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ productId, selectedMaterial, selectedColor, selectedFilamentMaterialId, fulfillment })
+      body: JSON.stringify({ productId, selectedMaterial, selectedColor, selectedFilamentMaterialId, quantity: 1 })
     });
     const body = await response.json().catch(() => null);
     setLoading(false);
     if (!response.ok) {
-      setMessage(body?.error ?? "Checkout failed.");
+      setMessage(body?.error ?? "Could not add this item.");
       return;
     }
-    if (body.checkoutUrl?.startsWith("/api/orders/")) {
-      await fetch(body.checkoutUrl, { method: "POST" });
-      window.location.href = "/orders";
-      return;
-    }
-    window.location.href = body.checkoutUrl ?? "/orders";
+    window.location.href = "/cart";
   }
 
   return (
     <div>
       <Button size="sm" onClick={buy} disabled={loading || disabled}>
         <ShoppingCart className="size-4" />
-        {loading ? "Opening..." : "Checkout"}
+        {loading ? "Adding..." : "Add to cart"}
       </Button>
       {message ? <p className="mt-2 text-xs text-destructive">{message}</p> : null}
     </div>

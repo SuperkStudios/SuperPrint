@@ -155,12 +155,14 @@ model User {
   shippingZip String?
   shippingCountry String?    @default("US")
   shippingPhone String?
+  stripeCustomerId String?    @unique
   passwordHash String?
   role         UserRole      @default(CUSTOMER)
   staffPermissions Json      @default("[]")
   rewardsPointsBalance Int   @default(0)
   sessions     Session[]
   accounts     Account[]
+  carts        Cart[]
   uploads      ModelUpload[]
   orders       Order[]
   rewardTransactions RewardTransaction[]
@@ -242,6 +244,8 @@ model Product {
   defaultMaterial      FilamentMaterial
   status               ProductStatus @default(ACTIVE)
   allowedFilaments     ProductAllowedFilament[]
+  cartItems            CartItem[]
+  orderItems           OrderItem[]
   orders               Order[]
   pricingSnapshots     OrderPricingSnapshot[]
   createdAt            DateTime      @default(now())
@@ -263,6 +267,37 @@ model ProductAllowedFilament {
 
   @@unique([productId, filamentMaterialId])
   @@index([filamentMaterialId])
+}
+
+model Cart {
+  id         String     @id @default(cuid())
+  userId     String
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status     String     @default("ACTIVE")
+  items      CartItem[]
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  @@index([userId, status])
+}
+
+model CartItem {
+  id                         String         @id @default(cuid())
+  cartId                     String
+  cart                       Cart           @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  productId                  String
+  product                    Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
+  quantity                   Int            @default(1)
+  selectedMaterial           FilamentMaterial?
+  selectedColor              String?
+  selectedFilamentMaterialId String?
+  selectedFilamentMaterial   FilamentSpool? @relation("CartItemSelectedFilament", fields: [selectedFilamentMaterialId], references: [id])
+  createdAt                  DateTime       @default(now())
+  updatedAt                  DateTime       @updatedAt
+
+  @@index([cartId])
+  @@index([productId])
+  @@index([selectedFilamentMaterialId])
 }
 
 model ModelUpload {
@@ -303,7 +338,11 @@ model Order {
   upload         ModelUpload? @relation(fields: [uploadId], references: [id])
   status         OrderStatus @default(CHECKOUT_READY)
   totalCents     Int
+  subtotalCents  Int         @default(0)
+  taxCents       Int         @default(0)
+  paymentFeeCents Int       @default(0)
   paymentStatus  String      @default("PENDING")
+  stripePaymentIntentId String? @unique
   shippingStatus String      @default("NOT_STARTED")
   fulfillmentMethod String   @default("SHIP")
   shippingName   String?
@@ -333,12 +372,38 @@ model Order {
   selectedColor   String?
   selectedFilamentMaterialId String?
   selectedFilamentMaterial FilamentSpool? @relation("OrderSelectedFilament", fields: [selectedFilamentMaterialId], references: [id])
+  items          OrderItem[]
   pricingSnapshot OrderPricingSnapshot?
   printJobs      PrintJob[]
   videos         OrderVideo[]
   rewardTransactions RewardTransaction[]
   createdAt      DateTime    @default(now())
   updatedAt      DateTime    @updatedAt
+}
+
+model OrderItem {
+  id                         String         @id @default(cuid())
+  orderId                    String
+  order                      Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId                  String
+  product                    Product        @relation(fields: [productId], references: [id])
+  quantity                   Int            @default(1)
+  unitPriceCents             Int
+  subtotalCents              Int
+  taxCents                   Int            @default(0)
+  paymentFeeCents            Int            @default(0)
+  totalCents                 Int
+  estimatedGrams             Int
+  estimatedPrintMinutes      Int
+  selectedMaterial           FilamentMaterial?
+  selectedColor              String?
+  selectedFilamentMaterialId String?
+  selectedFilamentMaterial   FilamentSpool? @relation("OrderItemSelectedFilament", fields: [selectedFilamentMaterialId], references: [id])
+  createdAt                  DateTime       @default(now())
+
+  @@index([orderId])
+  @@index([productId])
+  @@index([selectedFilamentMaterialId])
 }
 
 model RewardTransaction {
@@ -564,7 +629,9 @@ model FilamentSpool {
   jobs           PrintJob[]
   defaultProducts Product[]        @relation("DefaultProductFilament")
   allowedProducts ProductAllowedFilament[]
+  cartItems      CartItem[]        @relation("CartItemSelectedFilament")
   selectedOrders  Order[]          @relation("OrderSelectedFilament")
+  selectedOrderItems OrderItem[]    @relation("OrderItemSelectedFilament")
   pricingSnapshots OrderPricingSnapshot[]
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
