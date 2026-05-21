@@ -12,6 +12,7 @@ const printerId = process.env.SUPERNODE_PRINTER_ID;
 const printerControlUrl = process.env.SUPERNODE_PRINTER_CONTROL_URL;
 const printerCameraUrl = process.env.SUPERNODE_PRINTER_CAMERA_URL;
 const heartbeatIntervalMs = Number(process.env.SUPERNODE_HEARTBEAT_INTERVAL_MS ?? 15000);
+const cameraFrameIntervalMs = Number(process.env.SUPERNODE_CAMERA_FRAME_INTERVAL_MS ?? 750);
 const nodeJobsDir = process.env.SUPERNODE_JOBS_PATH ?? "/data/node-jobs";
 
 if (!nodeSecret) {
@@ -20,6 +21,7 @@ if (!nodeSecret) {
 const nodeSigningSecret = nodeSecret;
 
 let retryCount = 0;
+let latestCameraFrameAt = 0;
 
 async function sendHeartbeat() {
   const printerHealth = await probeConfiguredPrinter();
@@ -79,6 +81,147 @@ function probeEndpoint(url: string, timeoutMs: number) {
     return probeWebSocket(url, timeoutMs);
   }
   return probeHttp(url, timeoutMs);
+}
+
+async function startCameraFrameBridge() {
+  if (!printerId || !printerCameraUrl) return;
+
+  for (;;) {
+    try {
+      if (printerControlUrl?.startsWith("ws")) {
+        await enableCentauriVideo(printerControlUrl).catch(() => undefined);
+      }
+      await streamCameraFrames(printerCameraUrl);
+    } catch (error) {
+      console.error(error instanceof Error ? `camera bridge: ${error.message}` : error);
+      await sleep(3000);
+    }
+  }
+}
+
+function streamCameraFrames(url: string) {
+  return new Promise<void>((resolve, reject) => {
+    const parsed = new URL(url);
+    const client = parsed.protocol === "https:" ? https : http;
+    const request = client.get(parsed, { timeout: 5000 }, (response) => {
+      if (!response.statusCode || response.statusCode >= 400) {
+        response.resume();
+        reject(new Error(`camera stream unavailable with HTTP ${response.statusCode ?? 503}`));
+        return;
+      }
+
+      const chunks: Buffer[] = [];
+      let buffered = Buffer.alloc(0);
+      const contentType = response.headers["content-type"] ?? "multipart/x-mixed-replace";
+
+      response.on("data", (chunk: Buffer) => {
+        if (String(contentType).toLowerCase().startsWith("image/jpeg")) {
+          chunks.push(chunk);
+          return;
+        }
+
+        buffered = Buffer.concat([buffered, chunk]);
+        let frame = extractJpegFrame(buffered);
+        while (frame) {
+          buffered = buffered.subarray(frame.endOffset);
+          void postCameraFrame(frame.jpeg);
+          frame = extractJpegFrame(buffered);
+        }
+        if (buffered.byteLength > 4 * 1024 * 1024) {
+          buffered = buffered.subarray(buffered.byteLength - 1024 * 1024);
+        }
+      });
+
+      response.on("end", () => {
+        if (chunks.length) void postCameraFrame(Buffer.concat(chunks));
+        resolve();
+      });
+      response.on("close", resolve);
+      response.on("error", reject);
+    });
+
+    request.on("timeout", () => {
+      request.destroy();
+      reject(new Error("camera stream timed out"));
+    });
+    request.on("error", reject);
+  });
+}
+
+function extractJpegFrame(buffer: Buffer) {
+  const start = buffer.indexOf(Buffer.from([0xff, 0xd8]));
+  if (start < 0) return null;
+  const end = buffer.indexOf(Buffer.from([0xff, 0xd9]), start + 2);
+  if (end < 0) return null;
+  const endOffset = end + 2;
+  return { jpeg: buffer.subarray(start, endOffset), endOffset };
+}
+
+async function postCameraFrame(frame: Buffer) {
+  const now = Date.now();
+  if (!printerId || !nodeSecret || now - latestCameraFrameAt < cameraFrameIntervalMs) return;
+  latestCameraFrameAt = now;
+  const body = frame.buffer.slice(frame.byteOffset, frame.byteOffset + frame.byteLength) as ArrayBuffer;
+
+  const response = await fetch(`${apiBaseUrl}/api/supernode/camera-frame`, {
+    method: "POST",
+    headers: {
+      "content-type": "image/jpeg",
+      authorization: `Bearer ${nodeSigningSecret}`,
+      "x-supernode-id": nodeId,
+      "x-supernode-printer-id": printerId
+    },
+    body
+  });
+  if (!response.ok) {
+    throw new Error(`camera frame upload rejected with ${response.status}`);
+  }
+}
+
+function enableCentauriVideo(controlApiUrl: string) {
+  return new Promise<void>((resolve, reject) => {
+    const socket = new WebSocket(controlApiUrl);
+    const timeout = setTimeout(() => {
+      socket.close();
+      reject(new Error("Centauri video enable timed out"));
+    }, 2500);
+
+    socket.on("open", () => {
+      socket.send(JSON.stringify({
+        Id: "0000000000000000",
+        Data: {
+          Cmd: 386,
+          Data: { Enable: 1 },
+          RequestID: String(Date.now()),
+          MainboardID: "0000000000000000",
+          TimeStamp: Date.now(),
+          From: 1
+        },
+        Topic: ""
+      }));
+    });
+    socket.on("message", (data) => {
+      try {
+        const message = JSON.parse(data.toString()) as { Data?: { Cmd?: number; Data?: { Ack?: number } } };
+        if (message.Data?.Cmd === 386) {
+          clearTimeout(timeout);
+          socket.close();
+          message.Data.Data?.Ack === 0 ? resolve() : reject(new Error("Centauri rejected video enable"));
+        }
+      } catch {
+        // Ignore unrelated non-JSON frames.
+      }
+    });
+    socket.on("error", (error) => {
+      clearTimeout(timeout);
+      reject(error);
+    });
+    socket.on("close", () => clearTimeout(timeout));
+  });
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function probeWebSocket(url: string, timeoutMs: number) {
@@ -186,4 +329,5 @@ async function loop() {
   }
 }
 
+void startCameraFrameBridge();
 loop();
