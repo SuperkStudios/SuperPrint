@@ -96,8 +96,11 @@ export async function buyLabelForOrder(orderId: string, options: { print?: boole
   if (order.paymentStatus !== "PAID") throw new Error("Shipping labels can only be purchased after payment is confirmed.");
   if (order.status !== "COMPLETED") throw new Error("Shipping labels can only be purchased after the print is completed.");
   if (order.shippingLabelUrl && order.shippoTransactionId) {
+    if (!order.trackingUrl || !order.trackingNumber) {
+      await refreshOrderTrackingFromShippo(order.id, order.shippoTransactionId);
+    }
     if (options.print) await printOrderLabel(order.id);
-    return order;
+    return prisma.order.findUniqueOrThrow({ where: { id: order.id }, include: { product: true, customer: true } });
   }
   if (!order.shippoRateId) throw new Error("This order does not have a Shippo rate. Recreate the checkout or add shipping details.");
 
@@ -130,6 +133,24 @@ export async function buyLabelForOrder(orderId: string, options: { print?: boole
   return updated;
 }
 
+export async function markOrderShippedWithShippoTracking(orderId: string) {
+  let order = await prisma.order.findUniqueOrThrow({ where: { id: orderId } });
+  if (order.fulfillmentMethod === "SHIP") {
+    if (!order.shippoTransactionId || !order.shippingLabelUrl || !order.trackingUrl) {
+      order = await buyLabelForOrder(orderId);
+    } else if (!order.trackingUrl || !order.trackingNumber) {
+      order = await refreshOrderTrackingFromShippo(order.id, order.shippoTransactionId);
+    }
+    if (!order.trackingUrl) {
+      throw new Error("Shippo did not return a carrier tracking link for this label yet.");
+    }
+  }
+  return prisma.order.update({
+    where: { id: order.id },
+    data: { shippingStatus: "SHIPPED" }
+  });
+}
+
 export async function maybeCreateLabelAfterPrint(orderId: string) {
   const settings = await getShippoSettings();
   if (!settings.autoCreateLabelAfterPrint) return null;
@@ -156,6 +177,17 @@ export async function printOrderLabel(orderId: string) {
   return prisma.order.update({
     where: { id: order.id },
     data: { labelPrintedAt: new Date(), shippingStatus: "LABEL_PRINTED" }
+  });
+}
+
+async function refreshOrderTrackingFromShippo(orderId: string, transactionId: string) {
+  const transaction = await shippoRequest<ShippoTransactionResponse>(`/transactions/${transactionId}/`);
+  return prisma.order.update({
+    where: { id: orderId },
+    data: {
+      trackingNumber: transaction.tracking_number,
+      trackingUrl: transaction.tracking_url_provider
+    }
   });
 }
 

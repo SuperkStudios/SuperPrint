@@ -44,10 +44,20 @@ export function StoreProductCheckout({
     description: string;
     imageUrl: string;
     modelUrl: string | null;
+    modelFormat?: "stl" | "3mf";
     priceCents: number;
     estimatedPrintMinutes: number;
     estimatedGrams: number;
     defaultMaterial: string;
+    colorSlotCount: number;
+    parts?: Array<{
+      id: string;
+      name: string;
+      quantityPerUnit: number;
+      colorSlotIndex: number;
+      colorSlotPattern?: number[];
+      modelFormat: "stl" | "3mf";
+    }>;
   };
   materials: MaterialOption[];
   signedIn: boolean;
@@ -77,6 +87,8 @@ export function StoreProductCheckout({
     marginWarning: null
   }];
   const [selectedFilamentId, setSelectedFilamentId] = useState(materialOptions[0].id);
+  const colorSlotCount = Math.min(6, Math.max(1, product.colorSlotCount));
+  const [selectedFilamentIds, setSelectedFilamentIds] = useState<string[]>(() => Array.from({ length: colorSlotCount }, () => materialOptions[0].id));
   const [fulfillmentMethod, setFulfillmentMethod] = useState<"SHIP" | "PICKUP">("SHIP");
   const shippingAddress = {
     name: savedShippingAddress?.name ?? "",
@@ -96,11 +108,14 @@ export function StoreProductCheckout({
     savedShippingAddress?.state &&
     savedShippingAddress?.zip
   );
-  const selectedOption = materialOptions.find((option) => option.id === selectedFilamentId) ?? materialOptions[0];
+  const primarySelectedId = selectedFilamentIds[0] ?? selectedFilamentId;
+  const selectedOption = materialOptions.find((option) => option.id === primarySelectedId) ?? materialOptions[0];
+  const selectedOptions = selectedFilamentIds.map((id) => materialOptions.find((option) => option.id === id) ?? materialOptions[0]);
   const rewardSettings = publicRewardsSettings ?? { pointsPerDollar: 10, redemptionPointsPerDollar: 100, maxDiscountPercent: 0.2, minimumRedemptionPoints: 500 };
   const earnedPoints = Math.floor((selectedOption.finalCustomerPriceCents / 100) * rewardSettings.pointsPerDollar);
   const selectedMaterial = selectedOption.material;
   const selectedColor = selectedOption.color;
+  const selectedColors = selectedOptions.map((option) => option.color);
   const previewColor = filamentColorToHex(selectedColor);
   const fulfillmentAddress = fulfillmentMethod === "PICKUP"
     ? {
@@ -111,14 +126,27 @@ export function StoreProductCheckout({
         zip: shippingAddress.zip || "80521"
       }
     : shippingAddress;
-  const checkoutDisabled = Boolean(selectedOption.unavailableReason || selectedOption.requiresAdminApproval);
+  const checkoutDisabled = selectedOptions.some((option) => Boolean(option.unavailableReason || option.requiresAdminApproval));
   const savedAddressSummary = formatSavedAddress(shippingAddress);
 
   return (
     <div className="grid gap-8 lg:grid-cols-[1.08fr_0.92fr]">
       <div className="min-h-[420px] overflow-hidden rounded-lg border bg-muted/20">
-        {product.modelUrl ? (
-          <StlModelViewer src={product.modelUrl} color={previewColor} className="h-[420px] border-0" />
+        {product.modelUrl || product.parts?.length ? (
+          <StlModelViewer
+            src={product.modelUrl}
+            modelFormat={product.modelFormat}
+            parts={product.parts?.map((part) => ({
+              src: `/api/products/${product.id}/parts/${part.id}/model`,
+              quantity: part.quantityPerUnit,
+              colorIndex: part.colorSlotIndex,
+              copyColorIndexes: part.colorSlotPattern?.length ? part.colorSlotPattern : undefined,
+              modelFormat: part.modelFormat
+            }))}
+            color={previewColor}
+            colors={selectedColors.map(filamentColorToHex)}
+            className="h-[420px] border-0"
+          />
         ) : (
           <img src={product.imageUrl} alt="" className="h-[420px] w-full object-cover" />
         )}
@@ -142,7 +170,9 @@ export function StoreProductCheckout({
             <StoreBuyButton
               productId={product.id}
               signedIn={signedIn}
-              selectedFilamentMaterialId={selectedFilamentId}
+              selectedFilamentMaterialId={primarySelectedId}
+              selectedFilamentMaterialIds={selectedOptions.map((option) => option.id)}
+              selectedColors={selectedColors}
               selectedMaterial={selectedMaterial}
               selectedColor={selectedColor}
               fulfillment={{ method: fulfillmentMethod, address: fulfillmentAddress }}
@@ -161,17 +191,27 @@ export function StoreProductCheckout({
         <div className="grid gap-4 rounded-md border bg-card p-4 text-card-foreground shadow-sm">
           <div>
             <p className="text-sm font-medium">Filament</p>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {materialOptions.map((option) => (
-                <button
-                  key={option.id}
-                  type="button"
-                  onClick={() => setSelectedFilamentId(option.id)}
-                  className={`rounded-md border px-3 py-2 text-left text-sm font-medium ${selectedFilamentId === option.id ? "border-primary bg-primary text-primary-foreground" : "bg-background hover:bg-muted"}`}
-                >
-                  <span className="block">{option.color} {option.material}</span>
-                  <span className="block text-xs opacity-75">{option.brand} · {money(option.finalCustomerPriceCents)}</span>
-                </button>
+            <div className="mt-2 grid gap-3">
+              {selectedFilamentIds.map((selectedId, slotIndex) => (
+                <div key={slotIndex} className="grid gap-2">
+                  <p className="text-xs font-medium uppercase text-muted-foreground">Color {slotIndex + 1}</p>
+                  <div className="flex flex-wrap gap-2">
+                    {materialOptions.map((option) => (
+                      <button
+                        key={`${slotIndex}-${option.id}`}
+                        type="button"
+                        onClick={() => {
+                          setSelectedFilamentId(option.id);
+                          setSelectedFilamentIds((current) => current.map((id, index) => index === slotIndex ? option.id : id));
+                        }}
+                        className={`rounded-md border px-3 py-2 text-left text-sm font-medium ${selectedId === option.id ? "border-primary bg-primary text-primary-foreground" : "bg-background hover:bg-muted"}`}
+                      >
+                        <span className="block">{option.color} {option.material}</span>
+                        <span className="block text-xs opacity-75">{option.brand} · {money(option.finalCustomerPriceCents)}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
               ))}
             </div>
           </div>
@@ -179,7 +219,7 @@ export function StoreProductCheckout({
             <p className="text-sm font-medium">Selected material</p>
             <p className="mt-2 flex items-center gap-2 text-sm text-muted-foreground">
               <span className="size-5 rounded-full border" style={{ backgroundColor: filamentColorToHex(selectedColor) }} />
-              {selectedColor} {selectedMaterial} · {selectedOption.remainingGrams}g in stock
+              {selectedColors.join(" + ")} · {selectedOption.remainingGrams}g in stock
             </p>
           </div>
         </div>

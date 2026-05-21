@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { normalizePercent } from "@/domain/pricing";
+import { MINIMUM_POST_REWARD_SUBTOTAL_CENTS } from "@/domain/rewards";
 import { prisma } from "@/lib/prisma";
 import { getPricingSettings, calculateProductPrice } from "@/services/pricing";
 
@@ -54,21 +55,27 @@ export async function addCartItem(input: {
   productId: string;
   quantity?: number;
   selectedFilamentMaterialId?: string | null;
+  selectedFilamentMaterialIds?: string[];
   selectedMaterial?: string | null;
   selectedColor?: string | null;
+  selectedColors?: string[];
 }) {
   const cart = await getOrCreateActiveCart(input.userId);
   const product = await prisma.product.findFirstOrThrow({
     where: { id: input.productId, status: "ACTIVE" },
     include: { allowedFilaments: { where: { enabled: true }, include: { filamentMaterial: true } } }
   });
-  const selected = resolveSelectedFilament(product, input.selectedFilamentMaterialId);
+  const selectedFilaments = resolveSelectedFilaments(product, input.selectedFilamentMaterialIds ?? (input.selectedFilamentMaterialId ? [input.selectedFilamentMaterialId] : undefined));
+  const selected = selectedFilaments[0];
+  const selectedIds = selectedFilaments.map((item) => item.filamentMaterialId);
+  const selectedColors = selectedFilaments.map((item, index) => input.selectedColors?.[index] ?? item.filamentMaterial.color);
   const quantity = clampQuantity(input.quantity);
   const existing = await prisma.cartItem.findFirst({
     where: {
       cartId: cart.id,
       productId: product.id,
-      selectedFilamentMaterialId: selected.filamentMaterialId
+      selectedFilamentMaterialId: selected.filamentMaterialId,
+      selectedFilamentMaterialIds: { equals: selectedIds as Prisma.InputJsonValue }
     }
   });
   if (existing) {
@@ -83,8 +90,10 @@ export async function addCartItem(input: {
         productId: product.id,
         quantity,
         selectedFilamentMaterialId: selected.filamentMaterialId,
+        selectedFilamentMaterialIds: selectedIds,
+        selectedColors,
         selectedMaterial: (input.selectedMaterial ?? selected.filamentMaterial.material) as never,
-        selectedColor: input.selectedColor ?? selected.filamentMaterial.color
+        selectedColor: input.selectedColor ?? selectedColors[0] ?? selected.filamentMaterial.color
       }
     });
   }
@@ -125,7 +134,10 @@ export async function summarizeCart(userId: string, input: { shippingCents?: num
   let estimatedPrintMinutes = 0;
 
   for (const item of cart?.items ?? []) {
-    const selected = resolveSelectedFilament(item.product, item.selectedFilamentMaterialId);
+    const selectedFilaments = resolveSelectedFilaments(item.product, jsonStringArray(item.selectedFilamentMaterialIds).length ? jsonStringArray(item.selectedFilamentMaterialIds) : item.selectedFilamentMaterialId ? [item.selectedFilamentMaterialId] : undefined);
+    const selected = selectedFilaments[0];
+    const selectedIds = selectedFilaments.map((allowed) => allowed.filamentMaterialId);
+    const selectedColors = jsonStringArray(item.selectedColors).length ? jsonStringArray(item.selectedColors) : selectedFilaments.map((allowed) => allowed.filamentMaterial.color);
     const quote = await calculateProductPrice({
       productId: item.productId,
       filamentMaterialId: selected.filamentMaterialId,
@@ -146,8 +158,10 @@ export async function summarizeCart(userId: string, input: { shippingCents?: num
       imageUrl: item.product.imageUrl,
       quantity: item.quantity,
       selectedFilamentMaterialId: selected.filamentMaterialId,
+      selectedFilamentMaterialIds: selectedIds,
       selectedMaterial: item.selectedMaterial ?? selected.filamentMaterial.material,
-      selectedColor: item.selectedColor ?? selected.filamentMaterial.color,
+      selectedColor: item.selectedColor ?? selectedColors[0] ?? selected.filamentMaterial.color,
+      selectedColors,
       unitPriceCents: Math.round(lineSubtotalCents / item.quantity),
       subtotalCents: lineSubtotalCents,
       estimatedGrams: quote.estimatedGrams,
@@ -156,7 +170,7 @@ export async function summarizeCart(userId: string, input: { shippingCents?: num
     });
   }
 
-  const rewardDiscountCents = Math.min(input.rewardDiscountCents ?? 0, Math.max(0, subtotalCents - 1));
+  const rewardDiscountCents = Math.min(input.rewardDiscountCents ?? 0, Math.max(0, subtotalCents - MINIMUM_POST_REWARD_SUBTOTAL_CENTS));
   const taxableSubtotalCents = Math.max(0, subtotalCents - rewardDiscountCents);
   const taxCents = Math.round(taxableSubtotalCents * normalizePercent(settings.taxPercentEstimate));
   const shippingCents = Math.max(0, Math.round(input.shippingCents ?? 0));
@@ -199,4 +213,22 @@ function resolveSelectedFilament(
     : product.allowedFilaments.find((item) => item.filamentMaterialId === product.defaultFilamentMaterialId) ?? product.allowedFilaments[0];
   if (!selected) throw new Error("No enabled filament is available for this product.");
   return selected;
+}
+
+function resolveSelectedFilaments(
+  product: Prisma.ProductGetPayload<{ include: { allowedFilaments: { include: { filamentMaterial: true } } } }>,
+  selectedFilamentMaterialIds?: string[] | null
+) {
+  const slotCount = Math.max(1, Math.min(6, product.colorSlotCount ?? 1));
+  const ids = selectedFilamentMaterialIds?.filter(Boolean).slice(0, slotCount) ?? [];
+  const fallback = resolveSelectedFilament(product, ids[0]);
+  const selected = Array.from({ length: slotCount }, (_, index) => {
+    const id = ids[index] ?? fallback.filamentMaterialId;
+    return resolveSelectedFilament(product, id);
+  });
+  return selected;
+}
+
+function jsonStringArray(value: Prisma.JsonValue) {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.length > 0) : [];
 }

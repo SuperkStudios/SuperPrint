@@ -30,7 +30,8 @@ export default async function StorePage() {
               name: product.name,
               description: product.description,
               imageUrl: product.imageUrl,
-              modelUrl: product.productFileStorageKey && /\.stl$/i.test(product.productFileStorageKey) ? `/api/products/${product.id}/model` : null,
+              modelUrl: product.previewPlateStorageKey || (product.productFileStorageKey && /\.(stl|3mf)$/i.test(product.productFileStorageKey)) ? `/api/products/${product.id}/model` : null,
+              modelFormat: product.previewPlateStorageKey && /\.3mf$/i.test(product.previewPlateStorageKey) ? "3mf" : product.productFileStorageKey && /\.3mf$/i.test(product.productFileStorageKey) ? "3mf" : "stl",
               priceCents: product.priceCents,
               estimatedPrintMinutes: product.estimatedPrintMinutes,
               defaultMaterial: product.defaultMaterial

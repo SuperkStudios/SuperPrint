@@ -7,8 +7,10 @@ const addSchema = z.object({
   productId: z.string(),
   quantity: z.number().int().positive().optional(),
   selectedFilamentMaterialId: z.string().optional().nullable(),
+  selectedFilamentMaterialIds: z.array(z.string()).optional(),
   selectedMaterial: z.string().optional().nullable(),
-  selectedColor: z.string().optional().nullable()
+  selectedColor: z.string().optional().nullable(),
+  selectedColors: z.array(z.string()).optional()
 });
 
 const updateSchema = z.object({

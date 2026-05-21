@@ -27,7 +27,7 @@ type StripeElementsLike = {
 };
 
 type CheckoutSummary = {
-  items: Array<{ id: string; name: string; quantity: number; selectedColor?: string | null; selectedMaterial?: string | null; subtotalCents: number }>;
+  items: Array<{ id: string; name: string; quantity: number; selectedColor?: string | null; selectedColors?: string[]; selectedMaterial?: string | null; subtotalCents: number }>;
   subtotalCents: number;
   rewardDiscountCents: number;
   taxCents: number;
@@ -273,7 +273,7 @@ export function CheckoutForm({
             <div key={item.id} className="flex items-start justify-between gap-4 text-sm">
               <div>
                 <p className="font-medium">{item.quantity} x {item.name}</p>
-                <p className="text-muted-foreground">{item.selectedColor} {item.selectedMaterial}</p>
+                <p className="text-muted-foreground">{(item.selectedColors?.length ? item.selectedColors.join(" + ") : item.selectedColor)} {item.selectedMaterial}</p>
               </div>
               <span>{money(item.subtotalCents)}</span>
             </div>

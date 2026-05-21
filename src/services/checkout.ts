@@ -6,7 +6,9 @@ import { calculateProductPrice, createPricingSnapshot } from "@/services/pricing
 import { applyRewardRedemptionToOrder, awardOrderPoints, finalizeRewardRedemption, getRewardsSettings } from "@/services/rewards";
 import { prepareCheckoutShipping, type CheckoutFulfillmentInput } from "@/services/shipping";
 import { clearActiveCart, summarizeCart, type CartFulfillment } from "@/services/cart";
+import { optimizeQueueForLoadedFilament } from "@/services/queue";
 import { recordPlatformEvent } from "./events";
+import { sendOrderEmail } from "./email";
 
 export async function createProductCheckout(input: { productId: string; customerId: string; customerEmail?: string | null; selectedFilamentMaterialId?: string | null; selectedMaterial?: string | null; selectedColor?: string | null; fulfillment: CheckoutFulfillmentInput }) {
   const product = await prisma.product.findFirstOrThrow({
@@ -77,6 +79,7 @@ export async function createProductCheckout(input: { productId: string; customer
       userId: input.customerId,
       orderId: created.id,
       productSubtotalCents: preRewardProductCents,
+      shippingCents: shipping.shippingAmountCents,
       settings: rewardsSettings
     });
     if (!reward.discountCents) return created;
@@ -84,6 +87,7 @@ export async function createProductCheckout(input: { productId: string; customer
       where: { id: created.id },
       data: {
         totalCents: preRewardTotalCents - reward.discountCents,
+        shippingAmountCents: shipping.shippingAmountCents - (reward.shippingDiscountCents ?? 0),
         rewardPointsRedeemed: reward.pointsRedeemed,
         rewardDiscountCents: reward.discountCents
       }
@@ -129,6 +133,9 @@ export async function createProductCheckout(input: { productId: string; customer
       shippingService: shipping.rate?.servicelevel?.name ?? shipping.rate?.servicelevel_name
     }
   });
+  void sendOrderEmail("order-confirmation", order.id).catch((error) => {
+    console.error("Could not send order confirmation email", error);
+  });
 
   const stripe = await getStripe();
   if (!stripe) {
@@ -140,9 +147,11 @@ export async function createProductCheckout(input: { productId: string; customer
   }
 
   const baseUrl = getStripeBaseUrl();
-  const productLineItem = buildStripeProductLineItem({ ...product, priceCents: preRewardProductCents - order.rewardDiscountCents });
+  const shippingDiscountCents = Math.max(0, shipping.shippingAmountCents - order.shippingAmountCents);
+  const productRewardDiscountCents = Math.max(0, order.rewardDiscountCents - shippingDiscountCents);
+  const productLineItem = buildStripeProductLineItem({ ...product, priceCents: preRewardProductCents - productRewardDiscountCents });
   const shippingLineItem = buildStripeShippingLineItem({
-    amountCents: shipping.shippingAmountCents,
+    amountCents: order.shippingAmountCents,
     description: shipping.rate ? `${shipping.rate.provider ?? "Carrier"} ${shipping.rate.servicelevel?.name ?? shipping.rate.servicelevel_name ?? "shipping"}` : "Free local pickup"
   });
   const session = await stripe.checkout.sessions.create({
@@ -224,6 +233,8 @@ export async function createCartPaymentIntent(input: {
         selectedMaterial: preShippingSummary.items[0]?.selectedMaterial as never,
         selectedColor: preShippingSummary.items[0]?.selectedColor,
         selectedFilamentMaterialId: preShippingSummary.items[0]?.selectedFilamentMaterialId,
+        selectedFilamentMaterialIds: preShippingSummary.items[0]?.selectedFilamentMaterialIds ?? [],
+        selectedColors: preShippingSummary.items[0]?.selectedColors ?? [],
         items: {
           create: preShippingSummary.items.map((item) => ({
             productId: item.productId,
@@ -237,7 +248,9 @@ export async function createCartPaymentIntent(input: {
             estimatedPrintMinutes: item.estimatedPrintMinutes,
             selectedMaterial: item.selectedMaterial as never,
             selectedColor: item.selectedColor,
-            selectedFilamentMaterialId: item.selectedFilamentMaterialId
+            selectedFilamentMaterialId: item.selectedFilamentMaterialId,
+            selectedFilamentMaterialIds: item.selectedFilamentMaterialIds,
+            selectedColors: item.selectedColors
           }))
         }
       }
@@ -247,11 +260,13 @@ export async function createCartPaymentIntent(input: {
       userId: input.customerId,
       orderId: created.id,
       productSubtotalCents: preShippingSummary.subtotalCents,
+      shippingCents: shipping.shippingAmountCents,
       settings: rewardsSettings
     });
+    const customerShippingCents = Math.max(0, shipping.shippingAmountCents - (reward.shippingDiscountCents ?? 0));
     const finalSummary = await summarizeCart(input.customerId, {
-      shippingCents: shipping.shippingAmountCents,
-      rewardDiscountCents: reward.discountCents
+      shippingCents: customerShippingCents,
+      rewardDiscountCents: reward.productDiscountCents ?? reward.discountCents
     });
     return tx.order.update({
       where: { id: created.id },
@@ -260,6 +275,7 @@ export async function createCartPaymentIntent(input: {
         taxCents: finalSummary.taxCents,
         paymentFeeCents: finalSummary.paymentFeeCents,
         totalCents: finalSummary.totalCents,
+        shippingAmountCents: customerShippingCents,
         rewardPointsRedeemed: reward.pointsRedeemed,
         rewardDiscountCents: reward.discountCents
       }
@@ -267,8 +283,8 @@ export async function createCartPaymentIntent(input: {
   });
 
   const summary = await summarizeCart(input.customerId, {
-    shippingCents: shipping.shippingAmountCents,
-    rewardDiscountCents: order.rewardDiscountCents
+    shippingCents: order.shippingAmountCents,
+    rewardDiscountCents: Math.max(0, order.rewardDiscountCents - Math.max(0, shipping.shippingAmountCents - order.shippingAmountCents))
   });
   await prisma.order.update({
     where: { id: order.id },
@@ -315,6 +331,9 @@ export async function createCartPaymentIntent(input: {
       priceCents: summary.totalCents,
       fulfillmentMethod: shipping.method
     }
+  });
+  void sendOrderEmail("order-confirmation", order.id).catch((error) => {
+    console.error("Could not send order confirmation email", error);
   });
 
   const stripeCustomerId = await getOrCreateStripeCustomerId({
@@ -374,8 +393,8 @@ export async function markOrderPaidAndQueue(orderId: string, actorId?: string) {
   const order = await prisma.order.findUniqueOrThrow({
     where: { id: orderId },
     include: {
-      product: { include: { allowedFilaments: true } },
-      items: { include: { product: { include: { allowedFilaments: true } } } },
+      product: { include: { allowedFilaments: { include: { filamentMaterial: true } } } },
+      items: { include: { product: { include: { allowedFilaments: { include: { filamentMaterial: true } } } } } },
       printJobs: true
     }
   });
@@ -388,6 +407,8 @@ export async function markOrderPaidAndQueue(orderId: string, actorId?: string) {
           product: order.product,
           quantity: 1,
           selectedFilamentMaterialId: order.selectedFilamentMaterialId,
+          selectedFilamentMaterialIds: order.selectedFilamentMaterialIds,
+          selectedColors: order.selectedColors,
           selectedMaterial: order.selectedMaterial,
           selectedColor: order.selectedColor,
           estimatedGrams: order.product.estimatedGrams,
@@ -422,36 +443,46 @@ export async function markOrderPaidAndQueue(orderId: string, actorId?: string) {
     reservedGrams: number;
     spool: Awaited<ReturnType<typeof prisma.filamentSpool.findFirst>>;
     queuePosition: number;
+    slotIndex: number;
   }> = [];
   for (const item of purchasableItems) {
-    const selectedAllowed = item.selectedFilamentMaterialId
-      ? item.product.allowedFilaments.find((allowed) => allowed.filamentMaterialId === item.selectedFilamentMaterialId)
-      : null;
-    const reservedGrams = selectedAllowed?.estimatedGramsOverride ?? item.estimatedGrams ?? item.product.estimatedGrams;
-    const spool = await prisma.filamentSpool.findFirst({
-      where: {
-        id: item.selectedFilamentMaterialId ?? undefined,
-        material: (item.selectedMaterial ?? item.product.defaultMaterial) as never,
-        ...(item.selectedColor ? { color: item.selectedColor } : {}),
-        remainingGrams: { gt: reservedGrams }
-      },
-      orderBy: { remainingGrams: "asc" }
-    }) ?? await prisma.filamentSpool.findFirst({
-      where: {
-        material: (item.selectedMaterial ?? item.product.defaultMaterial) as never,
-        remainingGrams: { gt: reservedGrams }
-      },
-      orderBy: { remainingGrams: "asc" }
-    });
-    for (let index = 0; index < item.quantity; index += 1) {
-      jobPlans.push({
-        item,
-        selectedAllowed: selectedAllowed ?? null,
-        reservedGrams,
-        spool,
-        queuePosition: nextPosition
+    const selectedIds = jsonStringArray(item.selectedFilamentMaterialIds).length ? jsonStringArray(item.selectedFilamentMaterialIds) : item.selectedFilamentMaterialId ? [item.selectedFilamentMaterialId] : [];
+    const selectedColors = jsonStringArray(item.selectedColors).length ? jsonStringArray(item.selectedColors) : item.selectedColor ? [item.selectedColor] : [];
+    const slotCount = Math.max(1, Math.min(6, item.product.colorSlotCount ?? 1));
+    for (let slotIndex = 0; slotIndex < slotCount; slotIndex += 1) {
+      const selectedFilamentMaterialId = selectedIds[slotIndex] ?? selectedIds[0] ?? item.selectedFilamentMaterialId;
+      const selectedColor = selectedColors[slotIndex] ?? selectedColors[0] ?? item.selectedColor;
+      const selectedAllowed = selectedFilamentMaterialId
+        ? item.product.allowedFilaments.find((allowed) => allowed.filamentMaterialId === selectedFilamentMaterialId)
+        : null;
+      const slotDivisor = Math.max(1, slotCount);
+      const reservedGrams = Math.max(1, Math.ceil((selectedAllowed?.estimatedGramsOverride ?? item.estimatedGrams ?? item.product.estimatedGrams) / slotDivisor));
+      const spool = await prisma.filamentSpool.findFirst({
+        where: {
+          id: selectedFilamentMaterialId ?? undefined,
+          material: (selectedAllowed?.filamentMaterial?.material ?? item.selectedMaterial ?? item.product.defaultMaterial) as never,
+          ...(selectedColor ? { color: selectedColor } : {}),
+          remainingGrams: { gt: reservedGrams }
+        },
+        orderBy: { remainingGrams: "asc" }
+      }) ?? await prisma.filamentSpool.findFirst({
+        where: {
+          material: (item.selectedMaterial ?? item.product.defaultMaterial) as never,
+          remainingGrams: { gt: reservedGrams }
+        },
+        orderBy: { remainingGrams: "asc" }
       });
-      nextPosition += 1;
+      for (let index = 0; index < item.quantity; index += 1) {
+        jobPlans.push({
+          item,
+          selectedAllowed: selectedAllowed ?? null,
+          reservedGrams,
+          spool,
+          queuePosition: nextPosition,
+          slotIndex
+        });
+        nextPosition += 1;
+      }
     }
   }
 
@@ -471,12 +502,13 @@ export async function markOrderPaidAndQueue(orderId: string, actorId?: string) {
         paymentStatus: "PAID",
         printJobs: {
           create: jobPlans.map((plan) => ({
-            etaMinutes: plan.selectedAllowed?.estimatedPrintMinutesOverride ?? plan.item.estimatedPrintMinutes ?? plan.item.product.estimatedPrintMinutes,
+            etaMinutes: Math.max(1, Math.ceil((plan.selectedAllowed?.estimatedPrintMinutesOverride ?? plan.item.estimatedPrintMinutes ?? plan.item.product.estimatedPrintMinutes) / Math.max(1, plan.item.product.colorSlotCount ?? 1))),
             queuePosition: plan.queuePosition,
             status: "QUEUED",
             streamUrl: "/api/printer-feed/stream",
             filamentId: plan.spool?.id,
-            reservedFilamentGrams: plan.reservedGrams
+            reservedFilamentGrams: plan.reservedGrams,
+            assignmentBlockedReason: (plan.item.product.colorSlotCount ?? 1) > 1 ? `Color ${plan.slotIndex + 1} of ${plan.item.product.colorSlotCount}` : undefined
           }))
         }
       },
@@ -510,12 +542,21 @@ export async function markOrderPaidAndQueue(orderId: string, actorId?: string) {
       operatorGate: "Physical start still requires admin checklist"
     }
   });
+  void sendOrderEmail("order-processing", updated.id).catch((error) => {
+    console.error("Could not send order processing email", error);
+  });
+
+  await optimizeQueueForLoadedFilament(actorId);
 
   for (const job of updated.printJobs) {
     await enqueuePrintJob(job.id);
   }
 
   return updated;
+}
+
+function jsonStringArray(value: unknown) {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.length > 0) : [];
 }
 
 function paidProductSubtotalCents(order: { totalCents: number; shippingAmountCents: number; rewardDiscountCents: number }, earnOnDiscountedAmount: boolean) {

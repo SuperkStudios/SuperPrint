@@ -1,6 +1,7 @@
 import { evaluateQueueAdmission } from "../domain/queue-admission";
 import { prisma } from "../lib/prisma";
 import { recordPlatformEvent } from "./events";
+import { optimizeQueueForLoadedFilament } from "./queue";
 
 export async function admitSliceJobToQueue(sliceJobId: string, actorId: string) {
   const sliceJob = await prisma.sliceJob.findUniqueOrThrow({
@@ -87,6 +88,8 @@ export async function admitSliceJobToQueue(sliceJobId: string, actorId: string) 
       reservedGrams: admission.reservedGrams
     }
   });
+
+  await optimizeQueueForLoadedFilament(actorId);
 
   return result;
 }

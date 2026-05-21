@@ -158,3 +158,7 @@ npm run restore -- --bundle=/data/backup-staging/superprint-RUNID.tar.gz.enc --c
 npm test
 npm run build
 ```
+
+## Production Deploy
+
+See [docs/production-deploy.md](docs/production-deploy.md) for the VPS deployment, HTTPS/firewall checklist, and secure SuperNode setup for connecting the hosted app to your local PC and printer without exposing the printer to the internet.

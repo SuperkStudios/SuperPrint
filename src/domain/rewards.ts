@@ -8,6 +8,28 @@ export type RewardsSettingsInput = {
   reservationTtlMinutes: number;
 };
 
+export type RewardPreset = {
+  id: string;
+  label: string;
+  description: string;
+  points: number;
+  kind: "AMOUNT_OFF" | "PERCENT_OFF" | "FREE_SHIPPING";
+  valueCents?: number;
+  percent?: number;
+};
+
+export const MINIMUM_POST_REWARD_SUBTOTAL_CENTS = 500;
+
+export const rewardPresets: RewardPreset[] = [
+  { id: "amount-100", label: "$1 off", description: "Take $1 off a product order.", points: 100, kind: "AMOUNT_OFF", valueCents: 100 },
+  { id: "amount-250", label: "$2.50 off", description: "Take $2.50 off a product order.", points: 250, kind: "AMOUNT_OFF", valueCents: 250 },
+  { id: "amount-500", label: "$5 off", description: "Take $5 off a product order.", points: 500, kind: "AMOUNT_OFF", valueCents: 500 },
+  { id: "amount-1000", label: "$10 off", description: "Take $10 off a product order.", points: 1000, kind: "AMOUNT_OFF", valueCents: 1000 },
+  { id: "percent-10", label: "10% off", description: "Take 10% off a product order.", points: 500, kind: "PERCENT_OFF", percent: 0.1 },
+  { id: "percent-20", label: "20% off", description: "Take 20% off a product order.", points: 1000, kind: "PERCENT_OFF", percent: 0.2 },
+  { id: "free-shipping", label: "Free shipping", description: "Use points to cover standard shipping.", points: 750, kind: "FREE_SHIPPING" }
+];
+
 export const defaultRewardsSettings: RewardsSettingsInput = {
   pointsPerDollar: 10,
   redemptionPointsPerDollar: 100,
@@ -57,33 +79,53 @@ export function buildRewardsSettingsUpdate(input: Partial<RewardsSettingsInput>)
 export function calculateRewardRedemption(input: {
   userBalance: number;
   productSubtotalCents: number;
+  shippingCents?: number;
+  rewardId?: string | null;
   requestedPoints?: number | null;
   settings?: RewardsSettingsInput;
 }) {
   const settings = input.settings ?? defaultRewardsSettings;
-  const requestedPoints = Math.max(0, Math.floor(input.requestedPoints ?? 0));
+  const preset = resolveRewardPreset(input.rewardId, input.requestedPoints);
+  const requestedPoints = preset?.points ?? Math.max(0, Math.floor(input.requestedPoints ?? 0));
   if (!requestedPoints) return emptyRedemption("No rewards requested.");
-  if (requestedPoints < settings.minimumRedemptionPoints) {
-    return emptyRedemption(`Redeem at least ${settings.minimumRedemptionPoints} points.`);
-  }
+  if (!preset && requestedPoints < settings.minimumRedemptionPoints) return emptyRedemption(`Redeem at least ${settings.minimumRedemptionPoints} points.`);
   if (requestedPoints > input.userBalance) {
     return emptyRedemption("Not enough rewards points.");
   }
 
-  const maxDiscountCents = Math.floor(Math.max(0, input.productSubtotalCents) * settings.maxDiscountPercent);
-  const requestedDiscountCents = Math.floor((requestedPoints / settings.redemptionPointsPerDollar) * 100);
-  const discountCents = Math.min(maxDiscountCents, requestedDiscountCents, Math.max(0, input.productSubtotalCents - 1));
-  if (discountCents <= 0) return emptyRedemption("Rewards cannot reduce this order.");
-
-  const pointsRedeemed = Math.min(requestedPoints, Math.ceil((discountCents / 100) * settings.redemptionPointsPerDollar));
-  if (pointsRedeemed < settings.minimumRedemptionPoints) {
-    return emptyRedemption(`Redeem at least ${settings.minimumRedemptionPoints} points.`);
+  const maxProductDiscountCents = Math.max(0, input.productSubtotalCents - MINIMUM_POST_REWARD_SUBTOTAL_CENTS);
+  if (preset?.kind === "FREE_SHIPPING") {
+    const shippingDiscountCents = Math.max(0, Math.round(input.shippingCents ?? 0));
+    if (shippingDiscountCents <= 0) return emptyRedemption("Free shipping can only be used on shipped orders with a shipping charge.");
+    return {
+      pointsRedeemed: preset.points,
+      discountCents: shippingDiscountCents,
+      productDiscountCents: 0,
+      shippingDiscountCents,
+      maxDiscountCents: shippingDiscountCents,
+      rewardId: preset.id,
+      error: null
+    };
   }
+
+  const requestedDiscountCents = preset?.kind === "AMOUNT_OFF"
+    ? preset.valueCents ?? 0
+    : preset?.kind === "PERCENT_OFF"
+      ? Math.floor(Math.max(0, input.productSubtotalCents) * (preset.percent ?? 0))
+      : Math.floor((requestedPoints / settings.redemptionPointsPerDollar) * 100);
+  const productDiscountCents = Math.min(requestedDiscountCents, maxProductDiscountCents);
+  if (productDiscountCents <= 0) return emptyRedemption("Rewards require at least a $5 product subtotal after discount.");
+
+  const pointsRedeemed = preset?.points ?? Math.min(requestedPoints, Math.ceil((productDiscountCents / 100) * settings.redemptionPointsPerDollar));
+  if (!preset && pointsRedeemed < settings.minimumRedemptionPoints) return emptyRedemption(`Redeem at least ${settings.minimumRedemptionPoints} points.`);
 
   return {
     pointsRedeemed,
-    discountCents,
-    maxDiscountCents,
+    discountCents: productDiscountCents,
+    productDiscountCents,
+    shippingDiscountCents: 0,
+    maxDiscountCents: maxProductDiscountCents,
+    rewardId: preset?.id ?? null,
     error: null
   };
 }
@@ -102,9 +144,18 @@ function emptyRedemption(error: string) {
   return {
     pointsRedeemed: 0,
     discountCents: 0,
+    productDiscountCents: 0,
+    shippingDiscountCents: 0,
     maxDiscountCents: 0,
+    rewardId: null,
     error
   };
+}
+
+export function resolveRewardPreset(rewardId?: string | null, requestedPoints?: number | null) {
+  if (rewardId) return rewardPresets.find((preset) => preset.id === rewardId) ?? null;
+  const points = Math.max(0, Math.floor(requestedPoints ?? 0));
+  return rewardPresets.find((preset) => preset.kind === "AMOUNT_OFF" && preset.points === points) ?? null;
 }
 
 function positiveNumber(value: unknown, fallback: number) {

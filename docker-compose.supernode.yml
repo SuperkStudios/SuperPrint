@@ -1,0 +1,16 @@
+services:
+  supernode:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: npm run supernode
+    restart: unless-stopped
+    env_file:
+      - .env.supernode
+    volumes:
+      - ./supernode-data/uploads:/data/uploads
+      - ./supernode-data/sliced:/data/sliced
+      - ./supernode-data/videos:/data/videos
+      - ./supernode-data/timelapses:/data/timelapses
+      - ./supernode-data/thumbnails:/data/thumbnails
+      - ./supernode-data/node-jobs:/data/node-jobs

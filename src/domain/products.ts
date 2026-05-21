@@ -11,6 +11,7 @@ export const productInputSchema = z.object({
     .refine((value) => value === "__LOCAL_IMAGE__" || value.startsWith("/api/products/"), "Product images must be uploaded locally"),
   imageStorageKey: z.string().trim().optional(),
   productFileStorageKey: z.string().trim().optional(),
+  previewPlateStorageKey: z.string().trim().optional().nullable(),
   priceCents: z.number().int().positive(),
   pricingMode: z.enum(["FIXED", "DYNAMIC"]).default("DYNAMIC"),
   fixedPriceCents: z.number().int().positive().optional().nullable(),
@@ -27,6 +28,17 @@ export const productInputSchema = z.object({
   materialCostCents: z.number().int().nonnegative().optional(),
   defaultMaterial: z.enum(["PLA", "PLA_PLUS", "PETG", "ABS", "ASA", "TPU", "NYLON", "RESIN", "CARBON_FIBER_PETG"]),
   defaultFilamentMaterialId: z.string().optional().nullable(),
+  colorSlotCount: z.number().int().min(1).max(6).default(1),
+  maxBatchQuantity: z.number().int().min(1).max(200).default(1),
+  parts: z.array(z.object({
+    name: z.string().trim().min(1),
+    fileStorageKey: z.string().trim().min(1),
+    role: z.string().trim().min(1).default("part"),
+    colorSlotIndex: z.number().int().min(0).max(5).default(0),
+    colorSlotPattern: z.array(z.number().int().min(0).max(5)).max(100).default([]),
+    quantityPerUnit: z.number().int().min(1).max(100).default(1),
+    displayOrder: z.number().int().nonnegative().default(0)
+  })).default([]),
   allowedFilaments: z.array(z.object({
     filamentMaterialId: z.string(),
     estimatedGramsOverride: z.number().int().positive().optional().nullable(),

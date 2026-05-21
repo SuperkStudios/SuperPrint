@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 
 export async function upsertProduct(input: ProductInput & { id?: string }, actorId: string) {
   const product = normalizeProductInput(input);
-  const { allowedFilaments, ...productData } = product;
+  const { allowedFilaments, parts, ...productData } = product;
   const saved = input.id
     ? await prisma.product.update({
         where: { id: input.id },
@@ -14,6 +14,7 @@ export async function upsertProduct(input: ProductInput & { id?: string }, actor
         data: productData as Prisma.ProductCreateInput
       });
   await replaceAllowedFilaments(saved.id, allowedFilaments.length ? allowedFilaments : fallbackAllowedFilament(product.defaultFilamentMaterialId));
+  await replaceProductParts(saved.id, parts);
   const finalProduct =
     saved.imageUrl === "__LOCAL_IMAGE__"
       ? await prisma.product.update({
@@ -25,6 +26,25 @@ export async function upsertProduct(input: ProductInput & { id?: string }, actor
   void actorId;
 
   return finalProduct;
+}
+
+async function replaceProductParts(productId: string, parts: ProductInput["parts"]) {
+  await prisma.$transaction(async (tx) => {
+    await tx.productPart.deleteMany({ where: { productId } });
+    if (!parts.length) return;
+    await Promise.all(parts.map((part, index) => tx.productPart.create({
+      data: {
+        productId,
+        name: part.name,
+        fileStorageKey: part.fileStorageKey,
+        role: part.role,
+        colorSlotIndex: part.colorSlotIndex,
+        colorSlotPattern: part.colorSlotPattern,
+        quantityPerUnit: part.quantityPerUnit,
+        displayOrder: part.displayOrder ?? index
+      }
+    })));
+  });
 }
 
 async function replaceAllowedFilaments(productId: string, allowedFilaments: ProductInput["allowedFilaments"]) {

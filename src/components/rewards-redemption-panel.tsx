@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { money } from "@/lib/utils";
 
 type RewardTransaction = {
@@ -19,6 +18,15 @@ type RewardTransaction = {
 type RewardsSummary = {
   balance: number;
   redeemableCents: number;
+  rewardPresets: Array<{
+    id: string;
+    label: string;
+    description: string;
+    points: number;
+    kind: "AMOUNT_OFF" | "PERCENT_OFF" | "FREE_SHIPPING";
+    valueCents?: number;
+    percent?: number;
+  }>;
   settings: {
     pointsPerDollar: number;
     redemptionPointsPerDollar: number;
@@ -30,26 +38,21 @@ type RewardsSummary = {
 
 export function RewardsRedemptionPanel({ initialSummary }: { initialSummary: RewardsSummary }) {
   const [summary, setSummary] = useState(initialSummary);
-  const [points, setPoints] = useState(initialSummary.settings.minimumRedemptionPoints);
+  const [selectedRewardId, setSelectedRewardId] = useState(initialSummary.rewardPresets[0]?.id ?? "");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const activePoints = summary.activeRedemptions.reduce((total, reward) => total + Math.abs(reward.points), 0);
   const activatablePoints = summary.balance + activePoints;
-  const suggestedRewards = useMemo(() => {
-    const minimum = summary.settings.minimumRedemptionPoints;
-    return [minimum, 1000, 2500, 5000]
-      .filter((value, index, values) => value >= minimum && values.indexOf(value) === index)
-      .filter((value) => value <= activatablePoints);
-  }, [activatablePoints, summary.settings.minimumRedemptionPoints]);
-  const previewCents = Math.floor((Math.max(0, points) / summary.settings.redemptionPointsPerDollar) * 100);
+  const selectedReward = useMemo(() => summary.rewardPresets.find((reward) => reward.id === selectedRewardId) ?? summary.rewardPresets[0], [selectedRewardId, summary.rewardPresets]);
 
   async function run(action: "redeem" | "unredeem", rewardTransactionId?: string) {
+    if (action === "redeem" && !selectedReward) return;
     setLoading(true);
     setMessage("");
     const response = await fetch("/api/rewards", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(action === "redeem" ? { action, points } : { action, rewardTransactionId })
+      body: JSON.stringify(action === "redeem" ? { action, rewardId: selectedReward.id, points: selectedReward.points } : { action, rewardTransactionId })
     });
     const body = await response.json().catch(() => null);
     setLoading(false);
@@ -68,36 +71,37 @@ export function RewardsRedemptionPanel({ initialSummary }: { initialSummary: Rew
           <p className="text-sm font-medium text-muted-foreground">Available balance</p>
           <p className="mt-2 text-4xl font-semibold">{summary.balance} points</p>
           <p className="mt-2 text-sm text-muted-foreground">
-            Earn {summary.settings.pointsPerDollar} points per $1. Redeem {summary.settings.redemptionPointsPerDollar} points for $1 off.
+            Earn {summary.settings.pointsPerDollar} points per $1. Rewards do not earn points on the order where they are used.
           </p>
         </div>
 
         <div className="grid gap-2 border-t pt-4">
-          <label htmlFor="reward-points" className="text-sm font-medium">Activate checkout reward</label>
-          <Input
-            id="reward-points"
-            type="number"
-            min={summary.settings.minimumRedemptionPoints}
-            step={100}
-            value={points}
-            onChange={(event) => setPoints(Number(event.target.value))}
-          />
+          <p className="text-sm font-medium">Activate checkout reward</p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {summary.rewardPresets.map((reward) => {
+              const disabled = reward.points > activatablePoints;
+              return (
+                <button
+                  key={reward.id}
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => setSelectedRewardId(reward.id)}
+                  className={`rounded-md border p-3 text-left transition ${selectedReward?.id === reward.id ? "border-primary bg-primary/10" : "bg-background hover:bg-muted"} ${disabled ? "cursor-not-allowed opacity-45" : ""}`}
+                >
+                  <span className="block font-medium">{reward.label}</span>
+                  <span className="mt-1 block text-sm text-muted-foreground">{reward.points} points</span>
+                  <span className="mt-1 block text-xs text-muted-foreground">{reward.description}</span>
+                </button>
+              );
+            })}
+          </div>
           <p className="text-sm text-muted-foreground">
-            {points} points becomes {money(previewCents)} off and auto-applies to your next eligible checkout.
+            Product subtotal must stay at least {money(500)} after product discounts. Max points spend is 1000 for {money(1000)} off.
           </p>
-          {suggestedRewards.length ? (
-            <div className="flex flex-wrap gap-2">
-              {suggestedRewards.map((value) => (
-                <Button key={value} type="button" variant="outline" size="sm" onClick={() => setPoints(value)}>
-                  {money(Math.floor((value / summary.settings.redemptionPointsPerDollar) * 100))}
-                </Button>
-              ))}
-            </div>
-          ) : null}
           <Button
             type="button"
             onClick={() => run("redeem")}
-            disabled={loading || points > activatablePoints || points < summary.settings.minimumRedemptionPoints}
+            disabled={loading || !selectedReward || selectedReward.points > activatablePoints}
           >
             Activate reward
           </Button>
@@ -114,7 +118,7 @@ export function RewardsRedemptionPanel({ initialSummary }: { initialSummary: Rew
           {summary.activeRedemptions.length ? summary.activeRedemptions.slice(0, 1).map((reward) => (
             <div key={reward.id} className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-background p-3">
               <div>
-                <p className="font-medium">{money(reward.centsBasis)} off checkout</p>
+                <p className="font-medium">{reward.description.replace(/\s*\[reward:[^\]]+\]/, "")}</p>
                 <p className="text-sm text-muted-foreground">{Math.abs(reward.points)} points redeemed</p>
               </div>
               <Button type="button" variant="outline" size="sm" disabled={loading} onClick={() => run("unredeem", reward.id)}>

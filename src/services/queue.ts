@@ -21,6 +21,7 @@ import { resolveLocalStoragePath } from "../lib/storage";
 import { recordPlatformEvent } from "./events";
 import { attachCompletedPrintTimelapse } from "./timelapse-media";
 import { maybeCreateLabelAfterPrint } from "./shipping";
+import { sendOrderEmail } from "./email";
 
 export async function getPublicQueueState() {
   const [current, nextJobs, recentPrints, printers] = await Promise.all([
@@ -107,10 +108,14 @@ export async function optimizeQueueForLoadedFilament(actorId?: string) {
 
   const plan = planMaterialAwareQueue({
     currentMaterial: printer?.currentFilament?.material,
+    currentColor: printer?.currentFilament?.color,
+    currentFilamentId: printer?.currentFilament?.id,
     jobs: queuedJobs.map((job) => ({
       id: job.id,
       queuePosition: job.queuePosition,
-      material: job.filament?.material
+      material: job.filament?.material,
+      color: job.filament?.color,
+      filamentId: job.filament?.id
     }))
   });
 
@@ -120,7 +125,8 @@ export async function optimizeQueueForLoadedFilament(actorId?: string) {
 
   let task = null;
   if (printer && plan.requiredFilamentChange) {
-    const title = `Change filament to ${plan.requiredFilamentChange.toMaterial}`;
+    const toLabel = [plan.requiredFilamentChange.toColor, plan.requiredFilamentChange.toMaterial].filter(Boolean).join(" ");
+    const title = `Change filament to ${toLabel}`;
     const existing = await prisma.maintenanceTask.findFirst({
       where: {
         printerId: printer.id,
@@ -259,6 +265,11 @@ export async function completePrintJob(printJobId: string, actorId?: string) {
   void maybeCreateLabelAfterPrint(updated.order.id).catch((error) => {
     console.error("Could not run post-print Shippo label automation", error);
   });
+  if (updated.order.fulfillmentMethod === "PICKUP") {
+    void sendOrderEmail("order-ready-pickup", updated.order.id).catch((error) => {
+      console.error("Could not send pickup ready email", error);
+    });
+  }
 
   return updated;
 }

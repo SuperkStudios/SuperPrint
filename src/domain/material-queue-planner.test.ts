@@ -25,8 +25,26 @@ describe("material-aware queue planner", () => {
     expect(plan.orderedJobIds).toEqual(["petg_1"]);
     expect(plan.requiredFilamentChange).toEqual({
       fromMaterial: "PLA",
+      fromColor: null,
       toMaterial: "PETG",
+      toColor: null,
       reason: "Next queued job requires PETG, but PLA is loaded"
     });
+  });
+
+  it("groups queued jobs by exact color after the loaded spool work", () => {
+    const plan = planMaterialAwareQueue({
+      currentMaterial: "PLA",
+      currentColor: "Red",
+      jobs: [
+        { id: "black_1", queuePosition: 1, material: "PLA", color: "Black" },
+        { id: "red_1", queuePosition: 2, material: "PLA", color: "Red" },
+        { id: "black_2", queuePosition: 3, material: "PLA", color: "Black" },
+        { id: "white_1", queuePosition: 4, material: "PLA", color: "White" }
+      ]
+    });
+
+    expect(plan.orderedJobIds).toEqual(["red_1", "black_1", "black_2", "white_1"]);
+    expect(plan.requiredFilamentChange).toBeNull();
   });
 });

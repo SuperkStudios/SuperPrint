@@ -3,7 +3,9 @@ import {
   calculateRewardEarnedPoints,
   calculateRewardRedemption,
   defaultRewardsSettings,
+  rewardPresets,
   resolveRewardsSettings,
+  resolveRewardPreset,
   rewardSettingKeys,
   type RewardsSettingsInput
 } from "@/domain/rewards";
@@ -31,6 +33,7 @@ export async function getRewardsSummary(userId: string) {
     balance: user.rewardsPointsBalance,
     redeemableCents: Math.floor((user.rewardsPointsBalance / settings.redemptionPointsPerDollar) * 100),
     settings,
+    rewardPresets,
     activeRedemptions: transactions.filter((transaction) => transaction.type === "REDEEM_RESERVED" && transaction.status === "PENDING" && !transaction.orderId),
     transactions
   };
@@ -39,6 +42,8 @@ export async function getRewardsSummary(userId: string) {
 export async function previewRewardRedemption(input: {
   userId: string;
   productSubtotalCents: number;
+  shippingCents?: number;
+  rewardId?: string | null;
   requestedPoints?: number | null;
   settings?: RewardsSettingsInput;
 }) {
@@ -49,6 +54,8 @@ export async function previewRewardRedemption(input: {
   return calculateRewardRedemption({
     userBalance: user.rewardsPointsBalance,
     productSubtotalCents: input.productSubtotalCents,
+    shippingCents: input.shippingCents,
+    rewardId: input.rewardId,
     requestedPoints: input.requestedPoints,
     settings
   });
@@ -59,10 +66,13 @@ export async function reserveRewardPoints(input: {
   userId: string;
   orderId: string;
   productSubtotalCents: number;
+  shippingCents?: number;
+  rewardId?: string | null;
   requestedPoints?: number | null;
   settings?: RewardsSettingsInput;
 }) {
-  const requestedPoints = Math.max(0, Math.floor(input.requestedPoints ?? 0));
+  const selectedPreset = resolveRewardPreset(input.rewardId, input.requestedPoints);
+  const requestedPoints = selectedPreset?.points ?? Math.max(0, Math.floor(input.requestedPoints ?? 0));
   if (!requestedPoints) return { pointsRedeemed: 0, discountCents: 0 };
 
   const settings = input.settings ?? defaultRewardsSettings;
@@ -73,6 +83,8 @@ export async function reserveRewardPoints(input: {
   const redemption = calculateRewardRedemption({
     userBalance: user.rewardsPointsBalance,
     productSubtotalCents: input.productSubtotalCents,
+    shippingCents: input.shippingCents,
+    rewardId: selectedPreset?.id ?? input.rewardId,
     requestedPoints,
     settings
   });
@@ -90,7 +102,7 @@ export async function reserveRewardPoints(input: {
       status: "PENDING",
       points: -redemption.pointsRedeemed,
       centsBasis: redemption.discountCents,
-      description: `Reserved ${redemption.pointsRedeemed} points for checkout.`,
+      description: `${selectedPreset?.label ?? formatCents(redemption.discountCents)} checkout reward reserved. ${rewardDescriptionTag(selectedPreset?.id ?? redemption.rewardId)}`,
       expiresAt: new Date(Date.now() + settings.reservationTtlMinutes * 60 * 1000)
     }
   });
@@ -101,15 +113,12 @@ export async function reserveRewardPoints(input: {
   };
 }
 
-export async function createRewardRedemption(input: { userId: string; requestedPoints: number }) {
+export async function createRewardRedemption(input: { userId: string; requestedPoints?: number; rewardId?: string }) {
   await releaseExpiredRewardReservations(input.userId);
-  const settings = await getRewardsSettings();
-  const requestedPoints = Math.max(0, Math.floor(input.requestedPoints));
-  if (requestedPoints < settings.minimumRedemptionPoints) {
-    throw new Error(`Redeem at least ${settings.minimumRedemptionPoints} points.`);
-  }
-  const discountCents = Math.floor((requestedPoints / settings.redemptionPointsPerDollar) * 100);
-  if (discountCents <= 0) throw new Error("Rewards cannot create a coupon for that amount.");
+  const selectedPreset = resolveRewardPreset(input.rewardId, input.requestedPoints);
+  if (!selectedPreset) throw new Error("Choose one of the available rewards.");
+  const requestedPoints = selectedPreset.points;
+  const discountCents = selectedPreset.kind === "AMOUNT_OFF" ? selectedPreset.valueCents ?? 0 : 0;
 
   return prisma.$transaction(async (tx) => {
     const user = await tx.user.findUniqueOrThrow({
@@ -159,7 +168,7 @@ export async function createRewardRedemption(input: { userId: string; requestedP
         status: "PENDING",
         points: -requestedPoints,
         centsBasis: discountCents,
-        description: `${formatCents(discountCents)} checkout reward created.`,
+        description: `${selectedPreset.label} checkout reward created. ${rewardDescriptionTag(selectedPreset.id)}`,
         expiresAt: null
       }
     });
@@ -210,6 +219,7 @@ export async function applyRewardRedemptionToOrder(input: {
   userId: string;
   orderId: string;
   productSubtotalCents: number;
+  shippingCents?: number;
   settings?: RewardsSettingsInput;
 }) {
   const settings = input.settings ?? defaultRewardsSettings;
@@ -222,26 +232,34 @@ export async function applyRewardRedemptionToOrder(input: {
     },
     orderBy: { createdAt: "desc" }
   });
-  if (!reservation) return { pointsRedeemed: 0, discountCents: 0 };
+  if (!reservation) return { pointsRedeemed: 0, discountCents: 0, productDiscountCents: 0, shippingDiscountCents: 0 };
 
   const pointsRedeemed = Math.abs(reservation.points);
-  const maxDiscountCents = Math.floor(input.productSubtotalCents * settings.maxDiscountPercent);
-  const maxAllowedDiscountCents = Math.min(maxDiscountCents, Math.max(0, input.productSubtotalCents - 1));
-  if (reservation.centsBasis > maxAllowedDiscountCents) {
-    return { pointsRedeemed: 0, discountCents: 0 };
-  }
+  const rewardId = rewardIdFromDescription(reservation.description);
+  const redemption = calculateRewardRedemption({
+    userBalance: pointsRedeemed,
+    productSubtotalCents: input.productSubtotalCents,
+    shippingCents: input.shippingCents,
+    rewardId,
+    requestedPoints: pointsRedeemed,
+    settings
+  });
+  if (redemption.error) return { pointsRedeemed: 0, discountCents: 0, productDiscountCents: 0, shippingDiscountCents: 0 };
 
   await input.tx.rewardTransaction.update({
     where: { id: reservation.id },
     data: {
       orderId: input.orderId,
-      description: `${formatCents(reservation.centsBasis)} checkout reward applied.`,
+      centsBasis: redemption.discountCents,
+      description: `${rewardLabel(rewardId, redemption.discountCents)} checkout reward applied. ${rewardDescriptionTag(rewardId)}`,
       expiresAt: new Date(Date.now() + settings.reservationTtlMinutes * 60 * 1000)
     }
   });
   return {
     pointsRedeemed,
-    discountCents: reservation.centsBasis
+    discountCents: redemption.discountCents,
+    productDiscountCents: redemption.productDiscountCents,
+    shippingDiscountCents: redemption.shippingDiscountCents
   };
 }
 
@@ -278,6 +296,13 @@ export async function awardOrderPoints(input: {
     where: { orderId: input.orderId, userId: input.userId, type: "EARNED", status: "POSTED" }
   });
   if (existing) return existing;
+  const redeemed = await input.tx.rewardTransaction.findFirst({
+    where: { orderId: input.orderId, userId: input.userId, type: "REDEEMED", status: "POSTED" }
+  });
+  if (redeemed) {
+    await input.tx.order.update({ where: { id: input.orderId }, data: { rewardPointsEarned: 0 } });
+    return null;
+  }
 
   const settings = input.settings ?? defaultRewardsSettings;
   const points = calculateRewardEarnedPoints({
@@ -353,4 +378,17 @@ export async function releaseExpiredRewardReservations(userId?: string) {
 
 function formatCents(cents: number) {
   return `$${(Math.round(cents) / 100).toFixed(2)}`;
+}
+
+function rewardDescriptionTag(rewardId?: string | null) {
+  return rewardId ? `[reward:${rewardId}]` : "";
+}
+
+function rewardIdFromDescription(description: string) {
+  return /\[reward:([a-z0-9-]+)\]/i.exec(description)?.[1] ?? null;
+}
+
+function rewardLabel(rewardId: string | null, discountCents: number) {
+  const preset = resolveRewardPreset(rewardId);
+  return preset?.label ?? formatCents(discountCents);
 }

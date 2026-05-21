@@ -20,7 +20,7 @@ vi.mock("@/lib/storage", () => ({
   resolveLocalStoragePath: (key: string) => `/data/${key}`
 }));
 
-describe("product STL model route", () => {
+describe("product model route", () => {
   beforeEach(() => {
     readFileMock.mockReset();
     findUniqueMock.mockReset();
@@ -35,6 +35,6 @@ describe("product STL model route", () => {
     });
 
     expect(response.status).toBe(404);
-    await expect(response.json()).resolves.toEqual({ error: "Product STL not found" });
+    await expect(response.json()).resolves.toEqual({ error: "Product model not found" });
   });
 });

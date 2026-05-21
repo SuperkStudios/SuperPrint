@@ -4,6 +4,7 @@ import { normalizePrimaryColor } from "@/domain/theme";
 import { buildStripeSettingsUpdate, stripeSettingKeys } from "@/domain/stripe-settings";
 import { buildShippoSettingsUpdate, shippoSettingKeys } from "@/domain/shippo-settings";
 import { buildNotificationSettingsUpdate, notificationSettingKeys } from "@/domain/notification-settings";
+import { buildEmailSettingsUpdate, defaultEmailTemplates, emailSettingKeys } from "@/domain/email-templates";
 import { buildRewardsSettingsUpdate } from "@/domain/rewards";
 import { requireAdmin } from "@/lib/http";
 import { prisma } from "@/lib/prisma";
@@ -44,6 +45,23 @@ const settingsSchema = z.object({
     email: z.string().optional(),
     sms: z.string().optional(),
     webhookUrl: z.string().optional()
+  }).optional(),
+  email: z.object({
+    apiUrl: z.string().optional(),
+    apiKey: z.string().optional(),
+    noreplyFrom: z.string().email().optional(),
+    supportFrom: z.string().email().optional(),
+    brandName: z.string().optional(),
+    headerImageUrl: z.string().optional(),
+    footerNote: z.string().optional(),
+    headerHtml: z.string().optional(),
+    footerHtml: z.string().optional(),
+    templates: z.array(z.object({
+      id: z.enum(defaultEmailTemplates.map((template) => template.id) as [typeof defaultEmailTemplates[number]["id"], ...Array<typeof defaultEmailTemplates[number]["id"]>]),
+      subject: z.string().optional(),
+      text: z.string().optional(),
+      html: z.string().optional()
+    })).optional()
   }).optional(),
   pricing: z.object({
     machineHourlyRateCents: z.number().int().nonnegative().optional(),
@@ -106,6 +124,16 @@ export async function POST(request: Request) {
   if (body.notifications) {
     const notificationUpdates = buildNotificationSettingsUpdate(body.notifications);
     for (const [key, value] of Object.entries(notificationUpdates)) {
+      updates.push(upsertSetting(key, value));
+    }
+  }
+  if (body.email) {
+    const existingEmailSettings = await prisma.systemSetting.findMany({
+      where: { key: { in: emailSettingKeys() } }
+    });
+    const existingValues = Object.fromEntries(existingEmailSettings.map((setting) => [setting.key, setting.value]));
+    const emailUpdates = buildEmailSettingsUpdate(body.email, existingValues);
+    for (const [key, value] of Object.entries(emailUpdates)) {
       updates.push(upsertSetting(key, value));
     }
   }

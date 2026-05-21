@@ -26,7 +26,8 @@ const footerGroups = [
       { href: "/login", label: "Sign in" },
       { href: "/dashboard", label: "Dashboard" },
       { href: "/orders", label: "Orders" },
-      { href: "/profile", label: "Profile" }
+      { href: "/profile", label: "Profile" },
+      { href: "/support", label: "Support" }
     ]
   },
   {
@@ -68,7 +69,10 @@ export function SiteFooter() {
       </div>
       <div className="border-t">
         <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-5 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
-          <p>© {new Date().getFullYear()} SuperPrint. All rights reserved.</p>
+          <div className="flex items-center gap-3">
+            <BrandLogo markOnly className="opacity-90" />
+            <p>© {new Date().getFullYear()} SuperPrint. All rights reserved.</p>
+          </div>
           <div className="flex flex-wrap gap-4">
             <Link href="/legal" className="hover:text-foreground">Legal center</Link>
             <Link href="/legal#privacy" className="hover:text-foreground">Privacy</Link>

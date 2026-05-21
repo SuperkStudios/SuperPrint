@@ -58,6 +58,7 @@ function OrderCard({ order }: { order: {
   shippingState: string | null;
   shippingZip: string | null;
   selectedColor: string | null;
+  selectedColors: unknown;
   selectedMaterial: string | null;
   customer?: { email: string } | null;
   product?: { name: string } | null;
@@ -70,6 +71,8 @@ function OrderCard({ order }: { order: {
   }>;
 } }) {
   const latestJob = order.printJobs[0];
+  const selectedColors = Array.isArray(order.selectedColors) ? order.selectedColors.filter((color): color is string => typeof color === "string") : [];
+  const materialLabel = selectedColors.length ? selectedColors.join(" + ") : order.selectedColor ?? latestJob?.filament?.color ?? "-";
   return (
     <Card>
       <CardHeader className="flex-row items-start justify-between gap-4">
@@ -85,7 +88,7 @@ function OrderCard({ order }: { order: {
       <CardContent className="grid gap-4 md:grid-cols-[1fr_auto]">
         <div className="grid gap-2 text-sm md:grid-cols-4">
           <span><span className="text-muted-foreground">Total</span><br />{money(order.totalCents)}</span>
-          <span><span className="text-muted-foreground">Material</span><br />{order.selectedColor ?? latestJob?.filament?.color ?? "-"} {order.selectedMaterial ?? latestJob?.filament?.material ?? ""}</span>
+          <span><span className="text-muted-foreground">Material</span><br />{materialLabel} {order.selectedMaterial ?? latestJob?.filament?.material ?? ""}</span>
           <span><span className="text-muted-foreground">Printer</span><br />{latestJob?.printer?.publicName ?? "Unassigned"}</span>
           <span><span className="text-muted-foreground">Queue</span><br />{latestJob?.queuePosition ? `#${latestJob.queuePosition}` : latestJob?.status ?? "Not queued"}</span>
           <span><span className="text-muted-foreground">Delivery</span><br />{order.fulfillmentMethod === "PICKUP" ? `${order.shippingCity ?? "Fort Collins"}, ${order.shippingState ?? "CO"}` : `${order.shippingProvider ?? "Shippo"} ${order.shippingService ?? ""}`}</span>

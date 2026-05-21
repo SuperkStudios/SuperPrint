@@ -16,10 +16,12 @@ export function LoginForm() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [message, setMessage] = useState("");
+  const [canResendVerification, setCanResendVerification] = useState(false);
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setMessage("");
+    setCanResendVerification(false);
     if (mode === "signup" && password !== confirmPassword) {
       setMessage("Passwords do not match.");
       return;
@@ -41,11 +43,36 @@ export function LoginForm() {
       })
     });
     if (response.ok) {
+      if (mode === "signup") {
+        setMessage("Account created. Check your email to verify before signing in.");
+        setCanResendVerification(true);
+        return;
+      }
       window.location.href = nextPath;
       return;
     }
     const body = await response.json().catch(() => null);
+    if (body?.code === "EMAIL_NOT_VERIFIED" || body?.error === "EMAIL_NOT_VERIFIED") {
+      setMessage("Verify your email before signing in. We sent a fresh verification link.");
+      setCanResendVerification(true);
+      return;
+    }
     setMessage(body?.message ?? body?.error ?? "Authentication failed.");
+  }
+
+  async function resendVerification() {
+    if (!email) {
+      setMessage("Enter your email, then resend verification.");
+      return;
+    }
+    setMessage("Sending verification email...");
+    const response = await fetch("/api/account/verification/resend", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email, callbackURL: nextPath })
+    });
+    setMessage(response.ok ? "Verification email sent. Check your inbox." : "Could not send verification email.");
+    setCanResendVerification(response.ok);
   }
 
   async function social(provider: "google" | "apple") {
@@ -101,6 +128,11 @@ export function LoginForm() {
         ) : null}
         <Button type="submit" className="w-full">{mode === "signin" ? "Sign in" : "Create account"}</Button>
         {message ? <p className="text-sm text-muted-foreground">{message}</p> : null}
+        {canResendVerification ? (
+          <Button type="button" variant="outline" className="w-full" onClick={resendVerification}>
+            Resend verification email
+          </Button>
+        ) : null}
       </form>
     </div>
   );

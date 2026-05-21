@@ -19,6 +19,7 @@ const schema = z.object({
   imageUrl: z.string().optional(),
   imageStorageKey: z.string().optional(),
   productFileStorageKey: z.string().optional(),
+  previewPlateStorageKey: z.string().optional().nullable(),
   priceCents: z.number(),
   pricingMode: z.enum(["FIXED", "DYNAMIC"]).default("DYNAMIC"),
   fixedPriceCents: z.number().optional().nullable(),
@@ -35,6 +36,17 @@ const schema = z.object({
   materialCostCents: z.number().optional(),
   defaultMaterial: z.enum(["PLA", "PLA_PLUS", "PETG", "ABS", "ASA", "TPU", "NYLON", "RESIN", "CARBON_FIBER_PETG"]),
   defaultFilamentMaterialId: z.string().optional().nullable(),
+  colorSlotCount: z.number().int().min(1).max(6).default(1),
+  maxBatchQuantity: z.number().int().min(1).max(200).default(1),
+  parts: z.array(z.object({
+    name: z.string(),
+    fileStorageKey: z.string(),
+    role: z.string().default("part"),
+    colorSlotIndex: z.number().int().min(0).max(5).default(0),
+    colorSlotPattern: z.array(z.number().int().min(0).max(5)).max(100).default([]),
+    quantityPerUnit: z.number().int().positive().default(1),
+    displayOrder: z.number().int().nonnegative().default(0)
+  })).default([]),
   allowedFilaments: z.array(z.object({
     filamentMaterialId: z.string(),
     estimatedGramsOverride: z.number().int().positive().optional().nullable(),
@@ -59,6 +71,7 @@ export async function POST(request: Request) {
     body.imageUrl = existing?.imageUrl;
     body.imageStorageKey = existing?.imageStorageKey ?? undefined;
     body.productFileStorageKey = body.productFileStorageKey ?? existing?.productFileStorageKey ?? undefined;
+    body.previewPlateStorageKey = body.previewPlateStorageKey ?? existing?.previewPlateStorageKey ?? undefined;
   }
   if (!body.imageStorageKey && !body.productFileStorageKey) {
     return NextResponse.json({ error: "Upload a product image or an STL print file" }, { status: 400 });
@@ -94,14 +107,17 @@ async function readProductRequest(request: Request) {
   const formData = await request.formData();
   const imageFile = formData.get("imageFile");
   const printFile = formData.get("printFile");
+  const previewPlateFile = formData.get("previewPlateFile");
   const imageStorageKey = imageFile instanceof File && imageFile.size > 0 ? await storeProductFile(imageFile, "thumbnails", ["image/png", "image/jpeg", "image/webp"]) : undefined;
   const defaultFilamentMaterialId = stringValue(formData.get("defaultFilamentMaterialId"));
   const defaultSpool = defaultFilamentMaterialId ? await prisma.filamentSpool.findUnique({ where: { id: defaultFilamentMaterialId } }) : null;
   const material = String(formData.get("defaultMaterial") ?? defaultSpool?.material ?? "PLA");
   const parsedPrintFile = printFile instanceof File && printFile.size > 0 ? await storeProductPrintFile(printFile, material) : undefined;
+  const previewPlateStorageKey = previewPlateFile instanceof File && previewPlateFile.size > 0 ? await storeProductPrintFile(previewPlateFile, material).then((file) => file.storageKey) : undefined;
   const estimatedGrams = parsedPrintFile?.estimatedGrams ?? Number(formData.get("estimatedGrams") ?? 0);
   const spool = defaultSpool ?? await prisma.filamentSpool.findFirst({ where: { material: material as never }, orderBy: { rollCostCents: "desc" } });
   const allowedFilaments = parseAllowedFilaments(formData, defaultFilamentMaterialId ?? spool?.id);
+  const parts = await parseProductParts(formData);
   const fixedPriceCents = optionalCents(formData.get("fixedPriceCents"));
   const pricingMode = String(formData.get("pricingMode") ?? "DYNAMIC");
   const fallbackPriceCents = Number(formData.get("priceCents") ?? 0);
@@ -115,6 +131,7 @@ async function readProductRequest(request: Request) {
     imageUrl: imageStorageKey ? "__LOCAL_IMAGE__" : undefined,
     imageStorageKey,
     productFileStorageKey: parsedPrintFile?.storageKey,
+    previewPlateStorageKey,
     priceCents: pricingMode === "FIXED" ? fixedPriceCents || fallbackPriceCents || 1 : fallbackPriceCents || fixedPriceCents || 1,
     pricingMode,
     fixedPriceCents,
@@ -131,9 +148,79 @@ async function readProductRequest(request: Request) {
     materialCostCents: calculateProductMaterialCostCents({ estimatedGrams, rollCostCents: spool?.rollCostCents ?? 0 }),
     defaultMaterial: material,
     defaultFilamentMaterialId: defaultFilamentMaterialId ?? spool?.id,
+    colorSlotCount: Math.min(6, Math.max(1, Math.round(Number(formData.get("colorSlotCount") ?? 1)))),
+    maxBatchQuantity: Math.min(200, Math.max(1, Math.round(Number(formData.get("maxBatchQuantity") ?? 1)))),
+    parts,
     allowedFilaments,
     status: String(formData.get("status") ?? "ACTIVE")
   };
+}
+
+async function parseProductParts(formData: FormData) {
+  const existing = safeJsonArray(String(formData.get("existingParts") ?? ""));
+  const uploadedMeta = safeJsonArray(String(formData.get("uploadedPartMeta") ?? ""), { requireFileStorageKey: false });
+  const uploaded = await Promise.all(formData.getAll("partFiles")
+    .filter((file): file is File => file instanceof File && file.size > 0)
+    .map(async (file, index) => {
+      const stored = await storeProductPrintFile(file, String(formData.get("defaultMaterial") ?? "PLA"));
+      const cleanName = file.name.replace(/\.(stl|3mf)$/i, "");
+      const meta = uploadedMeta[index];
+      return {
+        name: meta?.name ?? cleanName,
+        fileStorageKey: stored.storageKey,
+        role: meta?.role ?? inferPartRole(cleanName),
+        colorSlotIndex: meta?.colorSlotIndex ?? inferPartColorSlot(cleanName),
+        colorSlotPattern: normalizeColorSlotPattern(meta?.colorSlotPattern, meta?.quantityPerUnit ?? 1, meta?.colorSlotIndex ?? inferPartColorSlot(cleanName)),
+        quantityPerUnit: meta?.quantityPerUnit ?? 1,
+        displayOrder: meta?.displayOrder ?? existing.length + index
+      };
+    }));
+  return [...existing, ...uploaded];
+}
+
+function safeJsonArray(value: string, options: { requireFileStorageKey?: boolean } = {}) {
+  if (!value.trim()) return [];
+  const requireFileStorageKey = options.requireFileStorageKey ?? true;
+  try {
+    const parsed = JSON.parse(value);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((item) => item && typeof item === "object")
+      .map((item, index) => ({
+        name: String(item.name ?? `Part ${index + 1}`),
+        fileStorageKey: String(item.fileStorageKey ?? ""),
+        role: String(item.role ?? "part"),
+        colorSlotIndex: Math.min(5, Math.max(0, Math.round(Number(item.colorSlotIndex ?? 0)))),
+        colorSlotPattern: normalizeColorSlotPattern(item.colorSlotPattern, Number(item.quantityPerUnit ?? 1), Number(item.colorSlotIndex ?? 0)),
+        quantityPerUnit: Math.max(1, Math.round(Number(item.quantityPerUnit ?? 1))),
+        displayOrder: Math.max(0, Math.round(Number(item.displayOrder ?? index)))
+      }))
+      .filter((item) => !requireFileStorageKey || item.fileStorageKey);
+  } catch {
+    return [];
+  }
+}
+
+function normalizeColorSlotPattern(value: unknown, quantity: number, fallbackSlot: number) {
+  const safeQuantity = Math.max(1, Math.round(Number(quantity) || 1));
+  const safeFallback = Math.min(5, Math.max(0, Math.round(Number(fallbackSlot) || 0)));
+  if (!Array.isArray(value)) return [];
+  return value
+    .slice(0, safeQuantity)
+    .map((slot) => Math.min(5, Math.max(0, Math.round(Number(slot) || safeFallback))));
+}
+
+function inferPartRole(name: string) {
+  const lower = name.toLowerCase();
+  if (lower.includes("gear")) return "gear";
+  if (lower.includes("connector") || lower.includes("bar")) return "connector";
+  return "part";
+}
+
+function inferPartColorSlot(name: string) {
+  const lower = name.toLowerCase();
+  if (lower.includes("right") || lower.includes("second") || lower.includes("color2")) return 1;
+  return 0;
 }
 
 function stringValue(value: FormDataEntryValue | null) {
@@ -189,7 +276,7 @@ async function storeProductFile(file: File, storageClass: "uploads" | "thumbnail
 }
 
 async function storeProductPrintFile(file: File, material: string) {
-  const storageKey = await storeProductFile(file, "uploads", ["model/stl", "application/octet-stream", "text/plain", "application/vnd.ms-pki.stl", ""]);
+  const storageKey = await storeProductFile(file, "uploads", ["model/stl", "model/3mf", "application/octet-stream", "application/vnd.ms-package.3dmanufacturing-3dmodel+xml", "text/plain", "application/vnd.ms-pki.stl", ""]);
   if (!/\.(stl|gcode|gco|g)$/i.test(file.name)) return { storageKey };
   const bytes = await file.arrayBuffer();
   const estimates = await estimatePrintFile({

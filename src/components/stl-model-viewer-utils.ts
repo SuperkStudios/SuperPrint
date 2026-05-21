@@ -11,7 +11,7 @@ export function prepareGeometryForBuildPlate(
   sourceGeometry: THREE.BufferGeometry,
   options: { targetSizeMm?: number; minPlateSizeMm?: number; platePaddingMm?: number } = {}
 ): PreparedBuildPlateGeometry {
-  const geometry = sourceGeometry.clone();
+  let geometry = sourceGeometry.clone();
   geometry.computeBoundingBox();
 
   const sourceBox = geometry.boundingBox;
@@ -20,7 +20,7 @@ export function prepareGeometryForBuildPlate(
   const center = new THREE.Vector3();
   sourceBox.getCenter(center);
   geometry.translate(-center.x, -center.y, -center.z);
-  geometry.rotateX(-Math.PI / 2);
+  geometry = orientGeometryFlatOnBuildPlate(geometry);
   geometry.computeBoundingBox();
 
   const rotatedBox = geometry.boundingBox;
@@ -67,4 +67,44 @@ export function prepareGeometryForBuildPlate(
       depth: Math.max(minPlateSize, Math.ceil(finalSize.z + padding))
     }
   };
+}
+
+function orientGeometryFlatOnBuildPlate(sourceGeometry: THREE.BufferGeometry) {
+  const rotations = [
+    [0, 0, 0],
+    [-Math.PI / 2, 0, 0],
+    [Math.PI / 2, 0, 0],
+    [0, -Math.PI / 2, 0],
+    [0, Math.PI / 2, 0],
+    [0, 0, Math.PI / 2]
+  ] as const;
+
+  let bestGeometry: THREE.BufferGeometry | null = null;
+  let bestScore = Number.POSITIVE_INFINITY;
+
+  for (const rotation of rotations) {
+    const candidate = sourceGeometry.clone();
+    candidate.rotateX(rotation[0]);
+    candidate.rotateY(rotation[1]);
+    candidate.rotateZ(rotation[2]);
+    candidate.computeBoundingBox();
+    const box = candidate.boundingBox;
+    if (!box) {
+      candidate.dispose();
+      continue;
+    }
+    const size = new THREE.Vector3();
+    box.getSize(size);
+    const footprint = Math.max(1, size.x * size.z);
+    const score = size.y - footprint * 0.000001;
+    if (score < bestScore) {
+      bestGeometry?.dispose();
+      bestGeometry = candidate;
+      bestScore = score;
+    } else {
+      candidate.dispose();
+    }
+  }
+
+  return bestGeometry ?? sourceGeometry;
 }

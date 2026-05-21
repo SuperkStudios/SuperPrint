@@ -8,6 +8,7 @@ export const staffPermissions = [
   "dashboard",
   "queue",
   "orders",
+  "support",
   "uploads",
   "products",
   "filament",
@@ -32,11 +33,10 @@ export const mainNavigation: NavItem[] = [
 
 export const userNavigation: NavItem[] = [
   { href: "/dashboard", label: "Dashboard" },
-  { href: "/store", label: "Store" },
-  { href: "/cart", label: "Cart" },
   { href: "/upload", label: "Upload STL" },
   { href: "/orders", label: "Orders" },
   { href: "/rewards", label: "Rewards" },
+  { href: "/support", label: "Support" },
   { href: "/profile", label: "Profile" }
 ];
 
@@ -44,6 +44,7 @@ export const adminNavigation: NavItem[] = [
   { href: "/admin", label: "Dashboard", permission: "dashboard" },
   { href: "/admin/queue", label: "Queue", permission: "queue" },
   { href: "/admin/orders", label: "Orders", permission: "orders" },
+  { href: "/admin/support", label: "Support", permission: "support" },
   { href: "/admin/uploads", label: "Uploads", permission: "uploads" },
   { href: "/admin/products", label: "Products", permission: "products" },
   { href: "/admin/filament", label: "Filament", permission: "filament" },

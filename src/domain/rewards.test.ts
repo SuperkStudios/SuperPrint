@@ -23,7 +23,7 @@ describe("rewards", () => {
       userBalance: 1000,
       productSubtotalCents: 5000,
       requestedPoints: 400,
-      settings: defaultRewardsSettings
+      settings: { ...defaultRewardsSettings, minimumRedemptionPoints: 5000 },
     });
 
     expect(redemption.discountCents).toBe(0);
@@ -46,7 +46,7 @@ describe("rewards", () => {
     const redemption = calculateRewardRedemption({
       userBalance: 5000,
       productSubtotalCents: 5000,
-      requestedPoints: 5000,
+      rewardId: "amount-1000",
       settings: defaultRewardsSettings
     });
 
@@ -54,14 +54,41 @@ describe("rewards", () => {
     expect(redemption.pointsRedeemed).toBe(1000);
   });
 
-  it("keeps the product line item positive", () => {
+  it("keeps at least a five dollar product subtotal after rewards", () => {
     const redemption = calculateRewardRedemption({
       userBalance: 10000,
       productSubtotalCents: 500,
-      requestedPoints: 10000,
+      rewardId: "amount-1000",
       settings: { ...defaultRewardsSettings, maxDiscountPercent: 1, minimumRedemptionPoints: 1 }
     });
 
-    expect(redemption.discountCents).toBe(499);
+    expect(redemption.discountCents).toBe(0);
+    expect(redemption.error).toContain("$5");
+  });
+
+  it("supports percentage reward presets", () => {
+    const redemption = calculateRewardRedemption({
+      userBalance: 1000,
+      productSubtotalCents: 5000,
+      rewardId: "percent-20",
+      settings: defaultRewardsSettings
+    });
+
+    expect(redemption.discountCents).toBe(1000);
+    expect(redemption.pointsRedeemed).toBe(1000);
+  });
+
+  it("supports free shipping reward presets", () => {
+    const redemption = calculateRewardRedemption({
+      userBalance: 750,
+      productSubtotalCents: 5000,
+      shippingCents: 649,
+      rewardId: "free-shipping",
+      settings: defaultRewardsSettings
+    });
+
+    expect(redemption.discountCents).toBe(649);
+    expect(redemption.productDiscountCents).toBe(0);
+    expect(redemption.shippingDiscountCents).toBe(649);
   });
 });

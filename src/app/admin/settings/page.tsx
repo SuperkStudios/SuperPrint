@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { publicStripeSettings, resolveStripeSettings, stripeSettingKeys } from "@/domain/stripe-settings";
 import { publicShippoSettings, resolveShippoSettings, shippoSettingKeys } from "@/domain/shippo-settings";
 import { notificationSettingKeys, publicNotificationSettings } from "@/domain/notification-settings";
+import { emailSettingKeys, publicEmailSettings } from "@/domain/email-templates";
 import { resolveRewardsSettings, rewardSettingKeys } from "@/domain/rewards";
 import { requireAdminPage } from "@/lib/admin-permissions";
 import { getPricingSettings } from "@/services/pricing";
@@ -14,7 +15,7 @@ export default async function AdminSettingsPage() {
   await requireAdminPage("settings");
   const [settings, pricingSettings] = await Promise.all([
     prisma.systemSetting.findMany({
-    where: { key: { in: ["company.brandName", "company.primaryColor", "filament.lowThresholdGrams", ...stripeSettingKeys(), ...shippoSettingKeys(), ...notificationSettingKeys(), ...rewardSettingKeys()] } }
+    where: { key: { in: ["company.brandName", "company.primaryColor", "filament.lowThresholdGrams", ...stripeSettingKeys(), ...shippoSettingKeys(), ...notificationSettingKeys(), ...emailSettingKeys(), ...rewardSettingKeys()] } }
     }),
     getPricingSettings()
   ]);
@@ -22,6 +23,7 @@ export default async function AdminSettingsPage() {
   const stripeSettings = publicStripeSettings(resolveStripeSettings({ settings: values }));
   const shippoSettings = publicShippoSettings(resolveShippoSettings({ settings: values }));
   const notificationSettings = publicNotificationSettings(values);
+  const emailSettings = publicEmailSettings(values);
   const rewardsSettings = resolveRewardsSettings(values);
 
   return (
@@ -39,6 +41,7 @@ export default async function AdminSettingsPage() {
         stripeSettings={stripeSettings}
         shippoSettings={shippoSettings}
         notificationSettings={notificationSettings}
+        emailSettings={emailSettings}
         pricingSettings={pricingSettings}
         rewardsSettings={rewardsSettings}
       />

@@ -53,19 +53,21 @@ export default async function AdminProductsPage() {
 
       <div className="overflow-x-auto rounded-md border bg-card text-card-foreground shadow-sm">
         <div className="min-w-[760px]">
-        <div className="grid grid-cols-[88px_1fr_120px_130px_120px] items-center gap-4 bg-muted px-4 py-3 text-xs font-medium uppercase text-muted-foreground">
+        <div className="grid grid-cols-[88px_1fr_120px_100px_130px_120px] items-center gap-4 bg-muted px-4 py-3 text-xs font-medium uppercase text-muted-foreground">
           <span>Preview</span>
           <span>Product</span>
           <span>Status</span>
+          <span>Colors</span>
           <span>Print</span>
           <span className="text-right">Actions</span>
         </div>
         {products.length ? products.map((product) => (
-          <div key={product.id} className="grid grid-cols-[88px_1fr_120px_130px_120px] items-center gap-4 border-t px-4 py-3">
+          <div key={product.id} className="grid grid-cols-[88px_1fr_120px_100px_130px_120px] items-center gap-4 border-t px-4 py-3">
             <div className="h-16 overflow-hidden rounded border bg-muted/20">
-              {product.productFileStorageKey && /\.stl$/i.test(product.productFileStorageKey) ? (
+              {(product.previewPlateStorageKey || product.productFileStorageKey) && /\.(stl|3mf)$/i.test(product.previewPlateStorageKey ?? product.productFileStorageKey ?? "") ? (
                 <StlModelViewer
                   src={`/api/products/${product.id}/model`}
+                  modelFormat={/\.3mf$/i.test(product.previewPlateStorageKey ?? product.productFileStorageKey ?? "") ? "3mf" : "stl"}
                   color={filamentColorToHex(materials.find((item) => item.material === product.defaultMaterial)?.colors[0] ?? product.defaultMaterial)}
                   className="h-16 border-0"
                 />
@@ -81,7 +83,8 @@ export default async function AdminProductsPage() {
               </p>
             </div>
             <Badge className="w-fit">{product.status}</Badge>
-            <p className="text-sm text-muted-foreground">{product.productFileStorageKey ? "Attached" : "Missing"}</p>
+            <p className="text-sm text-muted-foreground">{product.colorSlotCount}</p>
+            <p className="text-sm text-muted-foreground">{product.previewPlateStorageKey ? "Plate preview" : product.productFileStorageKey ? "Attached" : "Missing"}</p>
             <div className="flex justify-end">
               <Button asChild variant="outline" size="sm">
                 <Link href={`/admin/products/${product.id}/edit`}>

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { ShoppingCart } from "lucide-react";
 import "./globals.css";
 import { mainNavigation } from "@/domain/navigation";
 import { getCurrentSession } from "@/lib/auth";
@@ -49,14 +50,20 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
             </nav>
             <nav aria-label="Account actions" className="flex flex-wrap items-center justify-end gap-2">
               <ThemeToggle />
-              {!session?.user.id ? (
-                <Link
-                  href="/login"
-                  className="rounded bg-primary px-3 py-2 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90"
-                >
-                  Sign in
-                </Link>
-              ) : null}
+              <Link
+                href="/cart"
+                aria-label="Cart"
+                title="Cart"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-md border bg-background text-muted-foreground shadow-sm hover:bg-muted hover:text-foreground"
+              >
+                <ShoppingCart className="h-4 w-4" />
+              </Link>
+              <Link
+                href={session?.user.id ? "/dashboard" : "/login"}
+                className="rounded bg-primary px-3 py-2 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90"
+              >
+                {session?.user.id ? "Dashboard" : "Sign in"}
+              </Link>
             </nav>
           </div>
         </header>

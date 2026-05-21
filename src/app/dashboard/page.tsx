@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { type ReactNode } from "react";
+import { Clock3, Package, PlayCircle, UploadCloud, Video } from "lucide-react";
 import { AuthRequired } from "@/components/auth-required";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -20,10 +22,10 @@ export default async function DashboardPage() {
     return <AuthRequired title="Sign in to view your dashboard" copy="Your dashboard shows orders, uploads, print status, and finished media." />;
   }
 
-  const [orders, uploads] = await Promise.all([
+  const [orders, uploads, orderCount, uploadCount, activePrintCount, queuedJobCount, completedMediaCount, activeOrderCount] = await Promise.all([
     prisma.order.findMany({
       where: { customerId: session.user.id },
-      include: { product: true, upload: true, printJobs: true, videos: true },
+      include: { product: true, items: { include: { product: true } }, upload: true, printJobs: { include: { filament: true }, orderBy: { queuePosition: "asc" } }, videos: true },
       orderBy: { createdAt: "desc" },
       take: 8
     }),
@@ -32,14 +34,15 @@ export default async function DashboardPage() {
       include: { sliceJobs: true },
       orderBy: { createdAt: "desc" },
       take: 5
-    })
+    }),
+    prisma.order.count({ where: { customerId: session.user.id } }),
+    prisma.modelUpload.count({ where: { customerId: session.user.id } }),
+    prisma.printJob.count({ where: { order: { customerId: session.user.id }, status: { in: ["QUEUED", "READY_ON_NODE", "AWAITING_OPERATOR_START", "PRINTING", "PAUSED"] } } }),
+    prisma.printJob.count({ where: { order: { customerId: session.user.id }, status: { in: ["QUEUED", "READY_ON_NODE", "AWAITING_OPERATOR_START"] } } }),
+    prisma.orderVideo.count({ where: { order: { customerId: session.user.id } } }),
+    prisma.order.count({ where: { customerId: session.user.id, status: { in: ["PAID", "QUEUED", "PRINTING"] } } })
   ]);
 
-  const activePrints = orders.flatMap((order) =>
-    order.printJobs
-      .filter((job) => !["COMPLETED", "STOPPED", "FAILED", "CANCELED"].includes(job.status))
-      .map((job) => ({ job, order }))
-  );
   const completedMedia = orders.flatMap((order) => order.videos.map((video) => ({ video, order })));
 
   return (
@@ -57,10 +60,10 @@ export default async function DashboardPage() {
       </PageHero>
 
       <div className="mt-8 grid gap-4 md:grid-cols-4">
-        <Metric label="Orders" value={orders.length.toString()} />
-        <Metric label="Active prints" value={activePrints.length.toString()} />
-        <Metric label="Uploads" value={uploads.length.toString()} />
-        <Metric label="Media ready" value={completedMedia.length.toString()} />
+        <Metric icon={<Package className="h-4 w-4" />} label="Total orders" value={orderCount.toString()} detail={`${activeOrderCount} active`} />
+        <Metric icon={<PlayCircle className="h-4 w-4" />} label="Production jobs" value={activePrintCount.toString()} detail={`${queuedJobCount} queued`} />
+        <Metric icon={<UploadCloud className="h-4 w-4" />} label="Custom uploads" value={uploadCount.toString()} detail="Review requests" />
+        <Metric icon={<Video className="h-4 w-4" />} label="Media ready" value={completedMediaCount.toString()} detail="Videos and timelapses" />
       </div>
 
       <div className="mt-8 grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
@@ -75,13 +78,14 @@ export default async function DashboardPage() {
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <p className="font-medium">{order.orderNumber}</p>
-                    <p className="mt-1 text-sm text-muted-foreground">{order.product?.name ?? order.upload?.fileName ?? "Custom print"}</p>
+                    <p className="mt-1 text-sm text-muted-foreground">{orderTitle(order)}</p>
                   </div>
                   <Badge>{order.status}</Badge>
                 </div>
-                <div className="mt-4 grid gap-3 text-sm md:grid-cols-3">
+                <div className="mt-4 grid gap-3 text-sm md:grid-cols-4">
                   <p><span className="text-muted-foreground">Total</span><br />{money(order.totalCents)}</p>
                   <p><span className="text-muted-foreground">Payment</span><br />{order.paymentStatus}</p>
+                  <p><span className="text-muted-foreground">Colors</span><br />{orderColors(order)}</p>
                   <p><span className="text-muted-foreground">Print</span><br />{order.printJobs.length ? order.printJobs.map((job) => job.status).join(", ") : "Not queued yet"}</p>
                 </div>
               </div>
@@ -127,13 +131,30 @@ export default async function DashboardPage() {
   );
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
+function Metric({ icon, label, value, detail }: { icon: ReactNode; label: string; value: string; detail: string }) {
   return (
     <Card>
       <CardContent className="p-5">
-        <p className="text-2xl font-semibold">{value}</p>
+        <div className="flex items-center justify-between gap-3">
+          <span className="flex h-8 w-8 items-center justify-center rounded-md bg-primary/10 text-primary">{icon}</span>
+          <Clock3 className="h-4 w-4 text-muted-foreground" />
+        </div>
+        <p className="mt-4 text-2xl font-semibold">{value}</p>
         <p className="text-sm text-muted-foreground">{label}</p>
+        <p className="mt-1 text-xs text-muted-foreground">{detail}</p>
       </CardContent>
     </Card>
   );
+}
+
+function orderTitle(order: { items: Array<{ quantity: number; product: { name: string } }>; product?: { name: string } | null; upload?: { fileName: string } | null }) {
+  if (order.items.length) return order.items.map((item) => `${item.quantity} x ${item.product.name}`).join(", ");
+  return order.product?.name ?? order.upload?.fileName ?? "Custom print";
+}
+
+function orderColors(order: { printJobs: Array<{ filament?: { color: string; material: string } | null }>; selectedColors: unknown; selectedColor?: string | null }) {
+  const jobColors = order.printJobs.map((job) => job.filament ? `${job.filament.color} ${job.filament.material}` : null).filter(Boolean);
+  if (jobColors.length) return [...new Set(jobColors)].join(", ");
+  const selectedColors = Array.isArray(order.selectedColors) ? order.selectedColors.filter((color): color is string => typeof color === "string") : [];
+  return selectedColors.length ? selectedColors.join(", ") : order.selectedColor ?? "-";
 }

@@ -15,7 +15,7 @@ export default async function StoreProductPage({ params }: { params: Promise<{ s
   }
   const { slug } = await params;
   const [product, session, rewardsSettings] = await Promise.all([
-    prisma.product.findFirst({ where: { slug, status: "ACTIVE" }, include: { allowedFilaments: { where: { enabled: true }, include: { filamentMaterial: true } } } }),
+    prisma.product.findFirst({ where: { slug, status: "ACTIVE" }, include: { allowedFilaments: { where: { enabled: true }, include: { filamentMaterial: true } }, parts: { orderBy: { displayOrder: "asc" } } } }),
     getCurrentSession().catch(() => null),
     getRewardsSettings()
   ]);
@@ -64,11 +64,21 @@ export default async function StoreProductPage({ params }: { params: Promise<{ s
             name: product.name,
             description: product.description,
             imageUrl: product.imageUrl,
-            modelUrl: product.productFileStorageKey && /\.stl$/i.test(product.productFileStorageKey) ? `/api/products/${product.id}/model` : null,
+            modelUrl: product.previewPlateStorageKey || (product.productFileStorageKey && /\.(stl|3mf)$/i.test(product.productFileStorageKey)) ? `/api/products/${product.id}/model` : null,
+            modelFormat: product.previewPlateStorageKey && /\.3mf$/i.test(product.previewPlateStorageKey) ? "3mf" : product.productFileStorageKey && /\.3mf$/i.test(product.productFileStorageKey) ? "3mf" : "stl",
             priceCents: product.priceCents,
             estimatedPrintMinutes: product.estimatedPrintMinutes,
             estimatedGrams: product.estimatedGrams,
-            defaultMaterial: product.defaultMaterial
+            defaultMaterial: product.defaultMaterial,
+            colorSlotCount: product.colorSlotCount,
+            parts: product.parts.map((part) => ({
+              id: part.id,
+              name: part.name,
+              quantityPerUnit: part.quantityPerUnit,
+              colorSlotIndex: part.colorSlotIndex,
+              colorSlotPattern: part.colorSlotPattern,
+              modelFormat: /\.3mf$/i.test(part.fileStorageKey) ? "3mf" as const : "stl" as const
+            }))
           }}
         />
       </PageSection>

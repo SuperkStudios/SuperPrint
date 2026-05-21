@@ -13,7 +13,7 @@ export default async function EditProductPage({ params }: { params: Promise<{ id
   await requireAdminPage("products");
   const { id } = await params;
   const [product, materials, pricingQuotes] = await Promise.all([
-    prisma.product.findUnique({ where: { id }, include: { allowedFilaments: true } }),
+    prisma.product.findUnique({ where: { id }, include: { allowedFilaments: true, parts: { orderBy: { displayOrder: "asc" } } } }),
     loadMaterialOptions(),
     calculateProductPriceOptions(id).catch(() => [])
   ]);

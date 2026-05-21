@@ -10,8 +10,10 @@ const createOrderSchema = z.object({
   productId: z.string().optional(),
   uploadId: z.string().optional(),
   selectedFilamentMaterialId: z.string().optional(),
+  selectedFilamentMaterialIds: z.array(z.string()).optional(),
   selectedMaterial: z.string().optional(),
   selectedColor: z.string().optional(),
+  selectedColors: z.array(z.string()).optional(),
   fulfillment: z.object({
     method: z.enum(["SHIP", "PICKUP"]),
     address: z.object({

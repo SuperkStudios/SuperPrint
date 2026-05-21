@@ -12,7 +12,7 @@ describe("platform theme", () => {
   });
 
   it("falls back to the SuperPrint primary color when input is invalid", () => {
-    expect(normalizePrimaryColor("orange")).toBe("#0f8f7f");
-    expect(buildThemeCssVariables("orange")["--primary"]).toBe("173 81% 31%");
+    expect(normalizePrimaryColor("orange")).toBe("#00e5ff");
+    expect(buildThemeCssVariables("orange")["--primary"]).toBe("186 100% 50%");
   });
 });

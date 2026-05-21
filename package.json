@@ -15,6 +15,7 @@
     "db:seed": "tsx prisma/seed.ts",
     "docker:start": "sh scripts/docker-start.sh",
     "host-slicer": "node scripts/host-slicer-estimator.mjs",
+    "supernode:register": "node scripts/register-supernode.mjs",
     "worker": "tsx src/workers/print-worker.ts",
     "slice-worker": "tsx src/workers/slice-worker.ts",
     "supernode": "tsx supernode/src/index.ts",
@@ -38,7 +39,7 @@
     "@types/three": "^0.184.1",
     "@types/ws": "^8.18.1",
     "bcryptjs": "^3.0.2",
-    "better-auth": "^1.6.10",
+    "better-auth": "^1.6.11",
     "bullmq": "^5.49.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -53,7 +54,7 @@
     "stripe": "^22.1.1",
     "tailwind-merge": "^3.2.0",
     "three": "^0.184.0",
-    "ws": "^8.20.0",
+    "ws": "^8.20.1",
     "zod": "^3.24.3"
   },
   "devDependencies": {
@@ -67,7 +68,7 @@
     "autoprefixer": "^10.4.21",
     "eslint": "^9.25.1",
     "eslint-config-next": "^15.3.1",
-    "postcss": "^8.5.3",
+    "postcss": "^8.5.14",
     "prisma": "^6.7.0",
     "tailwindcss": "^3.4.17",
     "tsx": "^4.19.4",
@@ -76,5 +77,8 @@
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
+  },
+  "overrides": {
+    "postcss": "^8.5.14"
   }
 }

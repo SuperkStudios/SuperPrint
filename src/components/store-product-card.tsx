@@ -17,6 +17,7 @@ export function StoreProductCard({
     description: string;
     imageUrl: string;
     modelUrl: string | null;
+    modelFormat?: "stl" | "3mf";
     priceCents: number;
     estimatedPrintMinutes: number;
     defaultMaterial: string;
@@ -27,7 +28,7 @@ export function StoreProductCard({
       <CardHeader>
         <Link href={`/store/${product.slug}`} className="mb-4 block h-56 overflow-hidden rounded-md bg-muted/20">
           {product.modelUrl ? (
-            <StlModelViewer src={product.modelUrl} className="h-full border-0" />
+            <StlModelViewer src={product.modelUrl} modelFormat={product.modelFormat} className="h-full border-0" />
           ) : (
             <img src={product.imageUrl} alt="" className="h-full w-full object-cover" />
           )}

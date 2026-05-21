@@ -15,6 +15,7 @@ type CartSummary = {
     quantity: number;
     selectedMaterial?: string | null;
     selectedColor?: string | null;
+    selectedColors?: string[];
     unitPriceCents: number;
     subtotalCents: number;
   }>;
@@ -80,7 +81,7 @@ export function CartView({ initialSummary }: { initialSummary: CartSummary }) {
             </Link>
             <div>
               <Link href={`/store/${item.slug}`} className="font-semibold hover:underline">{item.name}</Link>
-              <p className="mt-1 text-sm text-muted-foreground">{item.selectedColor} {item.selectedMaterial}</p>
+              <p className="mt-1 text-sm text-muted-foreground">{(item.selectedColors?.length ? item.selectedColors.join(" + ") : item.selectedColor)} {item.selectedMaterial}</p>
               <p className="mt-2 text-sm">{money(item.unitPriceCents)} each</p>
             </div>
             <div className="flex items-center gap-2 sm:justify-end">

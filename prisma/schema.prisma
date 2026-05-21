@@ -106,6 +106,13 @@ enum MaintenanceStatus {
   COMPLETED
 }
 
+enum SupportTicketStatus {
+  OPEN
+  AWAITING_ADMIN
+  AWAITING_CUSTOMER
+  CLOSED
+}
+
 enum SliceJobStatus {
   PENDING
   RUNNING
@@ -216,6 +223,8 @@ model User {
   carts        Cart[]
   uploads      ModelUpload[]
   orders       Order[]
+  supportTickets SupportTicket[] @relation("SupportTicketCustomer")
+  supportMessages SupportTicketMessage[] @relation("SupportMessageAuthor")
   rewardTransactions RewardTransaction[]
   factoryContributions FactoryContribution[]
   supporterProfile UserSupporterProfile?
@@ -223,6 +232,38 @@ model User {
   operatorPrintStarts PrintJob[] @relation("OperatorPrintStarts")
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
+}
+
+model SupportTicket {
+  id           String              @id @default(cuid())
+  ticketNumber String             @unique
+  customerId   String
+  customer     User               @relation("SupportTicketCustomer", fields: [customerId], references: [id], onDelete: Cascade)
+  subject      String
+  status       SupportTicketStatus @default(OPEN)
+  lastMessageAt DateTime           @default(now())
+  closedAt     DateTime?
+  messages     SupportTicketMessage[]
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+
+  @@index([customerId, updatedAt])
+  @@index([status, updatedAt])
+}
+
+model SupportTicketMessage {
+  id        String        @id @default(cuid())
+  ticketId  String
+  ticket    SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  authorId  String?
+  author    User?         @relation("SupportMessageAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  authorType String
+  body      String
+  channel   String        @default("UI")
+  emailFrom String?
+  createdAt DateTime      @default(now())
+
+  @@index([ticketId, createdAt])
 }
 
 model FactoryUpgradeGoal {
@@ -423,6 +464,7 @@ model Product {
   imageUrl             String
   imageStorageKey      String?
   productFileStorageKey String?
+  previewPlateStorageKey String?
   baseModelFile        String?
   defaultFilamentMaterialId String?
   defaultFilamentMaterial FilamentSpool? @relation("DefaultProductFilament", fields: [defaultFilamentMaterialId], references: [id])
@@ -441,14 +483,34 @@ model Product {
   estimatedGrams       Int           @default(1)
   materialCostCents    Int           @default(0)
   defaultMaterial      FilamentMaterial
+  colorSlotCount       Int           @default(1)
+  maxBatchQuantity     Int           @default(1)
   status               ProductStatus @default(ACTIVE)
   allowedFilaments     ProductAllowedFilament[]
+  parts                ProductPart[]
   cartItems            CartItem[]
   orderItems           OrderItem[]
   orders               Order[]
   pricingSnapshots     OrderPricingSnapshot[]
   createdAt            DateTime      @default(now())
   updatedAt            DateTime      @updatedAt
+}
+
+model ProductPart {
+  id              String   @id @default(cuid())
+  productId       String
+  product         Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  name            String
+  fileStorageKey  String
+  role            String   @default("part")
+  colorSlotIndex  Int      @default(0)
+  colorSlotPattern Int[]    @default([])
+  quantityPerUnit Int      @default(1)
+  displayOrder    Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([productId, displayOrder])
 }
 
 model ProductAllowedFilament {
@@ -491,6 +553,8 @@ model CartItem {
   selectedColor              String?
   selectedFilamentMaterialId String?
   selectedFilamentMaterial   FilamentSpool? @relation("CartItemSelectedFilament", fields: [selectedFilamentMaterialId], references: [id])
+  selectedFilamentMaterialIds Json          @default("[]")
+  selectedColors             Json          @default("[]")
   createdAt                  DateTime       @default(now())
   updatedAt                  DateTime       @updatedAt
 
@@ -571,6 +635,8 @@ model Order {
   selectedColor   String?
   selectedFilamentMaterialId String?
   selectedFilamentMaterial FilamentSpool? @relation("OrderSelectedFilament", fields: [selectedFilamentMaterialId], references: [id])
+  selectedFilamentMaterialIds Json          @default("[]")
+  selectedColors             Json          @default("[]")
   items          OrderItem[]
   pricingSnapshot OrderPricingSnapshot?
   printJobs      PrintJob[]
@@ -598,6 +664,8 @@ model OrderItem {
   selectedColor              String?
   selectedFilamentMaterialId String?
   selectedFilamentMaterial   FilamentSpool? @relation("OrderItemSelectedFilament", fields: [selectedFilamentMaterialId], references: [id])
+  selectedFilamentMaterialIds Json          @default("[]")
+  selectedColors             Json          @default("[]")
   createdAt                  DateTime       @default(now())
 
   @@index([orderId])

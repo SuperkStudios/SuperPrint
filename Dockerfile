@@ -15,6 +15,7 @@ RUN npm run build
 
 FROM node:22-alpine AS runner
 
+RUN npm install -g npm@11.15.0
 RUN apk add --no-cache openssl postgresql-client tar curl
 
 WORKDIR /app

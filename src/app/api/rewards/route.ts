@@ -7,7 +7,8 @@ import { createRewardRedemption, getRewardsSummary, releaseRewardRedemption } fr
 const rewardActionSchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("redeem"),
-    points: z.number().int().positive()
+    rewardId: z.string().min(1),
+    points: z.number().int().positive().optional()
   }),
   z.object({
     action: z.literal("unredeem"),
@@ -36,7 +37,7 @@ export async function POST(request: Request) {
   const body = rewardActionSchema.parse(await request.json());
   try {
     if (body.action === "redeem") {
-      const reward = await createRewardRedemption({ userId: session!.user.id, requestedPoints: body.points });
+      const reward = await createRewardRedemption({ userId: session!.user.id, rewardId: body.rewardId, requestedPoints: body.points });
       return NextResponse.json({ reward, summary: await getRewardsSummary(session!.user.id) }, { status: 201 });
     }
     const reward = await releaseRewardRedemption({ userId: session!.user.id, rewardTransactionId: body.rewardTransactionId });

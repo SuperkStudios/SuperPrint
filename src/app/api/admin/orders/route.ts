@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdmin } from "@/lib/http";
 import { prisma } from "@/lib/prisma";
-import { buyLabelForOrder, printOrderLabel } from "@/services/shipping";
+import { buyLabelForOrder, markOrderShippedWithShippoTracking, printOrderLabel } from "@/services/shipping";
+import { sendOrderEmail } from "@/services/email";
 
 const orderActionSchema = z.object({
   orderId: z.string(),
@@ -43,10 +44,22 @@ export async function POST(request: Request) {
     const order = await buyLabelForOrder(body.orderId, { print: true });
     return NextResponse.json({ order });
   }
+  if (body.action === "markShipped") {
+    const order = await markOrderShippedWithShippoTracking(body.orderId);
+    void sendOrderEmail("order-shipped", order.id).catch((error) => {
+      console.error("Could not send shipped email", error);
+    });
+    return NextResponse.json({ order });
+  }
   const shippingStatus = shippingStatusByAction[body.action as keyof typeof shippingStatusByAction];
   const order = await prisma.order.update({
     where: { id: body.orderId },
     data: { shippingStatus }
   });
+  if (body.action === "markPacking" && order.fulfillmentMethod === "PICKUP") {
+    void sendOrderEmail("order-ready-pickup", order.id).catch((error) => {
+      console.error("Could not send pickup ready email", error);
+    });
+  }
   return NextResponse.json({ order });
 }

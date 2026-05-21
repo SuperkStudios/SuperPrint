@@ -24,6 +24,26 @@ type PublicNotificationSettings = {
   configured: boolean;
 };
 
+type PublicEmailSettings = {
+  apiUrl: string;
+  apiKey: string;
+  noreplyFrom: string;
+  supportFrom: string;
+  brandName: string;
+  headerImageUrl: string;
+  footerNote: string;
+  headerHtml: string;
+  footerHtml: string;
+  templates: Array<{
+    id: string;
+    label: string;
+    description: string;
+    subject: string;
+    text: string;
+    html: string;
+  }>;
+};
+
 type PublicShippoSettings = {
   apiToken: string;
   configured: boolean;
@@ -79,6 +99,7 @@ type AdminSettingsDraft = {
   stripe: PublicStripeSettings;
   shippo: PublicShippoSettings;
   notifications: PublicNotificationSettings;
+  email: PublicEmailSettings;
   pricing: PublicPricingSettings;
   rewards: PublicRewardsSettings;
 };
@@ -104,6 +125,19 @@ const defaultRewardsSettings: PublicRewardsSettings = {
   earnOnDiscountedAmount: true,
   includeShippingInEarnBasis: false,
   reservationTtlMinutes: 60
+};
+
+const defaultEmailSettings: PublicEmailSettings = {
+  apiUrl: "https://email.superk.studio",
+  apiKey: "",
+  noreplyFrom: "noreply@print.superk.studio",
+  supportFrom: "support@print.superk.studio",
+  brandName: "SuperPrint",
+  headerImageUrl: "/brand/email-factory-banner.png",
+  footerNote: "Live manufacturing. Transparent by design.",
+  headerHtml: buildEmailHeaderHtml("{{brandName}}", "{{headerImageUrl}}", "{{footerNote}}"),
+  footerHtml: buildEmailFooterHtml("{{brandName}}", "{{supportEmail}}", "{{footerNote}}"),
+  templates: []
 };
 
 export function AdminSettingsForm({
@@ -137,6 +171,7 @@ export function AdminSettingsForm({
     webhookUrl: "",
     configured: false
   },
+  emailSettings = defaultEmailSettings,
   pricingSettings = defaultPricingSettings,
   rewardsSettings = defaultRewardsSettings
 }: {
@@ -146,6 +181,7 @@ export function AdminSettingsForm({
   stripeSettings?: PublicStripeSettings;
   shippoSettings?: PublicShippoSettings;
   notificationSettings?: PublicNotificationSettings;
+  emailSettings?: PublicEmailSettings;
   pricingSettings?: PublicPricingSettings;
   rewardsSettings?: PublicRewardsSettings;
 }) {
@@ -174,6 +210,7 @@ export function AdminSettingsForm({
       }
     },
     notifications: notificationSettings,
+    email: emailSettings,
     pricing: pricingSettings,
     rewards: rewardsSettings
   });
@@ -190,10 +227,19 @@ export function AdminSettingsForm({
   async function save() {
     setSaving(true);
     setMessage("");
+    const email = {
+      ...draft.email,
+      headerHtml: buildEmailHeaderHtml("{{brandName}}", "{{headerImageUrl}}", "{{footerNote}}"),
+      footerHtml: buildEmailFooterHtml("{{brandName}}", "{{supportEmail}}", "{{footerNote}}"),
+      templates: draft.email.templates.map((template) => ({
+        ...template,
+        html: buildTemplateHtml(template.id, template.text)
+      }))
+    };
     const response = await fetch("/api/admin/settings", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(draft)
+      body: JSON.stringify({ ...draft, email })
     });
     const result = await response.json().catch(() => ({}));
     setSaving(false);
@@ -361,6 +407,60 @@ export function AdminSettingsForm({
 
       <div className="grid gap-4 border-t pt-5 md:col-span-2 md:grid-cols-3">
         <div className="md:col-span-3">
+          <h3 className="font-semibold">Customer email</h3>
+          <p className="mt-1 text-sm text-muted-foreground">
+            SuperMail API delivery plus editable shared header, footer, and transactional templates.
+          </p>
+        </div>
+
+        <EmailField label="SuperMail API URL" field="apiUrl" draft={draft} setDraft={setDraft} />
+        <EmailField label="API key" field="apiKey" draft={draft} setDraft={setDraft} />
+        <EmailField label="Email brand name" field="brandName" draft={draft} setDraft={setDraft} />
+        <EmailField label="No-reply sender" field="noreplyFrom" draft={draft} setDraft={setDraft} />
+        <EmailField label="Support sender" field="supportFrom" draft={draft} setDraft={setDraft} />
+        <EmailField label="Header image" field="headerImageUrl" draft={draft} setDraft={setDraft} />
+        <EmailField label="Footer note" field="footerNote" draft={draft} setDraft={setDraft} />
+
+        <div className="grid gap-3 md:col-span-3">
+          {draft.email.templates.map((template, index) => (
+            <details key={template.id} className="rounded-md border bg-background p-3">
+              <summary className="cursor-pointer text-sm font-medium">{template.label}</summary>
+              <p className="mt-2 text-xs text-muted-foreground">{template.description}</p>
+              <div className="mt-3 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,0.9fr)]">
+                <div className="grid gap-3">
+                  <div className="grid gap-2">
+                    <Label>Subject</Label>
+                    <Input
+                      value={template.subject}
+                      onChange={(event) => updateEmailTemplate(setDraft, index, "subject", event.target.value)}
+                      aria-label={`${template.label} subject`}
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Body copy</Label>
+                    <textarea
+                      value={template.text}
+                      rows={7}
+                      className="rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      onChange={(event) => updateEmailTemplate(setDraft, index, "text", event.target.value)}
+                      aria-label={`${template.label} body copy`}
+                    />
+                  </div>
+                </div>
+                <EmailPreviewFrame
+                  subject={template.subject}
+                  headerHtml={buildEmailHeaderHtml(draft.email.brandName, draft.email.headerImageUrl, draft.email.footerNote)}
+                  footerHtml={buildEmailFooterHtml(draft.email.brandName, draft.email.supportFrom, draft.email.footerNote)}
+                  bodyHtml={buildTemplateHtml(template.id, template.text)}
+                />
+              </div>
+            </details>
+          ))}
+        </div>
+      </div>
+
+      <div className="grid gap-4 border-t pt-5 md:col-span-2 md:grid-cols-3">
+        <div className="md:col-span-3">
           <h3 className="font-semibold">Operations notifications</h3>
           <p className="mt-1 text-sm text-muted-foreground">
             Alerts are sent when prints fail, spaghetti is detected, maintenance is due, or filament changes are needed.
@@ -495,6 +595,205 @@ function RewardsField({
       />
     </div>
   );
+}
+
+function EmailField({
+  label,
+  field,
+  draft,
+  setDraft
+}: {
+  label: string;
+  field: keyof Omit<PublicEmailSettings, "templates" | "headerHtml" | "footerHtml">;
+  draft: { email: PublicEmailSettings };
+  setDraft: Dispatch<SetStateAction<AdminSettingsDraft>>;
+}) {
+  return (
+    <div className="grid gap-2">
+      <Label htmlFor={`email-${field}`}>{label}</Label>
+      <Input
+        id={`email-${field}`}
+        value={String(draft.email[field] ?? "")}
+        autoComplete={field === "apiKey" ? "off" : undefined}
+        onChange={(event) => setDraft((current) => ({ ...current, email: { ...current.email, [field]: event.target.value } }))}
+      />
+    </div>
+  );
+}
+
+function updateEmailTemplate(
+  setDraft: Dispatch<SetStateAction<AdminSettingsDraft>>,
+  index: number,
+  field: "subject" | "text" | "html",
+  value: string
+) {
+  setDraft((current) => ({
+    ...current,
+    email: {
+      ...current.email,
+      templates: current.email.templates.map((template, templateIndex) => templateIndex === index ? { ...template, [field]: value } : template)
+    }
+  }));
+}
+
+function EmailPreviewFrame({
+  subject,
+  headerHtml,
+  bodyHtml,
+  footerHtml
+}: {
+  subject?: string;
+  headerHtml: string;
+  bodyHtml: string;
+  footerHtml: string;
+}) {
+  return (
+    <div className="overflow-hidden rounded-md border bg-slate-100 text-slate-950">
+      {subject ? <div className="border-b bg-slate-50 px-4 py-2 text-xs font-medium text-slate-500">Subject: {sampleRender(subject)}</div> : null}
+      <div
+        className="max-h-[34rem] overflow-auto p-3"
+        dangerouslySetInnerHTML={{
+          __html: `
+            <div style="max-width:680px;margin:0 auto;background:#ffffff;font-family:Inter,Arial,sans-serif;color:#0f172a;box-shadow:0 10px 30px rgba(15,23,42,.14)">
+              ${sampleRender(headerHtml)}
+              <main style="padding:28px;line-height:1.6;font-size:16px">${sampleRender(bodyHtml)}</main>
+              ${sampleRender(footerHtml)}
+            </div>
+          `
+        }}
+      />
+    </div>
+  );
+}
+
+function buildEmailHeaderHtml(brandName: string, imageUrl: string, footerNote: string) {
+  const src = imageUrl || "/brand/email-factory-banner.png";
+  return `
+<div style="background:#071015;color:#ffffff;border-bottom:3px solid #00e5ff">
+  <img src="${src}" alt="" width="680" style="display:block;width:100%;max-width:680px;height:auto;border:0" />
+  <div style="padding:20px 28px">
+    <div style="font-size:24px;font-weight:800;letter-spacing:.02em">${brandName}</div>
+    <div style="margin-top:4px;color:#9fb0bd;font-size:13px">${footerNote}</div>
+  </div>
+</div>`.trim();
+}
+
+function buildEmailFooterHtml(brandName: string, supportEmail: string, footerNote: string) {
+  return `
+<div style="padding:20px 28px;background:#081016;color:#9fb0bd;font-size:13px;line-height:1.6">
+  <div>Need help? Reply here or email <a href="mailto:${supportEmail}" style="color:#00e5ff">${supportEmail}</a>.</div>
+  <div style="margin-top:8px">${footerNote}</div>
+  <div style="margin-top:8px">${brandName} &middot; print.superk.studio</div>
+</div>`.trim();
+}
+
+function buildTemplateHtml(templateId: string, text: string) {
+  const title = templateTitle(templateId);
+  const button = templateButton(templateId);
+  const href = templateHref(templateId);
+  const body = textToParagraphs(text);
+  return `
+<div style="font-size:32px;line-height:1;margin-bottom:14px">${templateIcon(templateId)}</div>
+<h1 style="margin:0 0 14px;font-size:26px;line-height:1.2;color:#071015">${title}</h1>
+${body}
+${button ? `<p style="margin-top:22px"><a href="${href}" style="display:inline-block;background:#00e5ff;color:#071015;text-decoration:none;font-weight:700;padding:12px 16px;border-radius:8px">${button}</a></p>` : ""}`.trim();
+}
+
+function textToParagraphs(text: string) {
+  return text
+    .split(/\n{2,}/)
+    .map((block) => block.trim())
+    .filter(Boolean)
+    .map((block) => `<p style="margin:0 0 12px">${block.replace(/\n/g, "<br />")}</p>`)
+    .join("");
+}
+
+function templateTitle(id: string) {
+  const titles: Record<string, string> = {
+    "password-reset": "Reset your password",
+    "account-created": "Your account is ready",
+    "order-confirmation": "Order received",
+    "order-processing": "Your print is processing",
+    "order-ready-pickup": "Ready for pickup",
+    "order-shipped": "Your order shipped",
+    "support-thread-started": "Support request received",
+    "support-thread-notification": "New support request",
+    "support-ticket-reply": "Support ticket reply"
+  };
+  return titles[id] ?? "SuperPrint update";
+}
+
+function templateButton(id: string) {
+  const labels: Record<string, string> = {
+    "password-reset": "Reset password",
+    "account-created": "Open dashboard",
+    "order-confirmation": "View order",
+    "order-processing": "Watch live view",
+    "order-ready-pickup": "View pickup details",
+    "order-shipped": "Track shipment",
+    "support-thread-started": "View ticket",
+    "support-thread-notification": "Open ticket",
+    "support-ticket-reply": "Open ticket"
+  };
+  return labels[id] ?? "";
+}
+
+function templateHref(id: string) {
+  const hrefs: Record<string, string> = {
+    "password-reset": "{{resetUrl}}",
+    "account-created": "{{dashboardUrl}}",
+    "order-confirmation": "{{orderUrl}}",
+    "order-processing": "{{liveUrl}}",
+    "order-ready-pickup": "{{orderUrl}}",
+    "order-shipped": "{{trackingUrl}}",
+    "support-thread-started": "{{ticketUrl}}",
+    "support-thread-notification": "{{adminTicketUrl}}",
+    "support-ticket-reply": "{{ticketUrl}}"
+  };
+  return hrefs[id] ?? "{{dashboardUrl}}";
+}
+
+function templateIcon(id: string) {
+  const icons: Record<string, string> = {
+    "password-reset": "&#128274;",
+    "account-created": "&#10024;",
+    "order-confirmation": "&#129534;",
+    "order-processing": "&#9881;&#65039;",
+    "order-ready-pickup": "&#128230;",
+    "order-shipped": "&#128666;",
+    "support-thread-started": "&#128172;",
+    "support-thread-notification": "&#127911;",
+    "support-ticket-reply": "&#9993;&#65039;"
+  };
+  return icons[id] ?? "&#9993;&#65039;";
+}
+
+function sampleRender(value: string) {
+  const samples: Record<string, string> = {
+    brandName: "SuperPrint",
+    footerNote: "Live manufacturing. Transparent by design.",
+    supportEmail: "support@print.superk.studio",
+    customerName: "Keenan",
+    customerEmail: "customer@example.com",
+    replyAuthor: "SuperPrint Support",
+    ticketNumber: "SUP-000001",
+    ticketStatus: "Awaiting customer",
+    ticketUrl: "https://print.superk.studio/support/tickets/SUP-000001",
+    adminTicketUrl: "https://print.superk.studio/admin/support/tickets/SUP-000001",
+    orderNumber: "SP-000001",
+    orderSummary: "2 x Nautilus Spinner",
+    orderTotal: "$16.78",
+    orderUrl: "https://print.superk.studio/orders",
+    invoiceUrl: "https://print.superk.studio/orders/SP-000001/invoice",
+    liveUrl: "https://print.superk.studio/queue",
+    trackingUrl: "https://tools.usps.com/go/TrackConfirmAction",
+    resetUrl: "https://print.superk.studio/reset-password/example",
+    verificationUrl: "https://print.superk.studio/verify-email",
+    dashboardUrl: "https://print.superk.studio/dashboard",
+    supportSubject: "Order question",
+    supportMessage: "I need help with my order."
+  };
+  return value.replace(/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g, (_, key: string) => samples[key] ?? "");
 }
 
 function PricingField({

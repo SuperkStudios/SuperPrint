@@ -5,17 +5,18 @@ import { resolveLocalStoragePath } from "@/lib/storage";
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const product = await prisma.product.findUnique({ where: { id }, select: { productFileStorageKey: true } });
-  if (!product?.productFileStorageKey || !/\.stl$/i.test(product.productFileStorageKey)) {
-    return NextResponse.json({ error: "Product STL not found" }, { status: 404 });
+  const product = await prisma.product.findUnique({ where: { id }, select: { productFileStorageKey: true, previewPlateStorageKey: true } });
+  const storageKey = product?.previewPlateStorageKey ?? product?.productFileStorageKey;
+  if (!storageKey || !/\.(stl|3mf)$/i.test(storageKey)) {
+    return NextResponse.json({ error: "Product model not found" }, { status: 404 });
   }
 
   let file: Uint8Array;
   try {
-    file = await readFile(resolveLocalStoragePath(product.productFileStorageKey));
+    file = await readFile(resolveLocalStoragePath(storageKey));
   } catch (error) {
     if (isMissingFileError(error)) {
-      return NextResponse.json({ error: "Product STL not found" }, { status: 404 });
+      return NextResponse.json({ error: "Product model not found" }, { status: 404 });
     }
     throw error;
   }
@@ -23,7 +24,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   const body = file.buffer.slice(file.byteOffset, file.byteOffset + file.byteLength) as ArrayBuffer;
   return new NextResponse(body, {
     headers: {
-      "content-type": "model/stl",
+      "content-type": /\.3mf$/i.test(storageKey) ? "model/3mf" : "model/stl",
       "cache-control": "public, max-age=300"
     }
   });

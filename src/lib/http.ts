@@ -23,6 +23,12 @@ export async function requireCustomer() {
       response: NextResponse.json({ error: "Authentication required" }, { status: 401 })
     };
   }
+  if (!session.user.emailVerified && !hasAnyStaffPermission(session)) {
+    return {
+      session: null,
+      response: NextResponse.json({ error: "Email verification required" }, { status: 403 })
+    };
+  }
 
   return { session, response: null };
 }

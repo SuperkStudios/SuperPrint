@@ -5,6 +5,7 @@ import { prismaAdapter } from "better-auth/adapters/prisma";
 import { nextCookies } from "better-auth/next-js";
 import { prisma } from "./prisma";
 import type { StaffPermission } from "@/domain/navigation";
+import { sendAccountCreatedEmail, sendPasswordResetEmail } from "@/services/email";
 
 const socialProviders = {
   ...(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
@@ -36,9 +37,22 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
     minPasswordLength: 8,
+    requireEmailVerification: true,
+    sendResetPassword: async ({ user, url }) => {
+      await sendPasswordResetEmail({ email: user.email, name: user.name, resetUrl: url });
+    },
     password: {
       hash: (password) => hash(password, 10),
       verify: ({ hash: storedHash, password }) => compare(password, storedHash)
+    }
+  },
+  emailVerification: {
+    sendOnSignUp: true,
+    sendOnSignIn: true,
+    expiresIn: 60 * 60 * 24,
+    autoSignInAfterVerification: true,
+    sendVerificationEmail: async ({ user, url }) => {
+      await sendAccountCreatedEmail({ email: user.email, name: user.name, verificationUrl: url });
     }
   },
   socialProviders,
@@ -86,6 +100,7 @@ export type AppSession = {
     name: string;
     image?: string | null;
     role?: string | null;
+    emailVerified?: boolean | null;
     staffPermissions?: unknown;
     username?: string | null;
     bio?: string | null;
@@ -99,9 +114,11 @@ export async function getCurrentSession(): Promise<AppSession> {
   if (!session?.user.id) return session;
   const user = await prisma.user.findUnique({
     where: { id: session.user.id },
-    select: { role: true, staffPermissions: true }
+    select: { role: true, emailVerified: true, staffPermissions: true }
   });
-  return user ? { ...session, user: { ...session.user, role: user.role, staffPermissions: user.staffPermissions } } : session;
+  return user
+    ? { ...session, user: { ...session.user, role: user.role, emailVerified: user.emailVerified, staffPermissions: user.staffPermissions } }
+    : session;
 }
 
 export function hasAdminRole(role?: string | null) {
