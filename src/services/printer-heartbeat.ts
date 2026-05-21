@@ -17,6 +17,22 @@ const MANUAL_PRINT_PROGRESS_EVENT_STEP = 5;
 
 export async function refreshPrinterHeartbeat(printerId: string) {
   const printer = await prisma.printer.findUniqueOrThrow({ where: { id: printerId } });
+  const recentSuperNodeHeartbeat = await prisma.superNode.findFirst({
+    where: {
+      printerId,
+      heartbeatStatus: "ONLINE",
+      lastHeartbeatAt: { gte: new Date(Date.now() - 45_000) }
+    },
+    orderBy: { lastHeartbeatAt: "desc" }
+  });
+
+  if (recentSuperNodeHeartbeat) {
+    return prisma.printer.findUniqueOrThrow({
+      where: { id: printer.id },
+      include: { currentFilament: true }
+    });
+  }
+
   const startedAt = Date.now();
   const result = await probePrinterConnection(
     { internalIp: printer.internalIp, controlApiUrl: printer.controlApiUrl },
