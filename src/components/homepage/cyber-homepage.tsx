@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { ArrowRight, Boxes, Camera, CheckCircle2, CircuitBoard, Clock, Cpu, Eye, Factory, Gauge, Layers3, PackageCheck, Radio, ShieldCheck, Upload, Video } from "lucide-react";
+import { ArrowRight, Boxes, Camera, CheckCircle2, CircuitBoard, Clock, Eye, Gauge, Layers3, Leaf, PackageCheck, Radio, Recycle, ShieldCheck, Timer, Upload, Video } from "lucide-react";
 import { LiveBedFeed } from "@/components/live/live-bed-feed";
 import { FactoryEvolutionDashboard } from "@/components/factory/factory-evolution-dashboard";
 import { PrinterHeroVisual } from "@/components/homepage/printer-hero-visual";
@@ -50,12 +50,12 @@ export function CyberHomepage({
         <CyberBackground />
         <div className="relative mx-auto grid min-h-screen max-w-7xl items-center gap-12 px-4 py-20 sm:px-6 lg:grid-cols-[0.95fr_1.05fr] lg:px-8">
           <motion.div initial={{ opacity: 0, y: 22 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7 }}>
-            <Badge className="border-primary/30 bg-primary/10 text-primary">Live manufacturing. Transparent by design.</Badge>
+            <Badge className="border-primary/30 bg-primary/10 text-primary">Live 3D printing from upload to pickup</Badge>
             <h1 className="mt-6 max-w-4xl text-5xl font-semibold tracking-tight sm:text-7xl lg:text-8xl">
-              Software-Defined 3D Manufacturing
+              Watch Your Print Come To Life
             </h1>
             <p className="mt-6 max-w-2xl text-lg leading-8 text-muted-foreground sm:text-xl">
-              Upload models, join the live queue, and watch production happen in real time on SuperPrint.
+              SuperPrint turns custom 3D printing into a visible workflow: upload a model, see the queue, track the printer, and get a finished part without guessing what happened.
             </p>
             <div className="mt-9 flex flex-wrap gap-3">
               <Button asChild className="h-12 px-5">
@@ -86,10 +86,11 @@ export function CyberHomepage({
       <LiveFactorySection queue={queue} events={events} />
       <FactoryEvolutionDashboard data={factoryEvolution} compact />
       <HowItWorks />
+      <ProofSection />
       <FeatureGrid />
       <InventorySection filament={filament} />
       <StatsSection stats={stats} />
-      <RoadmapSection />
+      <UpgradePreviewSection />
       <FinalCta />
     </main>
   );
@@ -286,14 +287,14 @@ function formatRemaining(seconds: number | null) {
 
 function HowItWorks() {
   const steps = [
-    [Upload, "Upload", "Submit approved products or custom STL files."],
-    [Boxes, "Queue", "Operator review moves printable work into the live queue."],
-    [Eye, "Watch Live", "Follow the bed feed, status, ETA, and safe telemetry."],
-    [PackageCheck, "Delivered", "Receive the print and downloadable production media."]
+    [Upload, "Upload", "Send a model or pick a store part."],
+    [Boxes, "Review", "We check material, scale, printability, and queue fit."],
+    [Eye, "Watch", "Follow the bed feed, status, ETA, and safe telemetry."],
+    [PackageCheck, "Receive", "Get a finished part with a clear production trail."]
   ] as const;
   return (
     <section className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8">
-      <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">Upload → Queue → Watch Live → Delivered</h2>
+      <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">A clearer way to order custom prints</h2>
       <div className="mt-8 grid gap-4 md:grid-cols-4">
         {steps.map(([Icon, title, copy], index) => (
           <motion.div key={title} initial={{ opacity: 0, y: 18 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: index * 0.06 }} className="cyber-surface rounded-2xl p-5">
@@ -307,17 +308,68 @@ function HowItWorks() {
   );
 }
 
-function FeatureGrid() {
-  const features = ["Live Queue Tracking", "Transparent Manufacturing", "STL Upload System", "Real-Time Telemetry", "Smart Queue Scheduling", "Verified Print Profiles", "Filament Tracking", "Automated Monitoring", "Timelapse Recording", "Maintenance Tracking"];
+function ProofSection() {
+  const points = [
+    ["Functional parts", "Brackets, mounts, adapters, fixtures, replacement pieces, prototypes, and small product runs."],
+    ["Visible process", "Queue state, printer status, material context, and completion history stay available without exposing printer controls."],
+    ["Less waste", "On-demand production, spool tracking, and separated scrap keep the operation lean as it grows."]
+  ] as const;
+
   return (
     <section className="border-y bg-card/35 py-20">
+      <div className="mx-auto grid max-w-7xl gap-6 px-4 sm:px-6 lg:grid-cols-[1.05fr_0.95fr] lg:px-8">
+        <div className="cyber-surface overflow-hidden rounded-2xl p-0">
+          <img src="/assets/generated/home/finished-parts-queue.png" alt="Finished 3D printed parts on a SuperPrint inspection bench" className="aspect-video h-full w-full object-cover" />
+        </div>
+        <div className="flex flex-col justify-center">
+          <p className="text-sm font-medium uppercase tracking-[0.28em] text-primary">Real output, visible steps</p>
+          <h2 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">Built around the print you actually need.</h2>
+          <p className="mt-4 text-muted-foreground">
+            From small prototypes to functional replacement parts, SuperPrint keeps the job understandable while the printer does the work.
+          </p>
+          <div className="mt-6 grid gap-3">
+            {points.map(([title, copy]) => (
+              <div key={title} className="rounded-xl border bg-background/45 p-4">
+                <div className="flex gap-3">
+                  <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-primary" />
+                  <div>
+                    <h3 className="font-medium">{title}</h3>
+                    <p className="mt-1 text-sm leading-6 text-muted-foreground">{copy}</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function FeatureGrid() {
+  const features = [
+    ["Live queue", "See what is printing, what is next, and when work is moving."],
+    ["Printer feed", "Watch the bed feed and live status without touching machine controls."],
+    ["Material tracking", "Spools, colors, low-stock states, and usage are visible to the system."],
+    ["Operator review", "Human checks protect quality before a print is allowed to start."],
+    ["Production history", "Finished prints, failures, and events leave a trail support can read."],
+    ["Timelapse ready", "Production media can become part of the customer experience."],
+    ["Maintenance aware", "Printer health and maintenance tasks stay connected to queue decisions."],
+    ["Upgrade goals", "Community-backed improvements show what capability comes next."],
+    ["Store or custom", "Use ready products or submit your own model for review."],
+    ["Sustainable loop", "Scrap separation and material accounting make waste easier to reduce."]
+  ] as const;
+  return (
+    <section className="py-20">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <h2 className="text-3xl font-semibold tracking-tight">Infrastructure-grade manufacturing software</h2>
+        <p className="text-sm font-medium uppercase tracking-[0.28em] text-primary">Why it feels different</p>
+        <h2 className="mt-3 text-3xl font-semibold tracking-tight">A print shop you can actually follow</h2>
         <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-          {features.map((feature) => (
+          {features.map(([feature, copy]) => (
             <div key={feature} className="cyber-surface group rounded-2xl p-5 transition hover:border-primary/40 hover:shadow-[0_0_44px_hsl(var(--primary)/0.14)]">
               <CircuitBoard className="size-5 text-primary" />
               <p className="mt-5 text-sm font-medium">{feature}</p>
+              <p className="mt-2 text-xs leading-5 text-muted-foreground">{copy}</p>
             </div>
           ))}
         </div>
@@ -388,17 +440,28 @@ function AnimatedMetric({ label, value, suffix }: { label: string; value: number
   );
 }
 
-function RoadmapSection() {
-  const items = ["Multi-printer support", "Multi-color printing", "Distributed print nodes", "AI failure detection", "Automated print farms", "Smart maintenance"];
+function UpgradePreviewSection() {
+  const items = [
+    [Camera, "Better live views", "Cleaner camera angles, lighting, and media for print progress."],
+    [Boxes, "More materials", "New filament colors and specialty materials as demand grows."],
+    [Gauge, "Faster throughput", "Queue tuning, repeatable profiles, and added printer capacity."],
+    [Recycle, "Recycling loop", "Better scrap tracking, refill spool workflows, and material recovery."],
+    [Timer, "Shorter waits", "Reserved windows and clearer ETAs without turning the queue unfair."],
+    [Leaf, "Lower waste", "More sustainable packaging, waste reporting, and smarter reprint prevention."]
+  ] as const;
   return (
     <section className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8">
-      <p className="text-sm font-medium uppercase tracking-[0.28em] text-secondary">Future network</p>
-      <h2 className="mt-3 text-3xl font-semibold tracking-tight">A live manufacturing platform</h2>
+      <p className="text-sm font-medium uppercase tracking-[0.28em] text-secondary">What gets better next</p>
+      <h2 className="mt-3 text-3xl font-semibold tracking-tight">Every upgrade should make ordering easier.</h2>
+      <p className="mt-4 max-w-2xl text-muted-foreground">
+        The factory evolution system is about practical improvements customers can feel: better visibility, more material options, cleaner handoff, and less waste.
+      </p>
       <div className="mt-8 grid gap-4 md:grid-cols-3">
-        {items.map((item) => (
+        {items.map(([Icon, item, copy]) => (
           <div key={item} className="cyber-surface rounded-2xl p-5">
-            <Factory className="size-5 text-secondary" />
+            <Icon className="size-5 text-secondary" />
             <p className="mt-4 font-medium">{item}</p>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">{copy}</p>
           </div>
         ))}
       </div>
@@ -411,7 +474,10 @@ function FinalCta() {
     <section className="px-4 pb-24 sm:px-6 lg:px-8">
       <div className="cyber-surface mx-auto max-w-7xl rounded-[2rem] p-8 text-center md:p-14">
         <Video className="mx-auto size-8 text-primary" />
-        <h2 className="mt-6 text-4xl font-semibold tracking-tight sm:text-6xl">Manufacturing should be transparent.</h2>
+        <h2 className="mt-6 text-4xl font-semibold tracking-tight sm:text-6xl">Ready to see your print move?</h2>
+        <p className="mx-auto mt-4 max-w-2xl text-muted-foreground">
+          Start with a model, join the queue, and watch SuperPrint turn it into a real part.
+        </p>
         <div className="mt-8 flex flex-wrap justify-center gap-3">
           <Button asChild className="h-12 px-5"><Link href="/upload">Upload a Model</Link></Button>
           <Button asChild variant="outline" className="h-12 px-5 bg-card/50"><Link href="/queue">Join the Queue</Link></Button>

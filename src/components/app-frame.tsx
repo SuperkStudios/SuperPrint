@@ -2,6 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import { AppSidebar } from "@/components/app-sidebar";
+import { SiteFooter } from "@/components/site-footer";
 
 const sidebarRoutes = ["/admin", "/dashboard", "/upload", "/orders", "/profile"];
 
@@ -20,7 +21,10 @@ export function AppFrame({
   return (
     <div className={showSidebar ? "lg:grid lg:grid-cols-[auto_1fr]" : ""}>
       {showSidebar ? <AppSidebar role={role} staffPermissions={staffPermissions} /> : null}
-      <main className="min-w-0">{children}</main>
+      <div className="min-w-0">
+        <main>{children}</main>
+        <SiteFooter />
+      </div>
     </div>
   );
 }

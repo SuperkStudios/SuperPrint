@@ -16,6 +16,8 @@ export const metadata: Metadata = {
     shortcut: "/favicon.png",
     apple: "/apple-icon.png",
     other: [
+      { rel: "icon", url: "/brand/superprint-mark-light-32.png", media: "(prefers-color-scheme: light)", sizes: "32x32", type: "image/png" },
+      { rel: "icon", url: "/favicon.png", media: "(prefers-color-scheme: dark)", sizes: "32x32", type: "image/png" },
       { rel: "icon", url: "/icon-192.png", sizes: "192x192", type: "image/png" },
       { rel: "icon", url: "/icon-512.png", sizes: "512x512", type: "image/png" }
     ]
