@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, ArrowRight, Boxes, CheckCircle2, Printer, ShieldCheck } from "lucide-react";
 import {
   buildBootstrapSecuritySummary,
+  getSafePrinterConnectionCheck,
   type BootstrapFilamentInput,
   type BootstrapInputDraft
 } from "@/domain/bootstrap";
@@ -191,6 +192,20 @@ export function SetupForm() {
     setStep((current) => Math.max(current - 1, 0));
   }
 
+  function useLocalSuperNodeBridge() {
+    const result = getSafePrinterConnectionCheck({
+      internalIp: draft.printer.internalIp,
+      controlApiUrl: draft.printer.controlApiUrl
+    });
+    setConnectionOk(result.ok);
+    setConnectionMessage(
+      result.ok
+        ? "Local SuperNode bridge selected. Setup will save this printer profile now and wait for your LAN node to connect."
+        : result.message
+    );
+    setMessage(result.ok ? "" : result.message);
+  }
+
   async function testConnection() {
     setTestingConnection(true);
     setConnectionOk(false);
@@ -360,7 +375,7 @@ export function SetupForm() {
       ) : null}
 
       {step === 2 ? (
-        <Panel title="Printer setup and connection test" description="Register the first printer profile. The test opens the Centauri Carbon SDCP WebSocket and then closes it without sending printer commands.">
+        <Panel title="Printer setup and connection test" description="Register the first printer profile. Use the local SuperNode bridge when this hosted server cannot directly reach your LAN printer.">
           <Field label="Internal printer name" value={draft.printer.name} onChange={(value) => updatePrinter("name", value)} />
           <Field label="Public printer name" value={draft.printer.publicName} onChange={(value) => updatePrinter("publicName", value)} />
           <Field label="Internal IP or hostname" value={draft.printer.internalIp} onChange={(value) => updatePrinter("internalIp", value)} />
@@ -372,9 +387,14 @@ export function SetupForm() {
                 <Printer className="size-4 text-primary" />
                 <p className="font-medium">Printer connection test</p>
               </div>
-              <Button type="button" variant="secondary" onClick={testConnection} disabled={testingConnection}>
-                {testingConnection ? "Testing..." : "Test connection"}
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" variant="secondary" onClick={testConnection} disabled={testingConnection}>
+                  {testingConnection ? "Testing..." : "Test connection"}
+                </Button>
+                <Button type="button" variant="outline" onClick={useLocalSuperNodeBridge} disabled={testingConnection}>
+                  Use local SuperNode bridge
+                </Button>
+              </div>
             </div>
             <p className={`mt-3 text-sm ${connectionOk ? "text-primary" : "text-muted-foreground"}`}>{connectionMessage}</p>
           </div>
@@ -436,7 +456,7 @@ export function SetupForm() {
                 <Boxes className="size-4 text-primary" />
                 <p className="font-medium">Completed printer history</p>
               </div>
-              <Button type="button" variant="secondary" onClick={pullPrinterHistory} disabled={historyLoading || !connectionOk}>
+              <Button type="button" variant="secondary" onClick={pullPrinterHistory} disabled={historyLoading}>
                 {historyLoading ? "Pulling..." : "Pull completed prints"}
               </Button>
             </div>
