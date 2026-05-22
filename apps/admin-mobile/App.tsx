@@ -71,6 +71,17 @@ type AdminCustomer = {
   orderCount: number;
 };
 
+type MobileSessionInfo = {
+  signedIn: boolean;
+  user?: {
+    email: string;
+    name: string;
+    role?: string | null;
+    emailVerified: boolean;
+    adminAllowed: boolean;
+  };
+};
+
 type FulfillmentMethod = "PICKUP" | "SHIP";
 
 type ShippingQuote = {
@@ -1093,7 +1104,8 @@ function SettingsScreen({ settings, setSettings }: { settings: AdminSettings; se
     try {
       const cookie = await client.signIn(settings.adminEmail, settings.adminPassword);
       setSettings({ ...settings, adminCookie: cookie });
-      setStatus("Signed in. Admin cookie captured for local API calls.");
+      const session = await new SuperPrintClient({ ...settings, adminCookie: cookie }).get<MobileSessionInfo>("/api/admin/mobile-session");
+      setStatus(sessionStatus(session));
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Sign in failed.");
     } finally {
@@ -1114,7 +1126,8 @@ function SettingsScreen({ settings, setSettings }: { settings: AdminSettings; se
       if (!credential.identityToken) throw new Error("Apple did not return an identity token.");
       const cookie = await client.signInWithApple(credential.identityToken);
       setSettings({ ...settings, adminCookie: cookie });
-      setStatus("Signed in with Apple.");
+      const session = await new SuperPrintClient({ ...settings, adminCookie: cookie }).get<MobileSessionInfo>("/api/admin/mobile-session");
+      setStatus(sessionStatus(session));
     } catch (error) {
       if ((error as { code?: string }).code === "ERR_REQUEST_CANCELED") {
         setStatus("Apple sign in canceled.");
@@ -1135,6 +1148,19 @@ function SettingsScreen({ settings, setSettings }: { settings: AdminSettings; se
       setStatus(config.configured ? `Stripe ${config.mode} configured.` : "Stripe is not configured yet in the web admin.");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Could not load payment settings.");
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  async function checkMobileSession() {
+    setTesting(true);
+    setStatus("Checking signed-in admin...");
+    try {
+      const session = await client.get<MobileSessionInfo>("/api/admin/mobile-session");
+      setStatus(sessionStatus(session));
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not check signed-in user.");
     } finally {
       setTesting(false);
     }
@@ -1193,6 +1219,9 @@ function SettingsScreen({ settings, setSettings }: { settings: AdminSettings; se
         <View style={styles.inline}>
           <Pressable onPress={loadPaymentConfig} style={[styles.secondaryButton, styles.grow]}>
             <Text style={styles.secondaryButtonText}>Load Payments</Text>
+          </Pressable>
+          <Pressable onPress={checkMobileSession} style={[styles.secondaryButton, styles.grow]}>
+            <Text style={styles.secondaryButtonText}>Who Am I</Text>
           </Pressable>
           <Pressable onPress={checkConnection} style={[styles.primaryButton, styles.grow]}>
             {testing ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>Test</Text>}
@@ -1341,7 +1370,11 @@ class SuperPrintClient {
       ...init,
       headers: {
         "Content-Type": "application/json",
-        ...(includeCookie && this.settings.adminCookie ? { Cookie: this.settings.adminCookie } : {})
+        ...(includeCookie && this.settings.adminCookie ? {
+          Cookie: this.settings.adminCookie,
+          Authorization: `Bearer ${sessionTokenFromCookie(this.settings.adminCookie)}`,
+          "X-SuperPrint-Session-Token": sessionTokenFromCookie(this.settings.adminCookie)
+        } : {})
       }
     });
     const text = await response.text();
@@ -1411,6 +1444,12 @@ function parseResponseBody(text: string, contentType: string, status: number, ur
   throw new Error(`Backend returned non-JSON from ${url} (${status}): ${preview || "empty response"}`);
 }
 
+function sessionStatus(session: MobileSessionInfo) {
+  if (!session.signedIn || !session.user) return "Not signed in.";
+  const allowed = session.user.adminAllowed ? "admin allowed" : "not admin";
+  return `Signed in as ${session.user.email} · ${session.user.role ?? "NO_ROLE"} · ${allowed}`;
+}
+
 function sortPlannerRows(a: PartPlannerRow, b: PartPlannerRow) {
   return b.quantityToPrint - a.quantityToPrint || a.color.localeCompare(b.color) || a.productName.localeCompare(b.productName) || a.partName.localeCompare(b.partName);
 }
@@ -1438,6 +1477,19 @@ function normalizeSetCookie(value: string) {
     .map((cookie) => cookie.split(";")[0]?.trim())
     .filter(Boolean)
     .join("; ");
+}
+
+function sessionTokenFromCookie(cookieHeader: string) {
+  const sessionCookie = cookieHeader
+    .split(";")
+    .map((item) => item.trim())
+    .find((item) => item.startsWith("better-auth.session_token=") || item.startsWith("__Secure-better-auth.session_token="));
+  const rawValue = sessionCookie?.split("=").slice(1).join("=") || cookieHeader;
+  try {
+    return decodeURIComponent(rawValue);
+  } catch {
+    return rawValue;
+  }
 }
 
 let styles = createStyles(palette);

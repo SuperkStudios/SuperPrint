@@ -135,10 +135,11 @@ export type AppSession = {
 } | null;
 
 export async function getCurrentSession(): Promise<AppSession> {
+  const requestHeaders = await headers();
   const session = (await auth.api.getSession({
-    headers: await headers()
+    headers: requestHeaders
   })) as AppSession;
-  if (!session?.user.id) return session;
+  if (!session?.user.id) return getBearerSession(requestHeaders);
   const user = await prisma.user.findUnique({
     where: { id: session.user.id },
     select: { role: true, emailVerified: true, staffPermissions: true }
@@ -146,6 +147,42 @@ export async function getCurrentSession(): Promise<AppSession> {
   return user
     ? { ...session, user: { ...session.user, role: user.role, emailVerified: user.emailVerified, staffPermissions: user.staffPermissions } }
     : session;
+}
+
+async function getBearerSession(requestHeaders: Headers): Promise<AppSession> {
+  const token = bearerToken(requestHeaders);
+  if (!token) return null;
+  const session = await prisma.session.findUnique({
+    where: { token },
+    include: {
+      user: {
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          image: true,
+          role: true,
+          emailVerified: true,
+          staffPermissions: true,
+          username: true,
+          bio: true
+        }
+      }
+    }
+  });
+  if (!session || session.expiresAt <= new Date()) return null;
+  return {
+    session: { id: session.id, userId: session.userId },
+    user: session.user
+  };
+}
+
+function bearerToken(requestHeaders: Headers) {
+  const explicit = requestHeaders.get("x-superprint-session-token")?.trim();
+  if (explicit) return explicit;
+  const authorization = requestHeaders.get("authorization")?.trim();
+  if (!authorization?.toLowerCase().startsWith("bearer ")) return null;
+  return authorization.slice(7).trim() || null;
 }
 
 export function hasAdminRole(role?: string | null) {
