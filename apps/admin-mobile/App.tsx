@@ -1084,20 +1084,6 @@ function SettingsScreen({ settings, setSettings }: { settings: AdminSettings; se
   const [signingIn, setSigningIn] = useState(false);
   const [status, setStatus] = useState("");
 
-  async function checkConnection() {
-    setTesting(true);
-    setStatus("Checking backend...");
-    try {
-      await client.health();
-      const products = await client.get<{ products: ProductOption[] }>("/api/products");
-      setStatus(`Connected. Found ${products.products.length} active product${products.products.length === 1 ? "" : "s"}.`);
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Connection failed.");
-    } finally {
-      setTesting(false);
-    }
-  }
-
   async function signIn() {
     setSigningIn(true);
     setStatus("Signing in...");
@@ -1141,11 +1127,11 @@ function SettingsScreen({ settings, setSettings }: { settings: AdminSettings; se
 
   async function loadPaymentConfig() {
     setTesting(true);
-    setStatus("Loading payment settings...");
+    setStatus("Loading Stripe payment settings...");
     try {
       const config = await client.get<{ publishableKey: string | null; terminalLocationId: string | null; configured: boolean; mode: string }>("/api/admin/pos/terminal/config");
       setSettings({ ...settings, publishableKey: config.publishableKey ?? "", terminalLocationId: config.terminalLocationId ?? "" });
-      setStatus(config.configured ? `Stripe ${config.mode} configured.` : "Stripe is not configured yet in the web admin.");
+      setStatus(config.configured ? `Loaded Stripe ${config.mode} payments.` : "Stripe secret key is not configured yet in SuperPrint settings.");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Could not load payment settings.");
     } finally {
@@ -1153,14 +1139,21 @@ function SettingsScreen({ settings, setSettings }: { settings: AdminSettings; se
     }
   }
 
-  async function checkMobileSession() {
+  async function saveSettings() {
     setTesting(true);
-    setStatus("Checking signed-in admin...");
+    setStatus("Saving settings...");
     try {
-      const session = await client.get<MobileSessionInfo>("/api/admin/mobile-session");
-      setStatus(sessionStatusForSettings(session, settings));
+      await client.post("/api/admin/settings", {
+        primaryColor: lightPalette.cyan,
+        stripe: {
+          mode: inferStripeModeFromKey(settings.publishableKey),
+          publishableKey: settings.publishableKey,
+          terminalLocationId: settings.terminalLocationId
+        }
+      });
+      setStatus("Saved settings.");
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Could not check signed-in user.");
+      setStatus(error instanceof Error ? error.message : "Could not save settings.");
     } finally {
       setTesting(false);
     }
@@ -1220,11 +1213,8 @@ function SettingsScreen({ settings, setSettings }: { settings: AdminSettings; se
           <Pressable onPress={loadPaymentConfig} style={[styles.secondaryButton, styles.grow]}>
             <Text style={styles.secondaryButtonText}>Load Payments</Text>
           </Pressable>
-          <Pressable onPress={checkMobileSession} style={[styles.secondaryButton, styles.grow]}>
-            <Text style={styles.secondaryButtonText}>Who Am I</Text>
-          </Pressable>
-          <Pressable onPress={checkConnection} style={[styles.primaryButton, styles.grow]}>
-            {testing ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>Test</Text>}
+          <Pressable onPress={saveSettings} style={[styles.primaryButton, styles.grow]}>
+            {testing ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>Save</Text>}
           </Pressable>
         </View>
         {status ? <Text style={styles.message}>{status}</Text> : null}
@@ -1464,6 +1454,10 @@ function sessionStatusForSettings(session: MobileSessionInfo, settings: AdminSet
   return session.user.email.toLowerCase() === settings.adminEmail.trim().toLowerCase()
     ? status
     : `${status}. Email field is ${settings.adminEmail.trim()}.`;
+}
+
+function inferStripeModeFromKey(value: string) {
+  return value.startsWith("pk_live_") ? "live" : "test";
 }
 
 function sortPlannerRows(a: PartPlannerRow, b: PartPlannerRow) {
