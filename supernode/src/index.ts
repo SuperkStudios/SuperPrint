@@ -22,9 +22,12 @@ const nodeSigningSecret = nodeSecret;
 
 let retryCount = 0;
 let latestCameraFrameAt = 0;
+let cameraBridgeLastFrameAt = 0;
+let cameraBridgeLastError: string | null = null;
 
 async function sendHeartbeat() {
   const printerHealth = await probeConfiguredPrinter();
+  const cameraBridgeError = getCameraBridgeHeartbeatError();
   const payload = {
     nodeId,
     printerId,
@@ -39,7 +42,8 @@ async function sendHeartbeat() {
       timelapses: process.env.SUPERNODE_TIMELAPSES_PATH ?? "/data/timelapses",
       thumbnails: process.env.SUPERNODE_THUMBNAILS_PATH ?? "/data/thumbnails"
     },
-    retryCount
+    retryCount,
+    lastError: cameraBridgeError
   };
   const body = JSON.stringify(payload);
   const response = await fetch(`${apiBaseUrl}/api/supernode/heartbeat`, {
@@ -84,19 +88,32 @@ function probeEndpoint(url: string, timeoutMs: number) {
 }
 
 async function startCameraFrameBridge() {
-  if (!printerId || !printerCameraUrl) return;
+  if (!printerId || !printerCameraUrl) {
+    cameraBridgeLastError = "SuperNode camera bridge is not configured";
+    return;
+  }
 
   for (;;) {
     try {
       if (printerControlUrl?.startsWith("ws")) {
         await enableCentauriVideo(printerControlUrl).catch(() => undefined);
       }
+      cameraBridgeLastError = null;
       await streamCameraFrames(printerCameraUrl);
     } catch (error) {
-      console.error(error instanceof Error ? `camera bridge: ${error.message}` : error);
+      cameraBridgeLastError = error instanceof Error ? error.message : String(error);
+      console.error(`camera bridge: ${cameraBridgeLastError}`);
       await sleep(3000);
     }
   }
+}
+
+function getCameraBridgeHeartbeatError() {
+  if (!printerCameraUrl) return null;
+  if (cameraBridgeLastError) return `SuperNode camera bridge: ${cameraBridgeLastError}`;
+  if (!cameraBridgeLastFrameAt) return "SuperNode camera bridge has not uploaded a frame yet";
+  const ageMs = Date.now() - cameraBridgeLastFrameAt;
+  return ageMs > 30_000 ? `SuperNode camera bridge last uploaded a frame ${Math.round(ageMs / 1000)}s ago` : null;
 }
 
 function streamCameraFrames(url: string) {
@@ -176,6 +193,8 @@ async function postCameraFrame(frame: Buffer) {
   if (!response.ok) {
     throw new Error(`camera frame upload rejected with ${response.status}`);
   }
+  cameraBridgeLastFrameAt = Date.now();
+  cameraBridgeLastError = null;
 }
 
 function enableCentauriVideo(controlApiUrl: string) {
