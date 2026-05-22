@@ -5,6 +5,7 @@ import type Hls from "hls.js";
 import { Maximize2, Radio } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { usePrinterFeedStatus } from "@/hooks/use-printer-feed-status";
 
 export function LiveBedFeed({
   streamUrl = "/api/printer-feed/stream",
@@ -16,10 +17,15 @@ export function LiveBedFeed({
   currentPrint: string;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const liveStatus = usePrinterFeedStatus();
   const [state, setState] = useState<"loading" | "online" | "offline">("loading");
   const [retryToken, setRetryToken] = useState(0);
-  const isMjpeg = !streamUrl.endsWith(".m3u8");
-  const mjpegSrc = `${streamUrl}${streamUrl.includes("?") ? "&" : "?"}r=${retryToken}`;
+  const activeStreamUrl = liveStatus?.streamUrl || streamUrl;
+  const activeCameraSource = liveStatus?.cameraSource ?? null;
+  const isWebRtcPage = activeCameraSource === "mediamtx-webrtc";
+  const isHls = activeStreamUrl.endsWith(".m3u8");
+  const isMjpeg = !isWebRtcPage && !isHls;
+  const mjpegSrc = `${activeStreamUrl}${activeStreamUrl.includes("?") ? "&" : "?"}r=${retryToken}`;
 
   useEffect(() => {
     let destroyed = false;
@@ -27,16 +33,16 @@ export function LiveBedFeed({
 
     async function connect() {
       const video = videoRef.current;
-      if (!video || isMjpeg) return;
+      if (!video || !isHls) return;
       setState("loading");
       try {
         if (video.canPlayType("application/vnd.apple.mpegurl")) {
-          video.src = streamUrl;
+          video.src = activeStreamUrl;
         } else {
           const HlsConstructor = (await import("hls.js")).default;
           if (!HlsConstructor.isSupported()) throw new Error("HLS unsupported");
           hls = new HlsConstructor({ lowLatencyMode: true, backBufferLength: 20 });
-          hls.loadSource(streamUrl);
+          hls.loadSource(activeStreamUrl);
           hls.attachMedia(video);
         }
         await video.play().catch(() => undefined);
@@ -61,7 +67,7 @@ export function LiveBedFeed({
       if (retry) clearTimeout(retry);
       hls?.destroy();
     };
-  }, [streamUrl, state, isMjpeg]);
+  }, [activeStreamUrl, state, isHls, isMjpeg]);
 
   async function fullscreen() {
     const element = videoRef.current ?? document.querySelector<HTMLImageElement>("[data-live-bed-feed]");
@@ -71,7 +77,16 @@ export function LiveBedFeed({
   return (
     <div className="relative overflow-hidden rounded-[1rem] border border-cyan-300/20 bg-black shadow-[0_0_120px_rgba(34,211,238,0.18)]">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_10%,rgba(34,211,238,0.18),transparent_38%),linear-gradient(135deg,rgba(255,255,255,0.06),transparent_40%)]" />
-      {isMjpeg ? (
+      {isWebRtcPage ? (
+        <iframe
+          data-live-bed-feed
+          src={activeStreamUrl}
+          title={`${printerName} live print bed`}
+          allow="autoplay; fullscreen; picture-in-picture"
+          className="relative aspect-video w-full border-0 bg-zinc-950"
+          onLoad={() => setState("online")}
+        />
+      ) : isMjpeg ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
           key={retryToken}
@@ -105,7 +120,7 @@ export function LiveBedFeed({
         <p className="text-sm text-zinc-300">{printerName}</p>
         <p className="text-xl font-semibold">{currentPrint}</p>
         <div className="mt-2 flex flex-wrap gap-3 text-xs text-zinc-400">
-          <span>Relay: shared MJPEG</span>
+          <span>Relay: {activeCameraSource === "mediamtx-hls" ? "MediaMTX HLS" : activeCameraSource === "mediamtx-webrtc" ? "MediaMTX WebRTC" : "shared MJPEG"}</span>
           <span>Recording: armed</span>
           <span>Reconnect: on disconnect</span>
         </div>

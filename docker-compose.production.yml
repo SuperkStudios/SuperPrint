@@ -87,6 +87,15 @@ services:
       postgres:
         condition: service_healthy
 
+  mediamtx:
+    image: bluenviron/mediamtx:1.18.2
+    restart: unless-stopped
+    ports:
+      - "1935:1935"
+      - "127.0.0.1:8888:8888"
+      - "127.0.0.1:8889:8889"
+      - "8189:8189/udp"
+
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped

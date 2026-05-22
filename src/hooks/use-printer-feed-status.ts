@@ -7,6 +7,9 @@ export type PrinterFeedStatus = {
   online: boolean;
   printerName: string;
   health: string;
+  streamUrl?: string | null;
+  fallbackHlsUrl?: string | null;
+  cameraSource?: string | null;
   heartbeatAt?: string | null;
   heartbeatLatencyMs?: number | null;
   telemetry: PublicPrinterTelemetry | { state: "WAITING_FOR_TELEMETRY" };

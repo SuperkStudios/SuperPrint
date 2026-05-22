@@ -1,4 +1,5 @@
 import { mkdir, writeFile } from "node:fs/promises";
+import { spawn } from "node:child_process";
 import http from "node:http";
 import https from "node:https";
 import path from "node:path";
@@ -13,6 +14,11 @@ const printerControlUrl = process.env.SUPERNODE_PRINTER_CONTROL_URL;
 const printerCameraUrl = process.env.SUPERNODE_PRINTER_CAMERA_URL;
 const heartbeatIntervalMs = Number(process.env.SUPERNODE_HEARTBEAT_INTERVAL_MS ?? 15000);
 const cameraFrameIntervalMs = Number(process.env.SUPERNODE_CAMERA_FRAME_INTERVAL_MS ?? 100);
+const mediaPushUrl = process.env.SUPERNODE_MEDIA_PUSH_URL?.trim();
+const mediaSourceUrl = process.env.SUPERNODE_MEDIA_SOURCE_URL?.trim() || printerCameraUrl;
+const mediaFps = Number(process.env.SUPERNODE_MEDIA_FPS ?? 15);
+const mediaBitrate = process.env.SUPERNODE_MEDIA_BITRATE?.trim() || "1200k";
+const mediaScale = process.env.SUPERNODE_MEDIA_SCALE?.trim() || "1280:-2";
 const nodeJobsDir = process.env.SUPERNODE_JOBS_PATH ?? "/data/node-jobs";
 
 if (!nodeSecret) {
@@ -25,6 +31,7 @@ let latestCameraFrameAt = 0;
 let cameraFrameUploadInFlight = false;
 let cameraBridgeLastFrameAt = 0;
 let cameraBridgeLastError: string | null = null;
+let mediaRelayLastError: string | null = null;
 
 async function sendHeartbeat() {
   const printerHealth = await probeConfiguredPrinter();
@@ -112,9 +119,114 @@ async function startCameraFrameBridge() {
 function getCameraBridgeHeartbeatError() {
   if (!printerCameraUrl) return null;
   if (cameraBridgeLastError) return `SuperNode camera bridge: ${cameraBridgeLastError}`;
+  if (mediaPushUrl && mediaRelayLastError) return `SuperNode media relay: ${mediaRelayLastError}`;
   if (!cameraBridgeLastFrameAt) return "SuperNode camera bridge has not uploaded a frame yet";
   const ageMs = Date.now() - cameraBridgeLastFrameAt;
   return ageMs > 30_000 ? `SuperNode camera bridge last uploaded a frame ${Math.round(ageMs / 1000)}s ago` : null;
+}
+
+async function startMediaRelayBridge() {
+  if (!mediaPushUrl || !mediaSourceUrl) return;
+
+  for (;;) {
+    const startedAt = Date.now();
+    mediaRelayLastError = null;
+    console.log(`media relay: pushing ${mediaSourceUrl} to configured media server`);
+
+    try {
+      await runFfmpegRelay();
+      mediaRelayLastError = "ffmpeg exited";
+    } catch (error) {
+      mediaRelayLastError = error instanceof Error ? error.message : String(error);
+      console.error(`media relay: ${mediaRelayLastError}`);
+    }
+
+    const ranForMs = Date.now() - startedAt;
+    await sleep(ranForMs < 10_000 ? 5000 : 1500);
+  }
+}
+
+function runFfmpegRelay() {
+  return new Promise<void>((resolve, reject) => {
+    const args = buildFfmpegRelayArgs();
+    const child = spawn("ffmpeg", args, { stdio: ["ignore", "ignore", "pipe"] });
+    let stderr = "";
+    const stop = () => {
+      child.kill("SIGTERM");
+      setTimeout(() => {
+        if (!child.killed) child.kill("SIGKILL");
+      }, 2000).unref();
+    };
+
+    process.once("SIGTERM", stop);
+    process.once("SIGINT", stop);
+
+    child.stderr.on("data", (chunk: Buffer) => {
+      stderr = `${stderr}${chunk.toString()}`.slice(-2000);
+    });
+    child.on("error", (error) => {
+      cleanupProcessSignals(stop);
+      reject(error);
+    });
+    child.on("exit", (code, signal) => {
+      cleanupProcessSignals(stop);
+      if (code === 0 || signal === "SIGTERM" || signal === "SIGINT") {
+        resolve();
+        return;
+      }
+      reject(new Error(`ffmpeg exited with ${code ?? signal}${stderr ? `: ${stderr.trim()}` : ""}`));
+    });
+  });
+}
+
+function buildFfmpegRelayArgs() {
+  const fps = Number.isFinite(mediaFps) && mediaFps > 0 ? Math.round(mediaFps) : 15;
+  const scaleFilter = mediaScale ? `scale=${mediaScale}` : null;
+  const filters = [`fps=${fps}`, scaleFilter].filter(Boolean).join(",");
+  return [
+    "-hide_banner",
+    "-loglevel",
+    "warning",
+    "-fflags",
+    "nobuffer",
+    "-flags",
+    "low_delay",
+    "-probesize",
+    "32",
+    "-analyzeduration",
+    "0",
+    "-i",
+    mediaSourceUrl ?? "",
+    "-an",
+    "-vf",
+    filters,
+    "-c:v",
+    "libx264",
+    "-preset",
+    "veryfast",
+    "-tune",
+    "zerolatency",
+    "-pix_fmt",
+    "yuv420p",
+    "-r",
+    String(fps),
+    "-g",
+    String(fps * 2),
+    "-b:v",
+    mediaBitrate,
+    "-maxrate",
+    mediaBitrate,
+    "-bufsize",
+    mediaBitrate,
+    "-f",
+    "flv",
+    mediaPushUrl ?? ""
+  ];
+}
+
+function cleanupProcessSignals(listener: () => void) {
+  process.off("SIGTERM", listener);
+  process.off("SIGINT", listener);
 }
 
 function streamCameraFrames(url: string) {
@@ -355,4 +467,5 @@ async function loop() {
 }
 
 void startCameraFrameBridge();
+void startMediaRelayBridge();
 loop();
