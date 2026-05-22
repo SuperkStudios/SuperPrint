@@ -2,6 +2,7 @@ import WebSocket from "ws";
 import { buildCentauriVideoEnableRequest, getCentauriMjpegUrl } from "@/domain/printer-heartbeat";
 import { prisma } from "@/lib/prisma";
 import { getSharedPrinterFeedRelay } from "@/services/printer-camera-relay";
+import { createSuperNodeCameraFrameStream, getRecentSuperNodeCameraFrame } from "@/services/supernode-camera-frames";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -10,6 +11,17 @@ export async function GET() {
   const printer = await prisma.printer.findFirst({ orderBy: { publicName: "asc" } });
   if (!printer) {
     return new Response("No printer registered", { status: 404 });
+  }
+
+  if (getRecentSuperNodeCameraFrame(printer.id)) {
+    const activeStream = createSuperNodeCameraFrameStream(printer.id);
+    return new Response(activeStream.stream, {
+      headers: {
+        "Content-Type": activeStream.contentType,
+        "Cache-Control": "no-store, no-cache, must-revalidate",
+        Pragma: "no-cache"
+      }
+    });
   }
 
   const activeStream = await getSharedPrinterFeedRelay().openClient(getCentauriMjpegUrl({ internalIp: printer.internalIp, cameraSource: printer.cameraSource }), {

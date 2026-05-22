@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getCentauriMjpegUrl } from "@/domain/printer-heartbeat";
 import { prisma } from "@/lib/prisma";
 import { getSharedPrinterFeedRelay } from "@/services/printer-camera-relay";
+import { getRecentSuperNodeCameraFrame } from "@/services/supernode-camera-frames";
 import { getPublicQueueState } from "@/services/queue";
 import { readPrinterTelemetry, refreshPrinterHeartbeat } from "@/services/printer-heartbeat";
 
@@ -15,7 +16,8 @@ export async function GET() {
   const queue = await getPublicQueueState();
   const publicPrinter = queue.current?.printer ?? queue.printers[0] ?? null;
   const relay = getSharedPrinterFeedRelay().getState();
-  const online = refreshed?.heartbeatStatus === "ONLINE" || relay.state === "connected" || relay.state === "connecting";
+  const superNodeFrame = refreshed ? getRecentSuperNodeCameraFrame(refreshed.id) : null;
+  const online = refreshed?.heartbeatStatus === "ONLINE" || Boolean(superNodeFrame) || relay.state === "connected" || relay.state === "connecting";
 
   return NextResponse.json({
     online,
@@ -23,10 +25,17 @@ export async function GET() {
     fallbackHlsUrl: "/api/live/printer/main.m3u8",
     printerName: refreshed?.publicName ?? publicPrinter?.name ?? "SuperPrint cell",
     health: refreshed?.healthDescription ?? publicPrinter?.healthDescription ?? "No public printer status available",
-    cameraSource: refreshed ? "proxied-mjpeg" : null,
+    cameraSource: superNodeFrame ? "supernode-mjpeg" : refreshed ? "proxied-mjpeg" : null,
     recording: false,
     latencyMode: "mjpeg-direct",
     relay,
+    superNodeCamera: superNodeFrame
+      ? {
+          nodeId: superNodeFrame.nodeId,
+          receivedAt: superNodeFrame.receivedAt,
+          ageMs: Date.now() - superNodeFrame.receivedAt.getTime()
+        }
+      : null,
     heartbeatAt: refreshed?.lastHeartbeatAt,
     heartbeatLatencyMs: refreshed?.heartbeatLatencyMs,
     telemetry: telemetry ?? { state: "WAITING_FOR_TELEMETRY" },
