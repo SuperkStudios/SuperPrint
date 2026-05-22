@@ -136,10 +136,12 @@ export type AppSession = {
 
 export async function getCurrentSession(): Promise<AppSession> {
   const requestHeaders = await headers();
+  const nativeSession = await getBearerSession(requestHeaders);
+  if (nativeSession) return nativeSession;
   const session = (await auth.api.getSession({
     headers: requestHeaders
   })) as AppSession;
-  if (!session?.user.id) return getBearerSession(requestHeaders);
+  if (!session?.user.id) return null;
   const user = await prisma.user.findUnique({
     where: { id: session.user.id },
     select: { role: true, emailVerified: true, staffPermissions: true }

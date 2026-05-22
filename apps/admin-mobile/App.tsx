@@ -1329,7 +1329,11 @@ class SuperPrintClient {
     const base = this.settings.apiBaseUrl.replace(/\/$/, "");
     const response = await fetch(`${base}/api/auth/sign-in/email`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Origin: base,
+        Referer: `${base}/admin`
+      },
       body: JSON.stringify({ email, password, callbackURL: "/admin" })
     });
     const text = await response.text();
@@ -1346,7 +1350,11 @@ class SuperPrintClient {
     const base = this.settings.apiBaseUrl.replace(/\/$/, "");
     const response = await fetch(`${base}/api/auth/sign-in/social`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Origin: base,
+        Referer: `${base}/admin`
+      },
       body: JSON.stringify({
         provider: "apple",
         idToken: { token: identityToken },
