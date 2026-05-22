@@ -1105,7 +1105,7 @@ function SettingsScreen({ settings, setSettings }: { settings: AdminSettings; se
       const cookie = await client.signIn(settings.adminEmail, settings.adminPassword);
       setSettings({ ...settings, adminCookie: cookie });
       const session = await new SuperPrintClient({ ...settings, adminCookie: cookie }).get<MobileSessionInfo>("/api/admin/mobile-session");
-      setStatus(sessionStatus(session));
+      setStatus(sessionStatusForSettings(session, settings));
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Sign in failed.");
     } finally {
@@ -1127,7 +1127,7 @@ function SettingsScreen({ settings, setSettings }: { settings: AdminSettings; se
       const cookie = await client.signInWithApple(credential.identityToken);
       setSettings({ ...settings, adminCookie: cookie });
       const session = await new SuperPrintClient({ ...settings, adminCookie: cookie }).get<MobileSessionInfo>("/api/admin/mobile-session");
-      setStatus(sessionStatus(session));
+      setStatus(sessionStatusForSettings(session, settings));
     } catch (error) {
       if ((error as { code?: string }).code === "ERR_REQUEST_CANCELED") {
         setStatus("Apple sign in canceled.");
@@ -1158,7 +1158,7 @@ function SettingsScreen({ settings, setSettings }: { settings: AdminSettings; se
     setStatus("Checking signed-in admin...");
     try {
       const session = await client.get<MobileSessionInfo>("/api/admin/mobile-session");
-      setStatus(sessionStatus(session));
+      setStatus(sessionStatusForSettings(session, settings));
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Could not check signed-in user.");
     } finally {
@@ -1458,6 +1458,14 @@ function sessionStatus(session: MobileSessionInfo) {
   return `Signed in as ${session.user.email} · ${session.user.role ?? "NO_ROLE"} · ${allowed}`;
 }
 
+function sessionStatusForSettings(session: MobileSessionInfo, settings: AdminSettings) {
+  const status = sessionStatus(session);
+  if (!session.user?.email || !settings.adminEmail.trim()) return status;
+  return session.user.email.toLowerCase() === settings.adminEmail.trim().toLowerCase()
+    ? status
+    : `${status}. Email field is ${settings.adminEmail.trim()}.`;
+}
+
 function sortPlannerRows(a: PartPlannerRow, b: PartPlannerRow) {
   return b.quantityToPrint - a.quantityToPrint || a.color.localeCompare(b.color) || a.productName.localeCompare(b.productName) || a.partName.localeCompare(b.partName);
 }
@@ -1494,9 +1502,9 @@ function sessionTokenFromCookie(cookieHeader: string) {
     .find((item) => item.startsWith("better-auth.session_token=") || item.startsWith("__Secure-better-auth.session_token="));
   const rawValue = sessionCookie?.split("=").slice(1).join("=") || cookieHeader;
   try {
-    return decodeURIComponent(rawValue);
+    return decodeURIComponent(rawValue).split(".")[0] || rawValue;
   } catch {
-    return rawValue;
+    return rawValue.split(".")[0] || rawValue;
   }
 }
 

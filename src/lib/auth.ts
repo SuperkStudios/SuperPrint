@@ -181,10 +181,15 @@ async function getBearerSession(requestHeaders: Headers): Promise<AppSession> {
 
 function bearerToken(requestHeaders: Headers) {
   const explicit = requestHeaders.get("x-superprint-session-token")?.trim();
-  if (explicit) return explicit;
+  if (explicit) return normalizeSessionToken(explicit);
   const authorization = requestHeaders.get("authorization")?.trim();
   if (!authorization?.toLowerCase().startsWith("bearer ")) return null;
-  return authorization.slice(7).trim() || null;
+  return normalizeSessionToken(authorization.slice(7).trim());
+}
+
+function normalizeSessionToken(value: string) {
+  const decoded = decodeURIComponent(value);
+  return decoded.split(".")[0]?.trim() || null;
 }
 
 export function hasAdminRole(role?: string | null) {
