@@ -90,6 +90,8 @@ services:
   mediamtx:
     image: bluenviron/mediamtx:1.18.2
     restart: unless-stopped
+    environment:
+      MTX_WEBRTCADDITIONALHOSTS: "15.204.89.81,live.print.superk.studio"
     ports:
       - "1935:1935"
       - "127.0.0.1:8888:8888"
