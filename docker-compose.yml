@@ -7,12 +7,18 @@ services:
       - "3000:3000"
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/superprint?schema=public
-      NEXTAUTH_URL: http://Keenans-Mac-mini.local:3000
+      NEXTAUTH_URL: https://print.superk.studio
       NEXTAUTH_SECRET: dev-secret-change-me-dev-secret-change-me
-      BETTER_AUTH_URL: http://Keenans-Mac-mini.local:3000
-      BETTER_AUTH_TRUSTED_ORIGINS: http://Keenans-Mac-mini.local:3000,http://localhost:3000,http://127.0.0.1:3000,http://192.168.10.104:3000,http://192.168.10.126:3000
+      BETTER_AUTH_URL: https://print.superk.studio
+      BETTER_AUTH_TRUSTED_ORIGINS: https://print.superk.studio,https://appleid.apple.com,http://Keenans-Mac-mini.local:3000,http://localhost:3000,http://127.0.0.1:3000,http://192.168.10.104:3000,http://192.168.10.126:3000
       BETTER_AUTH_SECRET: dev-secret-change-me-dev-secret-change-me
-      NEXT_PUBLIC_APP_URL: http://Keenans-Mac-mini.local:3000
+      NEXT_PUBLIC_APP_URL: https://print.superk.studio
+      APPLE_CLIENT_ID: ${APPLE_CLIENT_ID:-}
+      APPLE_TEAM_ID: ${APPLE_TEAM_ID:-}
+      APPLE_KEY_ID: ${APPLE_KEY_ID:-}
+      APPLE_PRIVATE_KEY: ${APPLE_PRIVATE_KEY:-}
+      APPLE_CLIENT_SECRET: ${APPLE_CLIENT_SECRET:-}
+      APPLE_APP_BUNDLE_IDENTIFIER: studio.superk.superprint.admin
       STRIPE_SECRET_KEY: ""
       STRIPE_WEBHOOK_SECRET: ""
       MEDIA_TOKEN_SECRET: dev-media-secret-change-me

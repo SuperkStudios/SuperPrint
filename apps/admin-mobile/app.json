@@ -1,0 +1,66 @@
+{
+  "expo": {
+    "name": "SuperPrint Admin",
+    "slug": "superprint-admin",
+    "scheme": "superprint-admin",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "studio.superk.superprint.admin",
+      "associatedDomains": [
+        "webcredentials:print.superk.studio",
+        "applinks:print.superk.studio"
+      ],
+      "entitlements": {
+        "com.apple.developer.applesignin": [
+          "Default"
+        ],
+        "com.apple.developer.proximity-reader.payment.acceptance": true
+      },
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Location access is required for Stripe Terminal readers and Tap to Pay.",
+        "NSBluetoothAlwaysUsageDescription": "Bluetooth is used to connect to supported Stripe readers.",
+        "NSBluetoothPeripheralUsageDescription": "Bluetooth is used to connect to supported Stripe readers.",
+        "NFCReaderUsageDescription": "NFC is used for Tap to Pay on supported iPhones."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-apple-authentication",
+      [
+        "@stripe/stripe-react-native",
+        {
+          "merchantIdentifier": "merchant.studio.superk.superprint",
+          "enableGooglePay": false
+        }
+      ],
+      [
+        "@stripe/stripe-terminal-react-native",
+        {
+          "bluetoothPeripheralPermission": "Bluetooth is used to connect to supported Stripe readers.",
+          "bluetoothAlwaysUsagePermission": "Bluetooth is used to connect to supported Stripe readers.",
+          "locationWhenInUsePermission": "Location access is required for Stripe Terminal readers and Tap to Pay."
+        }
+      ]
+    ]
+  }
+}

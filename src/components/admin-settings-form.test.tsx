@@ -15,6 +15,7 @@ describe("AdminSettingsForm", () => {
           secretKey: "sk_test_1234567890",
           publishableKey: "pk_test_1234567890",
           webhookSecret: "whsec_1234567890",
+          terminalLocationId: "tml_1234567890",
           configured: true
         }}
       />

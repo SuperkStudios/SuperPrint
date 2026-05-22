@@ -10,18 +10,31 @@ import { optimizeQueueForLoadedFilament } from "@/services/queue";
 import { recordPlatformEvent } from "./events";
 import { sendOrderEmail } from "./email";
 
-export async function createProductCheckout(input: { productId: string; customerId: string; customerEmail?: string | null; selectedFilamentMaterialId?: string | null; selectedMaterial?: string | null; selectedColor?: string | null; fulfillment: CheckoutFulfillmentInput }) {
+export async function createProductCheckout(input: {
+  productId: string;
+  customerId: string;
+  customerEmail?: string | null;
+  selectedFilamentMaterialId?: string | null;
+  selectedFilamentMaterialIds?: string[] | null;
+  selectedMaterial?: string | null;
+  selectedColor?: string | null;
+  selectedColors?: string[] | null;
+  fulfillment: CheckoutFulfillmentInput;
+}) {
   const product = await prisma.product.findFirstOrThrow({
     where: { id: input.productId, status: "ACTIVE" },
     include: { allowedFilaments: { where: { enabled: true }, include: { filamentMaterial: true } } }
   });
-  const selectedAllowed = input.selectedFilamentMaterialId
-    ? product.allowedFilaments.find((item) => item.filamentMaterialId === input.selectedFilamentMaterialId)
+  const selectedIds = normalizeCheckoutFilamentIds(product, input.selectedFilamentMaterialIds ?? (input.selectedFilamentMaterialId ? [input.selectedFilamentMaterialId] : undefined));
+  const selectedAllowed = selectedIds[0]
+    ? product.allowedFilaments.find((item) => item.filamentMaterialId === selectedIds[0])
     : product.allowedFilaments.find((item) => item.filamentMaterialId === product.defaultFilamentMaterialId) ?? product.allowedFilaments[0];
   if (!selectedAllowed) throw new Error("No enabled filament is available for this product.");
+  const selectedFilaments = selectedIds.map((id) => product.allowedFilaments.find((item) => item.filamentMaterialId === id) ?? selectedAllowed);
+  const selectedColors = selectedFilaments.map((item, index) => input.selectedColors?.[index] ?? item.filamentMaterial.color);
   const selection = resolveCheckoutSelection({ defaultMaterial: selectedAllowed.filamentMaterial.material }, {
     selectedMaterial: input.selectedMaterial ?? selectedAllowed.filamentMaterial.material,
-    selectedColor: input.selectedColor ?? selectedAllowed.filamentMaterial.color
+    selectedColor: input.selectedColor ?? selectedColors[0] ?? selectedAllowed.filamentMaterial.color
   });
   const quote = await calculateProductPrice({
     productId: product.id,
@@ -70,7 +83,9 @@ export async function createProductCheckout(input: { productId: string; customer
         shippingAmountCents: shipping.shippingAmountCents,
         selectedMaterial: selection.selectedMaterial as never,
         selectedColor: selection.selectedColor,
-        selectedFilamentMaterialId: selectedAllowed.filamentMaterialId
+        selectedFilamentMaterialId: selectedAllowed.filamentMaterialId,
+        selectedFilamentMaterialIds: selectedIds,
+        selectedColors
       },
       include: { items: true }
     });
@@ -123,7 +138,7 @@ export async function createProductCheckout(input: { productId: string; customer
       customerEmail: input.customerEmail,
       productName: product.name,
       material: selection.selectedMaterial,
-      color: selection.selectedColor,
+      color: selectedColors.join(" + ") || selection.selectedColor,
       priceCents: order.totalCents,
       rewardDiscountCents: order.rewardDiscountCents,
       rewardPointsRedeemed: order.rewardPointsRedeemed,
@@ -139,11 +154,7 @@ export async function createProductCheckout(input: { productId: string; customer
 
   const stripe = await getStripe();
   if (!stripe) {
-    return {
-      order,
-      checkoutUrl: `/api/orders/${order.id}/demo-pay`,
-      stripeConfigured: false
-    };
+    throw new Error("Stripe payments are not configured. Add the Stripe secret key and publishable key in admin settings before accepting checkout payments.");
   }
 
   const baseUrl = getStripeBaseUrl();
@@ -165,6 +176,8 @@ export async function createProductCheckout(input: { productId: string; customer
       selectedMaterial: selection.selectedMaterial,
       selectedColor: selection.selectedColor ?? "",
       selectedFilamentMaterialId: selectedAllowed.filamentMaterialId,
+      selectedFilamentMaterialIds: selectedIds.join(","),
+      selectedColors: selectedColors.join(","),
       fulfillmentMethod: shipping.method,
       rewardPointsRedeemed: String(order.rewardPointsRedeemed),
       rewardDiscountCents: String(order.rewardDiscountCents)
@@ -178,6 +191,18 @@ export async function createProductCheckout(input: { productId: string; customer
     checkoutUrl: session.url,
     stripeConfigured: true
   };
+}
+
+function normalizeCheckoutFilamentIds(
+  product: { colorSlotCount?: number | null; allowedFilaments: Array<{ filamentMaterialId: string }> },
+  selectedFilamentMaterialIds?: string[] | null
+) {
+  const slotCount = Math.max(1, product.colorSlotCount ?? 1);
+  const fallback = product.allowedFilaments[0]?.filamentMaterialId ?? "";
+  return Array.from({ length: slotCount }, (_, index) => {
+    const requested = selectedFilamentMaterialIds?.[index] ?? selectedFilamentMaterialIds?.[0] ?? fallback;
+    return product.allowedFilaments.some((item) => item.filamentMaterialId === requested) ? requested : fallback;
+  }).filter(Boolean);
 }
 
 export async function createCartPaymentIntent(input: {
@@ -500,6 +525,11 @@ export async function markOrderPaidAndQueue(orderId: string, actorId?: string) {
       data: {
         status: "QUEUED",
         paymentStatus: "PAID",
+        paymentMethod: order.paymentMethod && !["UNPAID", "ONLINE"].includes(order.paymentMethod) ? order.paymentMethod : order.stripePaymentIntentId ? "STRIPE" : "ONLINE",
+        paymentSource: order.paymentSource ?? (order.stripePaymentIntentId ? "STRIPE" : "ONLINE"),
+        amountPaidCents: order.totalCents,
+        balanceDueCents: 0,
+        paidAt: new Date(),
         printJobs: {
           create: jobPlans.map((plan) => ({
             etaMinutes: Math.max(1, Math.ceil((plan.selectedAllowed?.estimatedPrintMinutesOverride ?? plan.item.estimatedPrintMinutes ?? plan.item.product.estimatedPrintMinutes) / Math.max(1, plan.item.product.colorSlotCount ?? 1))),
@@ -581,7 +611,7 @@ function aggregateCartForShipping(items: Array<{
   };
 }
 
-async function getOrCreateStripeCustomerId(input: {
+export async function getOrCreateStripeCustomerId(input: {
   stripe: NonNullable<Awaited<ReturnType<typeof getStripe>>>;
   userId: string;
   email: string;

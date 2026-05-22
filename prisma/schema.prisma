@@ -223,6 +223,7 @@ model User {
   carts        Cart[]
   uploads      ModelUpload[]
   orders       Order[]
+  productPartInventoryUpdates ProductPartInventory[]
   supportTickets SupportTicket[] @relation("SupportTicketCustomer")
   supportMessages SupportTicketMessage[] @relation("SupportMessageAuthor")
   rewardTransactions RewardTransaction[]
@@ -507,10 +508,28 @@ model ProductPart {
   colorSlotPattern Int[]    @default([])
   quantityPerUnit Int      @default(1)
   displayOrder    Int      @default(0)
+  inventory       ProductPartInventory[]
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
   @@index([productId, displayOrder])
+}
+
+model ProductPartInventory {
+  id              String      @id @default(cuid())
+  productPartId   String
+  productPart     ProductPart @relation(fields: [productPartId], references: [id], onDelete: Cascade)
+  color           String
+  quantityOnHand  Int         @default(0)
+  location        String      @default("Storage")
+  notes           String?
+  updatedById     String?
+  updatedBy       User?       @relation(fields: [updatedById], references: [id], onDelete: SetNull)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@unique([productPartId, color, location])
+  @@index([color])
 }
 
 model ProductAllowedFilament {
@@ -605,6 +624,17 @@ model Order {
   taxCents       Int         @default(0)
   paymentFeeCents Int       @default(0)
   paymentStatus  String      @default("PENDING")
+  paymentMethod  String      @default("UNPAID")
+  paymentSource  String?
+  amountPaidCents Int        @default(0)
+  depositCents   Int         @default(0)
+  balanceDueCents Int        @default(0)
+  paymentReference String?
+  cardBrand      String?
+  cardLast4      String?
+  paidAt         DateTime?
+  orderSource    String      @default("ONLINE")
+  internalNotes  String?
   stripePaymentIntentId String? @unique
   shippingStatus String      @default("NOT_STARTED")
   fulfillmentMethod String   @default("SHIP")

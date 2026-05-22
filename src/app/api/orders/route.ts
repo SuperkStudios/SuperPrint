@@ -5,6 +5,8 @@ import { requireCustomer } from "@/lib/http";
 import { recordPlatformEvent } from "@/services/events";
 import { getBootstrapStatus } from "@/lib/bootstrap";
 import { createProductCheckout } from "@/services/checkout";
+import { buildStripeCheckoutSuccessUrl } from "@/domain/checkout";
+import { getStripe, getStripeBaseUrl } from "@/lib/stripe";
 
 const createOrderSchema = z.object({
   productId: z.string().optional(),
@@ -60,8 +62,10 @@ export async function POST(request: Request) {
         customerId: session!.user.id,
         customerEmail: session!.user.email,
         selectedFilamentMaterialId: body.selectedFilamentMaterialId,
+        selectedFilamentMaterialIds: body.selectedFilamentMaterialIds,
         selectedMaterial: body.selectedMaterial,
         selectedColor: body.selectedColor,
+        selectedColors: body.selectedColors,
         fulfillment: body.fulfillment ?? { method: "SHIP" }
       });
       return NextResponse.json(checkout, { status: 201 });
@@ -69,16 +73,27 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: error instanceof Error ? error.message : "Checkout failed." }, { status: 400 });
     }
   }
-  const product = body.productId ? await prisma.product.findUnique({ where: { id: body.productId } }) : null;
-  const upload = body.uploadId ? await prisma.modelUpload.findUnique({ where: { id: body.uploadId } }) : null;
-  const totalCents = product?.priceCents ?? upload?.estimatedPriceCents ?? 0;
+  if (!body.uploadId) {
+    return NextResponse.json({ error: "Choose a product or upload before checkout." }, { status: 400 });
+  }
+
+  const [upload, stripe] = await Promise.all([
+    prisma.modelUpload.findUnique({ where: { id: body.uploadId } }),
+    getStripe()
+  ]);
+  if (!upload) return NextResponse.json({ error: "Upload not found." }, { status: 404 });
+  if (!stripe) return NextResponse.json({ error: "Stripe payments are not configured. Add Stripe keys in admin settings before accepting checkout payments." }, { status: 400 });
+
+  const totalCents = upload.estimatedPriceCents ?? 0;
+  if (totalCents <= 0) {
+    return NextResponse.json({ error: "This upload needs an approved price before checkout." }, { status: 400 });
+  }
 
   const order = await prisma.order.create({
     data: {
       orderNumber: `SP-${Date.now().toString().slice(-6)}`,
       customerId: session!.user.id,
-      productId: product?.id,
-      uploadId: upload?.id,
+      uploadId: upload.id,
       totalCents,
       status: "CHECKOUT_READY",
       paymentStatus: "PENDING"
@@ -91,6 +106,30 @@ export async function POST(request: Request) {
     payload: { orderNumber: order.orderNumber, customerEmail: session!.user.email }
   });
 
-  // TODO: Create payment provider checkout session for custom upload orders.
-  return NextResponse.json({ order, checkoutReady: true }, { status: 201 });
+  const baseUrl = getStripeBaseUrl();
+  const checkout = await stripe.checkout.sessions.create({
+    mode: "payment",
+    customer_email: session!.user.email ?? undefined,
+    line_items: [
+      {
+        price_data: {
+          currency: "usd",
+          product_data: {
+            name: upload.fileName ? `Custom print: ${upload.fileName}` : "Custom SuperPrint upload"
+          },
+          unit_amount: totalCents
+        },
+        quantity: 1
+      }
+    ],
+    metadata: {
+      orderId: order.id,
+      uploadId: upload.id,
+      customerId: session!.user.id
+    },
+    success_url: buildStripeCheckoutSuccessUrl(baseUrl, order.id),
+    cancel_url: `${baseUrl}/store?checkout=cancelled`
+  });
+
+  return NextResponse.json({ order, checkoutUrl: checkout.url, stripeConfigured: true }, { status: 201 });
 }

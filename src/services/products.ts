@@ -2,6 +2,8 @@ import { Prisma } from "@prisma/client";
 import { normalizeProductInput, type ProductInput } from "@/domain/products";
 import { prisma } from "@/lib/prisma";
 
+type NormalizedProductInput = ReturnType<typeof normalizeProductInput>;
+
 export async function upsertProduct(input: ProductInput & { id?: string }, actorId: string) {
   const product = normalizeProductInput(input);
   const { allowedFilaments, parts, ...productData } = product;
@@ -28,7 +30,7 @@ export async function upsertProduct(input: ProductInput & { id?: string }, actor
   return finalProduct;
 }
 
-async function replaceProductParts(productId: string, parts: ProductInput["parts"]) {
+async function replaceProductParts(productId: string, parts: NormalizedProductInput["parts"]) {
   await prisma.$transaction(async (tx) => {
     await tx.productPart.deleteMany({ where: { productId } });
     if (!parts.length) return;
@@ -47,7 +49,7 @@ async function replaceProductParts(productId: string, parts: ProductInput["parts
   });
 }
 
-async function replaceAllowedFilaments(productId: string, allowedFilaments: ProductInput["allowedFilaments"]) {
+async function replaceAllowedFilaments(productId: string, allowedFilaments: NormalizedProductInput["allowedFilaments"]) {
   if (!allowedFilaments.length) return;
   await prisma.$transaction(async (tx) => {
     await tx.productAllowedFilament.deleteMany({ where: { productId } });
@@ -65,7 +67,7 @@ async function replaceAllowedFilaments(productId: string, allowedFilaments: Prod
   });
 }
 
-function fallbackAllowedFilament(defaultFilamentMaterialId?: string | null): ProductInput["allowedFilaments"] {
+function fallbackAllowedFilament(defaultFilamentMaterialId?: string | null): NormalizedProductInput["allowedFilaments"] {
   return defaultFilamentMaterialId
     ? [{ filamentMaterialId: defaultFilamentMaterialId, priceAdjustmentCents: 0, enabled: true }]
     : [];

@@ -43,10 +43,12 @@ export const userNavigation: NavItem[] = [
 export const adminNavigation: NavItem[] = [
   { href: "/admin", label: "Dashboard", permission: "dashboard" },
   { href: "/admin/queue", label: "Queue", permission: "queue" },
+  { href: "/admin/pos", label: "In-person POS", permission: "orders" },
   { href: "/admin/orders", label: "Orders", permission: "orders" },
   { href: "/admin/support", label: "Support", permission: "support" },
   { href: "/admin/uploads", label: "Uploads", permission: "uploads" },
   { href: "/admin/products", label: "Products", permission: "products" },
+  { href: "/admin/parts", label: "Parts", permission: "products" },
   { href: "/admin/filament", label: "Filament", permission: "filament" },
   { href: "/admin/printers", label: "Printers", permission: "printers" },
   { href: "/admin/maintenance", label: "Maintenance", permission: "maintenance" },

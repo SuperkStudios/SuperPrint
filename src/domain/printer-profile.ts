@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 export const filamentMaterials = ["PLA", "PETG", "ABS", "TPU", "NYLON", "RESIN"] as const;
+const filamentMaterialSet = new Set<string>(filamentMaterials);
 
 export const printerProfileSchema = z.object({
   name: z.string().trim().min(1),
@@ -11,9 +12,20 @@ export const printerProfileSchema = z.object({
   buildVolumeYmm: z.coerce.number().int().positive().max(1000),
   buildVolumeZmm: z.coerce.number().int().positive().max(1000),
   supportedMaterials: z
-    .array(z.enum(filamentMaterials))
+    .array(z.string())
     .min(1)
-    .transform((materials) => [...new Set(materials)]),
+    .superRefine((materials, context) => {
+      for (const [index, material] of materials.entries()) {
+        if (!filamentMaterialSet.has(material)) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [index],
+            message: `Unsupported material: ${material}`
+          });
+        }
+      }
+    })
+    .transform((materials) => [...new Set(materials)] as Array<(typeof filamentMaterials)[number]>),
   currentFilamentId: z.string().trim().min(1).optional().nullable(),
   cameraSource: z
     .string()

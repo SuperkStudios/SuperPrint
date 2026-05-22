@@ -13,6 +13,7 @@ type PublicStripeSettings = {
   secretKey: string;
   publishableKey: string;
   webhookSecret: string;
+  terminalLocationId: string;
   configured: boolean;
   source?: "admin" | "env" | "none";
 };
@@ -149,6 +150,7 @@ export function AdminSettingsForm({
     secretKey: "",
     publishableKey: "",
     webhookSecret: "",
+    terminalLocationId: "",
     configured: false,
     source: "none"
   },
@@ -327,6 +329,16 @@ export function AdminSettingsForm({
             placeholder="whsec_..."
             autoComplete="off"
             onChange={(event) => setDraft((current) => ({ ...current, stripe: { ...current.stripe, webhookSecret: event.target.value } }))}
+          />
+        </div>
+
+        <div className="grid gap-2 md:col-span-2">
+          <Label htmlFor="stripe-terminal-location">Terminal location ID</Label>
+          <Input
+            id="stripe-terminal-location"
+            value={draft.stripe.terminalLocationId}
+            placeholder="tml_..."
+            onChange={(event) => setDraft((current) => ({ ...current, stripe: { ...current.stripe, terminalLocationId: event.target.value } }))}
           />
         </div>
       </div>

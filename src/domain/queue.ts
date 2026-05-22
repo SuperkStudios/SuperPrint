@@ -134,7 +134,7 @@ export function publicQueueJob(job: {
   completedAt?: Date | null;
   streamUrl: string | null;
   order: { orderNumber: string };
-  printer: { publicName: string; status: string; healthDescription: string } | null;
+  printer: ({ publicName: string; status: string; healthDescription: string } & Record<string, unknown>) | null;
   filament: { material: string; color: string; remainingGrams: number; thresholdGrams: number } | null;
   currentLayer?: number | null;
   progressPercent?: number | null;

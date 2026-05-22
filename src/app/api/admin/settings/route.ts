@@ -18,7 +18,8 @@ const settingsSchema = z.object({
     mode: z.enum(["test", "live"]).optional(),
     secretKey: z.string().optional(),
     publishableKey: z.string().optional(),
-    webhookSecret: z.string().optional()
+    webhookSecret: z.string().optional(),
+    terminalLocationId: z.string().optional()
   }).optional(),
   shippo: z.object({
     apiToken: z.string().optional(),

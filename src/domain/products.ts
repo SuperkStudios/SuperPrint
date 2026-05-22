@@ -49,7 +49,7 @@ export const productInputSchema = z.object({
   status: z.enum(["ACTIVE", "ARCHIVED"]).default("ACTIVE")
 });
 
-export type ProductInput = z.infer<typeof productInputSchema>;
+export type ProductInput = z.input<typeof productInputSchema>;
 
 export function normalizeProductInput(input: ProductInput) {
   const product = productInputSchema.parse(input);

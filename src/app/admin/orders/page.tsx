@@ -47,6 +47,10 @@ function OrderCard({ order }: { order: {
   shippingStatus: string;
   fulfillmentMethod: string;
   totalCents: number;
+  paymentStatus: string;
+  paymentMethod: string;
+  amountPaidCents: number;
+  balanceDueCents: number;
   shippingAmountCents: number;
   shippingRateCents: number;
   shippingProvider: string | null;
@@ -88,6 +92,8 @@ function OrderCard({ order }: { order: {
       <CardContent className="grid gap-4 md:grid-cols-[1fr_auto]">
         <div className="grid gap-2 text-sm md:grid-cols-4">
           <span><span className="text-muted-foreground">Total</span><br />{money(order.totalCents)}</span>
+          <span><span className="text-muted-foreground">Paid</span><br />{money(order.amountPaidCents)} · {order.paymentMethod}</span>
+          <span><span className="text-muted-foreground">Balance</span><br />{money(order.balanceDueCents)} · {order.paymentStatus}</span>
           <span><span className="text-muted-foreground">Material</span><br />{materialLabel} {order.selectedMaterial ?? latestJob?.filament?.material ?? ""}</span>
           <span><span className="text-muted-foreground">Printer</span><br />{latestJob?.printer?.publicName ?? "Unassigned"}</span>
           <span><span className="text-muted-foreground">Queue</span><br />{latestJob?.queuePosition ? `#${latestJob.queuePosition}` : latestJob?.status ?? "Not queued"}</span>

@@ -6,6 +6,7 @@ npm-debug.log
 .git
 coverage
 dist
+apps
 *.log
 Dockerfile
 docker-compose.yml

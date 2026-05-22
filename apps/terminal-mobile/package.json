@@ -1,0 +1,20 @@
+{
+  "name": "superprint-terminal-mobile",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "ios": "expo run:ios",
+    "android": "expo run:android",
+    "start": "expo start"
+  },
+  "dependencies": {
+    "@stripe/stripe-terminal-react-native": "^0.0.1-beta.30",
+    "expo": "^53.0.0",
+    "react": "^19.0.0",
+    "react-native": "^0.79.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.10",
+    "typescript": "^5.8.3"
+  }
+}

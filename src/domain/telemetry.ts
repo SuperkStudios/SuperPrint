@@ -6,6 +6,7 @@ export function publicPrintTelemetry(input: {
   nozzleTempC?: number | null;
   bedTempC?: number | null;
   telemetryUpdatedAt?: Date | string | null;
+  [key: string]: unknown;
 }) {
   if (!input.telemetryUpdatedAt && input.progressPercent == null && input.currentLayer == null) {
     return { state: "WAITING_FOR_TELEMETRY" as const };

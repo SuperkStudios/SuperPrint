@@ -3,11 +3,16 @@ import { compare, hash } from "bcryptjs";
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { nextCookies } from "better-auth/next-js";
+import { importPKCS8, SignJWT } from "jose";
 import { prisma } from "./prisma";
 import type { StaffPermission } from "@/domain/navigation";
 import { sendAccountCreatedEmail, sendPasswordResetEmail } from "@/services/email";
 
-const socialProviders = {
+const socialProviders = await buildSocialProviders();
+
+async function buildSocialProviders() {
+  const generatedAppleClientSecret = await resolveAppleClientSecret();
+  return {
   ...(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
     ? {
         google: {
@@ -16,15 +21,17 @@ const socialProviders = {
         }
       }
     : {}),
-  ...(process.env.APPLE_CLIENT_ID && process.env.APPLE_CLIENT_SECRET
+  ...(process.env.APPLE_CLIENT_ID && generatedAppleClientSecret
     ? {
         apple: {
           clientId: process.env.APPLE_CLIENT_ID,
-          clientSecret: process.env.APPLE_CLIENT_SECRET
+          clientSecret: generatedAppleClientSecret,
+          appBundleIdentifier: process.env.APPLE_APP_BUNDLE_IDENTIFIER
         }
       }
     : {})
-};
+  };
+}
 
 export const auth = betterAuth({
   appName: "SuperPrint",
@@ -84,12 +91,32 @@ function trustedAuthOrigins() {
     process.env.NEXTAUTH_URL,
     process.env.NEXT_PUBLIC_APP_URL,
     process.env.BETTER_AUTH_TRUSTED_ORIGINS,
+    "https://print.superk.studio",
+    "https://appleid.apple.com",
     "http://localhost:3000",
     "http://127.0.0.1:3000"
   ]
     .flatMap((value) => value?.split(",") ?? [])
     .map((value) => value.trim())
     .filter(Boolean);
+}
+
+async function resolveAppleClientSecret() {
+  if (process.env.APPLE_CLIENT_SECRET) return process.env.APPLE_CLIENT_SECRET;
+  if (!process.env.APPLE_CLIENT_ID || !process.env.APPLE_TEAM_ID || !process.env.APPLE_KEY_ID || !process.env.APPLE_PRIVATE_KEY) {
+    return null;
+  }
+  const privateKey = process.env.APPLE_PRIVATE_KEY.replace(/\\n/g, "\n");
+  const key = await importPKCS8(privateKey, "ES256");
+  const now = Math.floor(Date.now() / 1000);
+  return new SignJWT({})
+    .setProtectedHeader({ alg: "ES256", kid: process.env.APPLE_KEY_ID })
+    .setIssuer(process.env.APPLE_TEAM_ID)
+    .setSubject(process.env.APPLE_CLIENT_ID)
+    .setAudience("https://appleid.apple.com")
+    .setIssuedAt(now)
+    .setExpirationTime(now + 60 * 60 * 24 * 180)
+    .sign(key);
 }
 
 export type AppSession = {

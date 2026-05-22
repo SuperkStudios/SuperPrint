@@ -93,7 +93,7 @@ async function getOrCreateSlicerProfile() {
       prisma.slicerProfile.create({
         data: {
           name: "Default OrcaSlicer profile",
-          description: "Bootstrap-safe default profile path. TODO: replace with calibrated production profile.",
+          description: "Bootstrap-safe default profile path used until a calibrated production profile is added.",
           profilePath: "/data/profiles/orca/default.json",
           isDefault: true
         }

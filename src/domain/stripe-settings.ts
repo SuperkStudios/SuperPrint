@@ -7,6 +7,7 @@ export type ResolvedStripeSettings = {
   secretKey: string | null;
   publishableKey: string | null;
   webhookSecret: string | null;
+  terminalLocationId: string | null;
   configured: boolean;
   source: "admin" | "env" | "none";
 };
@@ -16,6 +17,7 @@ export type StripeSettingsInput = {
   secretKey?: string;
   publishableKey?: string;
   webhookSecret?: string;
+  terminalLocationId?: string;
 };
 
 const secretMaskPrefixLength = 7;
@@ -30,12 +32,14 @@ export function resolveStripeSettings(input: {
   const adminSecretKey = settingString(settings["stripe.secretKey"]);
   const adminPublishableKey = settingString(settings["stripe.publishableKey"]);
   const adminWebhookSecret = settingString(settings["stripe.webhookSecret"]);
+  const adminTerminalLocationId = settingString(settings["stripe.terminalLocationId"]);
   const adminMode = normalizeStripeMode(settingString(settings["stripe.mode"]));
 
-  const hasAdminConfig = Boolean(adminSecretKey || adminPublishableKey || adminWebhookSecret || adminMode);
+  const hasAdminConfig = Boolean(adminSecretKey || adminPublishableKey || adminWebhookSecret || adminTerminalLocationId || adminMode);
   const secretKey = adminSecretKey ?? env.STRIPE_SECRET_KEY ?? null;
   const publishableKey = adminPublishableKey ?? env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? env.STRIPE_PUBLISHABLE_KEY ?? null;
   const webhookSecret = adminWebhookSecret ?? env.STRIPE_WEBHOOK_SECRET ?? null;
+  const terminalLocationId = adminTerminalLocationId ?? env.STRIPE_TERMINAL_LOCATION_ID ?? null;
   const mode = adminMode ?? inferStripeMode(secretKey ?? publishableKey) ?? "test";
 
   return {
@@ -43,8 +47,9 @@ export function resolveStripeSettings(input: {
     secretKey,
     publishableKey,
     webhookSecret,
+    terminalLocationId,
     configured: Boolean(secretKey),
-    source: hasAdminConfig ? "admin" : secretKey || publishableKey || webhookSecret ? "env" : "none"
+    source: hasAdminConfig ? "admin" : secretKey || publishableKey || webhookSecret || terminalLocationId ? "env" : "none"
   };
 }
 
@@ -58,6 +63,9 @@ export function validateStripeSettingsInput(input: StripeSettingsInput) {
   if (input.webhookSecret && !isMaskedStripeSecret(input.webhookSecret) && !/^whsec_/.test(input.webhookSecret)) {
     throw new Error("Stripe webhook secret must start with whsec_");
   }
+  if (input.terminalLocationId && !/^tml_/.test(input.terminalLocationId)) {
+    throw new Error("Stripe Terminal location ID must start with tml_");
+  }
   if (input.mode && !["test", "live"].includes(input.mode)) {
     throw new Error("Stripe mode must be test or live");
   }
@@ -70,6 +78,7 @@ export function buildStripeSettingsUpdate(input: StripeSettingsInput, existing: 
   if (input.mode) updates["stripe.mode"] = input.mode;
   addSecretUpdate(updates, "stripe.secretKey", input.secretKey, existing);
   addPlainUpdate(updates, "stripe.publishableKey", input.publishableKey);
+  addPlainUpdate(updates, "stripe.terminalLocationId", input.terminalLocationId);
   addSecretUpdate(updates, "stripe.webhookSecret", input.webhookSecret, existing);
   return updates;
 }
@@ -87,12 +96,13 @@ export function publicStripeSettings(settings: ResolvedStripeSettings) {
     source: settings.source,
     secretKey: maskStripeSecret(settings.secretKey),
     publishableKey: settings.publishableKey ?? "",
+    terminalLocationId: settings.terminalLocationId ?? "",
     webhookSecret: maskStripeSecret(settings.webhookSecret)
   };
 }
 
 export function stripeSettingKeys() {
-  return ["stripe.secretKey", "stripe.publishableKey", "stripe.webhookSecret", "stripe.mode"];
+  return ["stripe.secretKey", "stripe.publishableKey", "stripe.webhookSecret", "stripe.mode", "stripe.terminalLocationId"];
 }
 
 function addPlainUpdate(updates: Record<string, string>, key: string, value?: string) {
