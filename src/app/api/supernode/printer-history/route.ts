@@ -38,15 +38,38 @@ export async function POST(request: Request) {
   }
 
   const completedPrints = body.completedPrints as CompletedPrinterHistoryItem[];
+  const mergedPrints = mergePrinterHistory(await readCachedPrinterHistory(), completedPrints);
   await prisma.systemSetting.upsert({
     where: { key: "printerHistory.lastPull" },
-    update: { value: completedPrints },
-    create: { key: "printerHistory.lastPull", value: completedPrints }
+    update: { value: mergedPrints },
+    create: { key: "printerHistory.lastPull", value: mergedPrints }
   });
-  const syncedManualEvents = await syncManualPrintEventsFromHistory(completedPrints);
+  const syncedManualEvents = await syncManualPrintEventsFromHistory(mergedPrints);
   return NextResponse.json({
     accepted: true,
     count: completedPrints.length,
+    cachedCount: mergedPrints.length,
     syncedManualEvents: syncedManualEvents.updated
+  });
+}
+
+async function readCachedPrinterHistory() {
+  const setting = await prisma.systemSetting.findUnique({ where: { key: "printerHistory.lastPull" } });
+  return Array.isArray(setting?.value)
+    ? setting.value.filter(
+        (item): item is CompletedPrinterHistoryItem =>
+          Boolean(item && typeof item === "object" && "id" in item && "name" in item && "status" in item)
+      )
+    : [];
+}
+
+function mergePrinterHistory(existing: CompletedPrinterHistoryItem[], incoming: CompletedPrinterHistoryItem[]) {
+  const byId = new Map<string, CompletedPrinterHistoryItem>();
+  for (const print of existing) byId.set(print.id, print);
+  for (const print of incoming) byId.set(print.id, { ...byId.get(print.id), ...print });
+  return [...byId.values()].sort((left, right) => {
+    const rightTime = right.completedAt ? Date.parse(right.completedAt) : 0;
+    const leftTime = left.completedAt ? Date.parse(left.completedAt) : 0;
+    return rightTime - leftTime;
   });
 }

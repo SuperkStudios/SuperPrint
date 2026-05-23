@@ -256,7 +256,8 @@ function collectHistorySession(input: { controlApiUrl: string; mainboardId?: str
       clearTimeout(timeout);
       settle(callback);
     };
-    const requestList = () => {
+    const requestList = (from = 0) => {
+      void from;
       if (settled || listRequested) return;
       listRequested = true;
       socket.send(JSON.stringify(buildCentauriHistoryListRequest(mainboardId ?? "0000000000000000")));
