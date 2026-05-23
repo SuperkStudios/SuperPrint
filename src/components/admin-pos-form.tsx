@@ -345,14 +345,14 @@ export function AdminPosForm({ products }: { products: ProductOption[] }) {
                 <div className="flex gap-3 rounded-md border border-dashed bg-card p-3 text-sm text-muted-foreground">
                   <Smartphone className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
                   <p>
-                    This phone can run the POS, but Tap to Pay on iPhone needs the native SuperPrint Terminal app with Apple approval. Browser mode can still connect to a Stripe reader on the same network.
+                    This phone can run the POS, but Tap to Pay on iPhone needs the native SuperPrint Admin or Merchant app with Apple approval. Browser mode can still connect to a Stripe reader on the same network.
                   </p>
                 </div>
               ) : (
                 <div className="flex gap-3 rounded-md border border-dashed bg-card p-3 text-sm text-muted-foreground">
                   <Smartphone className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
                   <p>
-                    To use an iPhone itself as the reader, build the native SuperPrint Terminal companion app. This web POS already uses the same backend payment endpoints.
+                    To use an iPhone itself as the reader, use the native SuperPrint Admin or Merchant app. This web POS already uses the same backend payment endpoints.
                   </p>
                 </div>
               )}

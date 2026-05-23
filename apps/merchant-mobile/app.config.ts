@@ -17,7 +17,8 @@ const config: ExpoConfig = {
       NSLocationWhenInUseUsageDescription: "Location access is required to accept in-person payments with Tap to Pay on iPhone.",
       NSBluetoothAlwaysUsageDescription: "Bluetooth is used to connect to supported Stripe readers.",
       NSBluetoothPeripheralUsageDescription: "Bluetooth is used to connect to supported Stripe readers.",
-      NFCReaderUsageDescription: "NFC is used for Tap to Pay on supported iPhones."
+      NFCReaderUsageDescription: "NFC is used for Tap to Pay on supported iPhones.",
+      NSFaceIDUsageDescription: "Face ID is used to unlock your saved SuperPrint Merchant session."
     }
   },
   android: {

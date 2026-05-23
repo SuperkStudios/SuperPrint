@@ -4,8 +4,11 @@ import * as SecureStore from "expo-secure-store";
 import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  AppState,
   KeyboardAvoidingView,
   Linking,
+  Modal,
+  NativeModules,
   Platform,
   Pressable,
   SafeAreaView,
@@ -26,6 +29,10 @@ type BusinessType = "SOLE_PROPRIETORSHIP" | "LLC" | "CORPORATION" | "PARTNERSHIP
 type TaxIdType = "EIN" | "SSN";
 type DocumentType = "BUSINESS_LICENSE" | "TAX_DOCUMENT" | "IDENTITY_DOCUMENT" | "ADDRESS_VERIFICATION" | "OTHER";
 type ActiveAppearance = "light" | "dark";
+
+type SuperPrintLocalAuthenticationModule = {
+  authenticate(reason: string): Promise<boolean>;
+};
 
 type PlatformTheme = {
   brandName: string;
@@ -98,6 +105,7 @@ type Order = {
 
 const sessionKey = "superprint.merchant.session";
 const backendKey = "superprint.merchant.backendUrl";
+const awarenessKey = "superprint.merchant.tapToPayAwareness.v1";
 const defaultBackendUrl = process.env.EXPO_PUBLIC_SUPERPRINT_URL ?? "https://print.superk.studio";
 const defaultPrimaryColor = "#00e5ff";
 
@@ -208,10 +216,13 @@ export default function App() {
   const [session, setSession] = useState<UserSession | null>(null);
   const [screen, setScreen] = useState<ScreenKey>("home");
   const [loading, setLoading] = useState(true);
+  const [pendingSession, setPendingSession] = useState<UserSession | null>(null);
   const [application, setApplication] = useState<MerchantApplication>(emptyApplication);
   const [products, setProducts] = useState<Product[]>(starterProducts);
   const [orders, setOrders] = useState<Order[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [showTapToPayAwareness, setShowTapToPayAwareness] = useState(false);
+  const [biometricMessage, setBiometricMessage] = useState("");
 
   const client = useMemo(() => new MerchantClient(backendUrl, session?.token ?? ""), [backendUrl, session?.token]);
   const activeAppearance: ActiveAppearance = systemScheme === "dark" ? "dark" : "light";
@@ -235,7 +246,9 @@ export default function App() {
       ]);
       if (cancelled) return;
       if (savedBackendUrl) setBackendUrl(savedBackendUrl);
-      if (savedSession) setSession(JSON.parse(savedSession) as UserSession);
+      if (savedSession) {
+        setPendingSession(JSON.parse(savedSession) as UserSession);
+      }
       setLoading(false);
     }
     restore().catch(() => setLoading(false));
@@ -270,6 +283,21 @@ export default function App() {
     refreshPlatformData().catch(() => undefined);
   }, [session?.token, loading]);
 
+  useEffect(() => {
+    if (!session?.token || loading) return;
+    let cancelled = false;
+    SecureStore.getItemAsync(awarenessKey)
+      .then((value) => {
+        if (!cancelled && value !== "seen") setShowTapToPayAwareness(true);
+      })
+      .catch(() => {
+        if (!cancelled) setShowTapToPayAwareness(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.token, loading]);
+
   async function refreshPlatformData() {
     setRefreshing(true);
     try {
@@ -289,9 +317,16 @@ export default function App() {
   async function signOut() {
     await SecureStore.deleteItemAsync(sessionKey);
     setSession(null);
+    setPendingSession(null);
     setApplication(emptyApplication);
     setProducts(starterProducts);
     setOrders([]);
+  }
+
+  async function dismissTapToPayAwareness(nextScreen?: ScreenKey) {
+    setShowTapToPayAwareness(false);
+    await SecureStore.setItemAsync(awarenessKey, "seen").catch(() => undefined);
+    if (nextScreen) setScreen(nextScreen);
   }
 
   if (loading) {
@@ -307,12 +342,37 @@ export default function App() {
   }
 
   if (!session) {
-    return <AuthScreen backendUrl={backendUrl} setBackendUrl={setBackendUrl} client={client} onSession={setSession} />;
+    if (pendingSession) {
+      return (
+        <BiometricUnlockScreen
+          email={pendingSession.user.email}
+          onUnlock={async () => {
+            const authenticated = await unlockSavedSession();
+            if (authenticated) {
+              setSession(pendingSession);
+              setPendingSession(null);
+              setBiometricMessage("");
+            } else {
+              await SecureStore.deleteItemAsync(sessionKey);
+              setPendingSession(null);
+              setBiometricMessage("Biometric unlock was canceled. Sign in again to continue.");
+            }
+          }}
+          onSignInInstead={async () => {
+            await SecureStore.deleteItemAsync(sessionKey);
+            setPendingSession(null);
+            setBiometricMessage("Sign in again to continue.");
+          }}
+        />
+      );
+    }
+    return <AuthScreen backendUrl={backendUrl} setBackendUrl={setBackendUrl} client={client} onSession={setSession} initialMessage={biometricMessage} />;
   }
 
   return (
     <StripeTerminalProvider tokenProvider={tokenProvider}>
       <SafeAreaView style={styles.safe}>
+        <TerminalWarmup enabled={Boolean(session?.token)} />
         <StatusBar style={activeAppearance === "dark" ? "light" : "dark"} />
         <View style={styles.topBar}>
           <Pressable onPress={() => setScreen("home")} style={styles.brandButton}>
@@ -346,8 +406,121 @@ export default function App() {
           {screen === "orders" && <OrdersScreen orders={orders} onRefresh={refreshPlatformData} />}
           {screen === "settings" && <SettingsScreen backendUrl={backendUrl} setBackendUrl={setBackendUrl} userEmail={session.user.email} onSignOut={signOut} />}
         </KeyboardAvoidingView>
+        <TapToPayAwarenessModal
+          visible={showTapToPayAwareness}
+          application={application}
+          onEnable={() => dismissTapToPayAwareness("enable")}
+          onDismiss={() => dismissTapToPayAwareness()}
+        />
       </SafeAreaView>
     </StripeTerminalProvider>
+  );
+}
+
+async function unlockSavedSession() {
+  const localAuth = NativeModules.SuperPrintLocalAuthentication as SuperPrintLocalAuthenticationModule | undefined;
+  if (!localAuth) return true;
+  return localAuth.authenticate("Unlock your saved SuperPrint Merchant session.");
+}
+
+function TerminalWarmup({ enabled }: { enabled: boolean }) {
+  const { initialize } = useStripeTerminal({});
+
+  useEffect(() => {
+    if (!enabled) return;
+    initialize().catch(() => undefined);
+  }, [enabled, initialize]);
+
+  useEffect(() => {
+    if (!enabled) return;
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") initialize().catch(() => undefined);
+    });
+    return () => subscription.remove();
+  }, [enabled, initialize]);
+
+  return null;
+}
+
+function TapToPayAwarenessModal({
+  visible,
+  application,
+  onEnable,
+  onDismiss
+}: {
+  visible: boolean;
+  application: MerchantApplication;
+  onEnable: () => void;
+  onDismiss: () => void;
+}) {
+  const approved = application.status === "APPROVED" && application.stripeConnectStatus === "ENABLED";
+  return (
+    <Modal animationType="slide" transparent visible={visible} onRequestClose={onDismiss}>
+      <View style={styles.modalBackdrop}>
+        <View style={styles.modalSheet}>
+          <Text style={styles.kicker}>Now available</Text>
+          <Text style={styles.modalTitle}>Tap to Pay on iPhone</Text>
+          <Text style={styles.copy}>Accept in-person contactless cards, Apple Pay, and other digital wallets from your merchant checkout. No extra card reader is required on a compatible iPhone.</Text>
+          <View style={styles.stepList}>
+            <Text style={styles.stepText}>1. Complete merchant approval and Stripe Connect onboarding.</Text>
+            <Text style={styles.stepText}>2. Accept Tap to Pay on iPhone terms as the business owner or authorized admin.</Text>
+            <Text style={styles.stepText}>3. Review merchant education, then take a checkout payment.</Text>
+          </View>
+          <Pressable onPress={onEnable} style={styles.primaryButton}>
+            <Text style={styles.primaryButtonText}>{approved ? "Enable Tap to Pay on iPhone" : "View Setup Steps"}</Text>
+          </Pressable>
+          <Pressable onPress={onDismiss} style={styles.secondaryButton}>
+            <Text style={styles.secondaryButtonText}>Not Now</Text>
+          </Pressable>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function BiometricUnlockScreen({
+  email,
+  onUnlock,
+  onSignInInstead
+}: {
+  email: string;
+  onUnlock: () => Promise<void>;
+  onSignInInstead: () => Promise<void>;
+}) {
+  const [unlocking, setUnlocking] = useState(false);
+  const [status, setStatus] = useState("Use Face ID, Touch ID, or your device passcode to unlock your saved merchant session.");
+
+  async function unlock() {
+    setUnlocking(true);
+    setStatus("Waiting for device authentication...");
+    try {
+      await onUnlock();
+    } finally {
+      setUnlocking(false);
+    }
+  }
+
+  useEffect(() => {
+    unlock().catch(() => setStatus("Unlock failed. Try again or sign in instead."));
+  }, []);
+
+  return (
+    <SafeAreaView style={styles.safe}>
+      <StatusBar style={palette.paper === darkPalette.paper ? "light" : "dark"} />
+      <ScrollView style={styles.screen} contentContainerStyle={styles.body}>
+        <SectionHeader title="Unlock SuperPrint Merchant" detail={email} />
+        <Card>
+          <Text style={styles.cardTitle}>Session protected</Text>
+          <Text style={styles.copy}>{status}</Text>
+          <Pressable disabled={unlocking} onPress={unlock} style={[styles.primaryButton, unlocking && styles.disabled]}>
+            {unlocking ? <ActivityIndicator color={palette.primaryText} /> : <Text style={styles.primaryButtonText}>Unlock with Face ID</Text>}
+          </Pressable>
+          <Pressable disabled={unlocking} onPress={onSignInInstead} style={styles.secondaryButton}>
+            <Text style={styles.secondaryButtonText}>Sign In Instead</Text>
+          </Pressable>
+        </Card>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
@@ -355,19 +528,21 @@ function AuthScreen({
   backendUrl,
   setBackendUrl,
   client,
-  onSession
+  onSession,
+  initialMessage
 }: {
   backendUrl: string;
   setBackendUrl: (value: string) => void;
   client: MerchantClient;
   onSession: (session: UserSession) => void;
+  initialMessage?: string;
 }) {
   const [mode, setMode] = useState<AuthMode>("signIn");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [acceptedLegal, setAcceptedLegal] = useState(false);
-  const [status, setStatus] = useState("");
+  const [status, setStatus] = useState(initialMessage ?? "");
   const [loading, setLoading] = useState(false);
 
   async function submit() {
@@ -640,6 +815,7 @@ function EnableScreen({ application, client, onCheckout }: { application: Mercha
   });
   const [educationComplete, setEducationComplete] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [setupProgress, setSetupProgress] = useState(connectedReader ? 100 : 0);
   const [status, setStatus] = useState("Eligible approved merchants can enable Tap to Pay on iPhone here or from checkout.");
 
   useEffect(() => {
@@ -648,14 +824,19 @@ function EnableScreen({ application, client, onCheckout }: { application: Mercha
 
   async function enable() {
     setLoading(true);
+    setSetupProgress(10);
     try {
       if (application.status !== "APPROVED" || application.stripeConnectStatus !== "ENABLED") {
         throw new Error("SuperPrint approval and completed Stripe Connect onboarding are required before Tap to Pay is enabled.");
       }
+      setSetupProgress(25);
       const config = await client.get<{ terminalLocationId: string | null }>("/api/merchant/terminal/config");
       if (!config.terminalLocationId) throw new Error("Stripe Terminal location is not configured.");
+      setSetupProgress(45);
       const support = await supportsReadersOfType({ discoveryMethod: "tapToPay", deviceType: "tapToPay" });
       if (!support.readerSupportResult) throw new Error("Tap to Pay on iPhone requires iPhone XS or later with supported iOS.");
+      setStatus("Initializing Tap to Pay on iPhone. Keep this app open while setup completes.");
+      setSetupProgress(70);
       const result = await easyConnect({
         discoveryMethod: "tapToPay",
         locationId: config.terminalLocationId,
@@ -664,8 +845,10 @@ function EnableScreen({ application, client, onCheckout }: { application: Mercha
         autoReconnectOnUnexpectedDisconnect: true
       });
       if (result.error) throw new Error(result.error.message);
+      setSetupProgress(100);
       setStatus("Tap to Pay on iPhone enabled.");
     } catch (error) {
+      setSetupProgress(0);
       setStatus(error instanceof Error ? error.message : "Could not enable Tap to Pay on iPhone.");
     } finally {
       setLoading(false);
@@ -682,6 +865,10 @@ function EnableScreen({ application, client, onCheckout }: { application: Mercha
           <Badge label={`Connect ${application.stripeConnectStatus.replace(/_/g, " ")}`} />
           <Badge label={connectedReader ? "Enabled" : "Not enabled"} />
         </View>
+        <View style={styles.progressTrack}>
+          <View style={[styles.progressFill, { width: `${setupProgress}%` }]} />
+        </View>
+        <Text style={styles.copy}>{connectedReader || setupProgress === 100 ? "Tap to Pay on iPhone is ready for checkout." : "Setup progress appears here while the reader is preparing."}</Text>
         <Pressable disabled={loading || application.status !== "APPROVED" || application.stripeConnectStatus !== "ENABLED"} onPress={enable} style={[styles.primaryButton, (loading || application.status !== "APPROVED" || application.stripeConnectStatus !== "ENABLED") && styles.disabled]}>
           {loading ? <ActivityIndicator color={palette.primaryText} /> : <Text style={styles.primaryButtonText}>Enable Tap to Pay on iPhone</Text>}
         </Pressable>
@@ -735,11 +922,13 @@ function CheckoutScreen({ application, products, client, onOrder }: { applicatio
     if (application.status !== "APPROVED" || application.stripeConnectStatus !== "ENABLED") {
       throw new Error("Complete SuperPrint approval and Stripe Connect onboarding before checkout.");
     }
+    setStatus("Initializing Tap to Pay on iPhone...");
     const config = await client.get<{ terminalLocationId: string | null }>("/api/merchant/terminal/config");
     if (!config.terminalLocationId) throw new Error("Stripe Terminal location is not configured.");
     const support = await supportsReadersOfType({ discoveryMethod: "tapToPay", deviceType: "tapToPay" });
     if (!support.readerSupportResult) throw new Error("Tap to Pay on iPhone requires a compatible iPhone and supported iOS.");
     if (connectedReader) return;
+    setStatus("Configuring Tap to Pay on iPhone. This may take a moment the first time.");
     const connection = await easyConnect({
       discoveryMethod: "tapToPay",
       locationId: config.terminalLocationId,
@@ -758,6 +947,7 @@ function CheckoutScreen({ application, products, client, onOrder }: { applicatio
       if (amountCents <= 0) throw new Error("Enter an amount greater than zero.");
       if (!customerEmail.trim()) throw new Error("Customer email is required for the digital receipt.");
       const itemName = selectedProduct?.name ?? "Counter sale";
+      setStatus("Creating payment and opening Tap to Pay on iPhone...");
       const started = await client.post<{ clientSecret: string; paymentIntentId: string }>("/api/merchant/terminal/payment-intent", {
         amountCents,
         customerEmail,
@@ -788,6 +978,9 @@ function CheckoutScreen({ application, products, client, onOrder }: { applicatio
       <SectionHeader title="Checkout" detail="Enter an amount or sell a store item and accept Tap to Pay on iPhone." />
       <Card>
         <Text style={styles.cardTitle}>Cart</Text>
+        <Pressable disabled={loading || application.status !== "APPROVED" || application.stripeConnectStatus !== "ENABLED"} onPress={charge} style={[styles.primaryButton, (loading || application.status !== "APPROVED" || application.stripeConnectStatus !== "ENABLED") && styles.disabled]}>
+          {loading ? <ActivityIndicator color={palette.primaryText} /> : <Text style={styles.primaryButtonText}>Tap to Pay on iPhone</Text>}
+        </Pressable>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRail}>
           {activeProducts.map((product) => (
             <Pressable key={product.id ?? product.name} onPress={() => setSelectedProductId(product.id ?? product.name)} style={[styles.chip, selectedProduct === product && styles.chipActive]}>
@@ -797,9 +990,6 @@ function CheckoutScreen({ application, products, client, onOrder }: { applicatio
         </ScrollView>
         <Field label="Amount" value={amount} onChangeText={setAmount} keyboardType="decimal-pad" />
         <Field label="Customer receipt email" value={customerEmail} onChangeText={setCustomerEmail} autoCapitalize="none" keyboardType="email-address" />
-        <Pressable disabled={loading || application.status !== "APPROVED" || application.stripeConnectStatus !== "ENABLED"} onPress={charge} style={[styles.primaryButton, (loading || application.status !== "APPROVED" || application.stripeConnectStatus !== "ENABLED") && styles.disabled]}>
-          {loading ? <ActivityIndicator color={palette.primaryText} /> : <Text style={styles.primaryButtonText}>Tap to Pay on iPhone</Text>}
-        </Pressable>
         {status ? <Text style={styles.message}>{status}</Text> : null}
       </Card>
     </ScrollView>
@@ -1059,6 +1249,11 @@ function createStyles(palette: ThemePalette) {
   badge: { borderRadius: 999, backgroundColor: palette.secondaryBg, borderWidth: 1, borderColor: palette.secondaryBorder, paddingHorizontal: 10, paddingVertical: 6 },
   badgeText: { color: palette.primary, fontSize: 11, fontWeight: "900", textTransform: "capitalize" },
   message: { color: palette.primary, backgroundColor: palette.secondaryBg, borderColor: palette.secondaryBorder, borderWidth: 1, borderRadius: 8, padding: 12, fontSize: 13, lineHeight: 18 },
+  modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.55)", justifyContent: "flex-end" },
+  modalSheet: { backgroundColor: palette.card, borderTopLeftRadius: 8, borderTopRightRadius: 8, padding: 20, gap: 14, borderTopColor: palette.line, borderTopWidth: 1 },
+  modalTitle: { color: palette.ink, fontSize: 30, lineHeight: 34, fontWeight: "900" },
+  progressTrack: { height: 10, borderRadius: 999, backgroundColor: palette.secondaryBg, borderColor: palette.secondaryBorder, borderWidth: 1, overflow: "hidden" },
+  progressFill: { height: "100%", backgroundColor: palette.primary },
   stepList: { gap: 8 },
   stepText: { color: palette.slate, fontSize: 13, lineHeight: 19 },
   switchRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
