@@ -21,7 +21,7 @@ const schema = z.object({
   productFileStorageKey: z.string().optional(),
   previewPlateStorageKey: z.string().optional().nullable(),
   priceCents: z.number(),
-  pricingMode: z.enum(["FIXED", "DYNAMIC"]).default("DYNAMIC"),
+  pricingMode: z.enum(["FIXED", "DYNAMIC"]).default("FIXED"),
   fixedPriceCents: z.number().optional().nullable(),
   baseLaborMinutes: z.number().int().nonnegative().default(10),
   basePackagingCents: z.number().int().nonnegative().default(150),
@@ -119,7 +119,7 @@ async function readProductRequest(request: Request) {
   const allowedFilaments = parseAllowedFilaments(formData, defaultFilamentMaterialId ?? spool?.id);
   const parts = await parseProductParts(formData);
   const fixedPriceCents = optionalCents(formData.get("fixedPriceCents"));
-  const pricingMode = String(formData.get("pricingMode") ?? "DYNAMIC");
+  const pricingMode = "FIXED";
   const fallbackPriceCents = Number(formData.get("priceCents") ?? 0);
   const preset = shippingPackagePresetById(stringValue(formData.get("shippingPackagePreset")));
 
@@ -132,7 +132,7 @@ async function readProductRequest(request: Request) {
     imageStorageKey,
     productFileStorageKey: parsedPrintFile?.storageKey,
     previewPlateStorageKey,
-    priceCents: pricingMode === "FIXED" ? fixedPriceCents || fallbackPriceCents || 1 : fallbackPriceCents || fixedPriceCents || 1,
+    priceCents: fixedPriceCents || fallbackPriceCents || 1,
     pricingMode,
     fixedPriceCents,
     baseLaborMinutes: Number(formData.get("baseLaborMinutes") ?? 10),

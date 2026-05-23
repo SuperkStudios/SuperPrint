@@ -1,23 +1,34 @@
 import { Prisma } from "@prisma/client";
-import { calculateProductPrice as calculatePriceFromInputs, type ProductPriceQuote, type PricingSettingsInput } from "@/domain/pricing";
+import {
+  calculateProductPrice as calculatePriceFromInputs,
+  stripeStandardPaymentProcessingFixedCents,
+  stripeStandardPaymentProcessingPercent,
+  type ProductPriceQuote,
+  type PricingSettingsInput
+} from "@/domain/pricing";
 import { prisma } from "@/lib/prisma";
 
 const defaultPricingSettings: PricingSettingsInput = {
-  machineHourlyRateCents: 250,
-  laborHourlyRateCents: 1800,
-  electricityHourlyRateCents: 20,
-  maintenanceReservePercent: 0.08,
-  failureReservePercent: 0.12,
-  defaultProfitMultiplier: 2,
-  paymentProcessingPercent: 0.029,
-  paymentProcessingFixedCents: 30,
-  taxPercentEstimate: null,
-  minimumOrderPriceCents: 500
+  taxPercentEstimate: null
 };
 
 export async function getPricingSettings() {
   const settings = await prisma.pricingSettings.findFirst({ orderBy: { createdAt: "asc" } });
-  return settings ?? prisma.pricingSettings.create({ data: { id: "default", ...defaultPricingSettings } });
+  return settings ?? prisma.pricingSettings.create({
+    data: {
+      id: "default",
+      machineHourlyRateCents: 0,
+      laborHourlyRateCents: 0,
+      electricityHourlyRateCents: 0,
+      maintenanceReservePercent: 0,
+      failureReservePercent: 0,
+      defaultProfitMultiplier: 1,
+      paymentProcessingPercent: stripeStandardPaymentProcessingPercent,
+      paymentProcessingFixedCents: stripeStandardPaymentProcessingFixedCents,
+      minimumOrderPriceCents: 0,
+      ...defaultPricingSettings
+    }
+  });
 }
 
 export async function updatePricingSettings(input: Partial<PricingSettingsInput>) {
@@ -25,16 +36,9 @@ export async function updatePricingSettings(input: Partial<PricingSettingsInput>
   return prisma.pricingSettings.update({
     where: { id: current.id },
     data: {
-      machineHourlyRateCents: input.machineHourlyRateCents,
-      laborHourlyRateCents: input.laborHourlyRateCents,
-      electricityHourlyRateCents: input.electricityHourlyRateCents,
-      maintenanceReservePercent: input.maintenanceReservePercent,
-      failureReservePercent: input.failureReservePercent,
-      defaultProfitMultiplier: input.defaultProfitMultiplier,
-      paymentProcessingPercent: input.paymentProcessingPercent,
-      paymentProcessingFixedCents: input.paymentProcessingFixedCents,
       taxPercentEstimate: input.taxPercentEstimate,
-      minimumOrderPriceCents: input.minimumOrderPriceCents
+      paymentProcessingPercent: stripeStandardPaymentProcessingPercent,
+      paymentProcessingFixedCents: stripeStandardPaymentProcessingFixedCents
     }
   });
 }

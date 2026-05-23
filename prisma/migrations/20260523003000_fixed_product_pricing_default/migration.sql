@@ -1,0 +1,1 @@
+ALTER TABLE "Product" ALTER COLUMN "pricingMode" SET DEFAULT 'FIXED';

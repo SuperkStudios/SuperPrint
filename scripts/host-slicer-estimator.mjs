@@ -87,7 +87,7 @@ const materialDensities = {
 };
 
 const server = http.createServer(async (request, response) => {
-  if (request.method !== "POST" || request.url !== "/estimate") {
+  if (request.method !== "POST" || !["/estimate", "/slice-plate"].includes(request.url ?? "")) {
     sendJson(response, 404, { error: "Not found" });
     return;
   }
@@ -98,11 +98,18 @@ const server = http.createServer(async (request, response) => {
     const dataBase64 = String(body.dataBase64 ?? "");
     if (!dataBase64) throw new Error("dataBase64 is required");
 
-    const estimate = await estimateWithSlicer({
-      fileName,
-      material: String(body.material ?? "PLA"),
-      buffer: Buffer.from(dataBase64, "base64")
-    });
+    const estimate = request.url === "/slice-plate"
+      ? await slicePlateWithSlicer({
+          fileName,
+          material: String(body.material ?? "PLA"),
+          buffer: Buffer.from(dataBase64, "base64"),
+          quantity: Math.max(1, Math.min(250, Math.round(Number(body.quantity ?? 1))))
+        })
+      : await estimateWithSlicer({
+          fileName,
+          material: String(body.material ?? "PLA"),
+          buffer: Buffer.from(dataBase64, "base64")
+        });
 
     sendJson(response, 200, estimate);
   } catch (error) {
@@ -115,11 +122,21 @@ server.listen(port, host, () => {
 });
 
 async function estimateWithSlicer(input) {
+  const result = await slicePlateWithSlicer({ ...input, quantity: 1 });
+  const { gcodeBase64, ...estimate } = result;
+  return estimate;
+}
+
+async function slicePlateWithSlicer(input) {
   const selected = resolveSlicer();
   const tmpDir = await mkdtemp(path.join(os.tmpdir(), "superprint-slicer-"));
   try {
-    const inputPath = path.join(tmpDir, `${randomUUID()}-${input.fileName}`);
-    await writeFile(inputPath, input.buffer);
+    const inputPaths = [];
+    for (let index = 0; index < Math.max(1, input.quantity ?? 1); index += 1) {
+      const inputPath = path.join(tmpDir, `${randomUUID()}-${index + 1}-${input.fileName}`);
+      await writeFile(inputPath, input.buffer);
+      inputPaths.push(inputPath);
+    }
     const profiles = await materializeSlicerProfileSet({
       slicer: selected,
       material: input.material,
@@ -135,7 +152,7 @@ async function estimateWithSlicer(input) {
       `${profiles.machine};${profiles.process}`,
       "--load-filaments",
       profiles.filament,
-      inputPath
+      ...inputPaths
     ];
     if (selected.datadir) args.unshift("--datadir", selected.datadir);
     await run(selected.bin, args);
@@ -148,8 +165,9 @@ async function estimateWithSlicer(input) {
     }
     return {
       ...parsed,
+      gcodeBase64: Buffer.from(gcode).toString("base64"),
       source: "slicer",
-      message: `${selected.name} ${path.basename(profiles.process)} using ${String(input.material).toUpperCase()} settings`
+      message: `${selected.name} ${path.basename(profiles.process)} using ${String(input.material).toUpperCase()} settings for ${inputPaths.length} object(s)`
     };
   } finally {
     await rm(tmpDir, { recursive: true, force: true });

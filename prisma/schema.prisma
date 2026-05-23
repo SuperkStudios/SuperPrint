@@ -122,6 +122,18 @@ enum SliceJobStatus {
   CANCELED
 }
 
+enum ProductionPlateJobStatus {
+  PLANNED
+  SLICING
+  READY
+  NEEDS_FILAMENT
+  PRINTING
+  PRINTED
+  INVENTORIED
+  CANCELED
+  FAILED
+}
+
 enum PlatformEventType {
   ORDER_CREATED
   MODEL_UPLOADED
@@ -478,7 +490,7 @@ model Product {
   shippingPackageHeightIn Float       @default(1)
   shippingPackageWeightOz Float       @default(8)
   priceCents           Int
-  pricingMode          PricingMode   @default(DYNAMIC)
+  pricingMode          PricingMode   @default(FIXED)
   fixedPriceCents      Int?
   estimatedPrintMinutes Int
   estimatedGrams       Int           @default(1)
@@ -509,10 +521,45 @@ model ProductPart {
   quantityPerUnit Int      @default(1)
   displayOrder    Int      @default(0)
   inventory       ProductPartInventory[]
+  productionPlateJobs ProductionPlateJob[]
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
   @@index([productId, displayOrder])
+}
+
+model ProductionPlateJob {
+  id                    String                   @id @default(cuid())
+  productPartId          String
+  productPart            ProductPart              @relation(fields: [productPartId], references: [id], onDelete: Cascade)
+  filamentId             String?
+  filament               FilamentSpool?           @relation(fields: [filamentId], references: [id], onDelete: SetNull)
+  color                  String
+  status                 ProductionPlateJobStatus @default(PLANNED)
+  quantityPlanned        Int
+  requiredQuantity       Int
+  inventoryUsedQuantity  Int                      @default(0)
+  maxPerPlate            Int
+  plateIndex             Int                      @default(1)
+  plateCount             Int                      @default(1)
+  orderRefs              Json                     @default("[]")
+  inputStorageKey        String
+  outputStorageKey       String?
+  nodeLocalJobPath       String?
+  slicerMessage          String?
+  estimatedPrintMinutes  Int?
+  estimatedGrams         Int?
+  lastError              String?
+  printedQuantity        Int                      @default(0)
+  inventoriedQuantity    Int                      @default(0)
+  startedAt              DateTime?
+  completedAt            DateTime?
+  createdAt              DateTime                 @default(now())
+  updatedAt              DateTime                 @updatedAt
+
+  @@index([status, createdAt])
+  @@index([color, status])
+  @@index([productPartId, color])
 }
 
 model ProductPartInventory {
@@ -924,6 +971,7 @@ model FilamentSpool {
   location       String
   printers       Printer[]
   jobs           PrintJob[]
+  productionPlateJobs ProductionPlateJob[]
   defaultProducts Product[]        @relation("DefaultProductFilament")
   allowedProducts ProductAllowedFilament[]
   cartItems      CartItem[]        @relation("CartItemSelectedFilament")

@@ -66,16 +66,7 @@ const settingsSchema = z.object({
     })).optional()
   }).optional(),
   pricing: z.object({
-    machineHourlyRateCents: z.number().int().nonnegative().optional(),
-    laborHourlyRateCents: z.number().int().nonnegative().optional(),
-    electricityHourlyRateCents: z.number().int().nonnegative().optional(),
-    maintenanceReservePercent: z.number().nonnegative().optional(),
-    failureReservePercent: z.number().nonnegative().optional(),
-    defaultProfitMultiplier: z.number().positive().optional(),
-    paymentProcessingPercent: z.number().nonnegative().optional(),
-    paymentProcessingFixedCents: z.number().int().nonnegative().optional(),
-    taxPercentEstimate: z.number().nonnegative().nullable().optional(),
-    minimumOrderPriceCents: z.number().int().nonnegative().optional()
+    taxPercentEstimate: z.number().nonnegative().nullable().optional()
   }).optional(),
   rewards: z.object({
     pointsPerDollar: z.number().nonnegative().optional(),

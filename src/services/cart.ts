@@ -1,5 +1,5 @@
 import { Prisma } from "@prisma/client";
-import { normalizePercent } from "@/domain/pricing";
+import { normalizePercent, stripeStandardPaymentProcessingFixedCents, stripeStandardPaymentProcessingPercent } from "@/domain/pricing";
 import { MINIMUM_POST_REWARD_SUBTOTAL_CENTS } from "@/domain/rewards";
 import { prisma } from "@/lib/prisma";
 import { getPricingSettings, calculateProductPrice } from "@/services/pricing";
@@ -175,7 +175,7 @@ export async function summarizeCart(userId: string, input: { shippingCents?: num
   const taxCents = Math.round(taxableSubtotalCents * normalizePercent(settings.taxPercentEstimate));
   const shippingCents = Math.max(0, Math.round(input.shippingCents ?? 0));
   const beforeFeeCents = taxableSubtotalCents + taxCents + shippingCents;
-  const paymentFeeCents = calculatePaymentProcessorFee(beforeFeeCents, settings.paymentProcessingPercent, settings.paymentProcessingFixedCents);
+  const paymentFeeCents = calculatePaymentProcessorFee(beforeFeeCents);
   const totalCents = beforeFeeCents + paymentFeeCents;
 
   return {
@@ -193,7 +193,11 @@ export async function summarizeCart(userId: string, input: { shippingCents?: num
   };
 }
 
-export function calculatePaymentProcessorFee(baseCents: number, percentValue: number, fixedCents: number) {
+export function calculatePaymentProcessorFee(
+  baseCents: number,
+  percentValue = stripeStandardPaymentProcessingPercent,
+  fixedCents = stripeStandardPaymentProcessingFixedCents
+) {
   if (baseCents <= 0) return 0;
   const percent = normalizePercent(percentValue);
   if (percent <= 0) return Math.max(0, Math.round(fixedCents));

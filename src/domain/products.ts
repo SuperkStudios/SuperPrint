@@ -13,7 +13,7 @@ export const productInputSchema = z.object({
   productFileStorageKey: z.string().trim().optional(),
   previewPlateStorageKey: z.string().trim().optional().nullable(),
   priceCents: z.number().int().positive(),
-  pricingMode: z.enum(["FIXED", "DYNAMIC"]).default("DYNAMIC"),
+  pricingMode: z.enum(["FIXED", "DYNAMIC"]).default("FIXED"),
   fixedPriceCents: z.number().int().positive().optional().nullable(),
   baseLaborMinutes: z.number().int().nonnegative().default(10),
   basePackagingCents: z.number().int().nonnegative().default(150),
@@ -56,7 +56,8 @@ export function normalizeProductInput(input: ProductInput) {
   return {
     ...product,
     slug: product.slug ? slugify(product.slug) : slugify(product.name),
-    fixedPriceCents: product.pricingMode === "FIXED" ? product.fixedPriceCents ?? product.priceCents : product.fixedPriceCents
+    pricingMode: "FIXED" as const,
+    fixedPriceCents: product.fixedPriceCents ?? product.priceCents
   };
 }
 

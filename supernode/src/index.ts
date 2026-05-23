@@ -20,6 +20,7 @@ const mediaFps = Number(process.env.SUPERNODE_MEDIA_FPS ?? 15);
 const mediaBitrate = process.env.SUPERNODE_MEDIA_BITRATE?.trim() || "1200k";
 const mediaScale = process.env.SUPERNODE_MEDIA_SCALE?.trim() || "1280:-2";
 const nodeJobsDir = process.env.SUPERNODE_JOBS_PATH ?? "/data/node-jobs";
+const hostSlicerUrl = process.env.SUPERNODE_HOST_SLICER_URL ?? "http://host.docker.internal:4317";
 
 if (!nodeSecret) {
   throw new Error("SUPERNODE_SECRET is required after registration");
@@ -428,6 +429,65 @@ async function syncReadyJobs() {
   }
 }
 
+async function syncProductionPlateJobs() {
+  const response = await fetch(`${apiBaseUrl}/api/supernode/plate-jobs?nodeId=${encodeURIComponent(nodeId)}`, {
+    headers: { authorization: `Bearer ${nodeSigningSecret}` }
+  });
+  if (!response.ok) {
+    throw new Error(`production plate poll rejected with ${response.status}`);
+  }
+  const { jobs } = (await response.json()) as {
+    jobs: Array<{ id: string; modelUrl: string; productName: string; partName: string; color: string; material: string; quantity: number }>;
+  };
+  await mkdir(nodeJobsDir, { recursive: true });
+
+  for (const job of jobs) {
+    const model = await fetch(`${apiBaseUrl}${job.modelUrl}`, {
+      headers: { authorization: `Bearer ${nodeSigningSecret}` }
+    });
+    if (!model.ok) {
+      throw new Error(`plate model download rejected with ${model.status}`);
+    }
+    const modelBuffer = Buffer.from(await model.arrayBuffer());
+    const sliced = await fetch(`${hostSlicerUrl.replace(/\/$/, "")}/slice-plate`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        fileName: `${safeFileStem(job.productName)}-${safeFileStem(job.partName)}.stl`,
+        material: job.material,
+        quantity: job.quantity,
+        dataBase64: modelBuffer.toString("base64")
+      })
+    });
+    if (!sliced.ok) {
+      throw new Error(`plate slicing rejected with ${sliced.status}: ${await sliced.text().catch(() => "")}`);
+    }
+    const result = (await sliced.json()) as {
+      gcodeBase64: string;
+      estimatedPrintMinutes?: number;
+      estimatedGrams?: number;
+      message?: string;
+    };
+    const localJobPath = path.join(nodeJobsDir, `${job.id}-${safeFileStem(job.color)}.gcode`);
+    await writeFile(localJobPath, Buffer.from(result.gcodeBase64, "base64"));
+    const ack = await fetch(`${apiBaseUrl}/api/supernode/plate-jobs/${job.id}/ack`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${nodeSigningSecret}` },
+      body: JSON.stringify({
+        nodeId,
+        localJobPath,
+        gcodeBase64: result.gcodeBase64,
+        estimatedPrintMinutes: result.estimatedPrintMinutes,
+        estimatedGrams: result.estimatedGrams,
+        slicerMessage: result.message
+      })
+    });
+    if (!ack.ok) {
+      throw new Error(`plate acknowledgement rejected with ${ack.status}`);
+    }
+  }
+}
+
 async function acknowledgeApprovedPrintCommands() {
   const response = await fetch(`${apiBaseUrl}/api/supernode/commands?nodeId=${encodeURIComponent(nodeId)}`, {
     headers: { authorization: `Bearer ${nodeSigningSecret}` }
@@ -456,6 +516,7 @@ async function loop() {
   try {
     await sendHeartbeat();
     await syncReadyJobs();
+    await syncProductionPlateJobs();
     await acknowledgeApprovedPrintCommands();
   } catch (error) {
     retryCount += 1;
@@ -469,3 +530,7 @@ async function loop() {
 void startCameraFrameBridge();
 void startMediaRelayBridge();
 loop();
+
+function safeFileStem(value: string) {
+  return value.trim().replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "plate";
+}

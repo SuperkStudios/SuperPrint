@@ -9,7 +9,7 @@ const previewSchema = z.object({
   estimatedPrintMinutes: z.number().int().positive(),
   baseLaborMinutes: z.number().int().nonnegative(),
   basePackagingCents: z.number().int().nonnegative(),
-  pricingMode: z.enum(["FIXED", "DYNAMIC"]),
+  pricingMode: z.enum(["FIXED", "DYNAMIC"]).default("FIXED"),
   fixedPriceCents: z.number().int().positive().optional().nullable(),
   filamentMaterialIds: z.array(z.string()).min(1)
 });

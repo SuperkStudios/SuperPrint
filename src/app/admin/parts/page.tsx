@@ -1,17 +1,20 @@
 import { Layers3, PackageOpen } from "lucide-react";
 import { PartInventoryForm } from "@/components/part-inventory-form";
+import { ProductionPlateControls } from "@/components/production-plate-controls";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { requireAdminPage } from "@/lib/admin-permissions";
 import { getPartInventoryRows, getPartProductionPlanner } from "@/services/part-planner";
+import { getProductionPlateDashboard } from "@/services/production-plates";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminPartsPage() {
   await requireAdminPage("products");
-  const [parts, planner] = await Promise.all([getPartInventoryRows(), getPartProductionPlanner()]);
+  const [parts, planner, production] = await Promise.all([getPartInventoryRows(), getPartProductionPlanner(), getProductionPlateDashboard()]);
   const toPrintCount = planner.reduce((total, row) => total + row.quantityToPrint, 0);
   const plateCount = planner.reduce((total, row) => total + row.suggestedPlateCount, 0);
+  const nextPlate = production.next;
 
   return (
     <div className="grid gap-6">
@@ -20,11 +23,32 @@ export default async function AdminPartsPage() {
           <h2 className="text-2xl font-semibold tracking-tight">Parts and build plates</h2>
           <p className="mt-2 text-sm text-muted-foreground">Track stored product parts and group open paid orders by part and color.</p>
         </div>
+        <ProductionPlateControls />
         <div className="grid gap-2 sm:grid-cols-2">
           <Metric icon={<PackageOpen className="h-4 w-4" />} label="Parts to print" value={toPrintCount} />
           <Metric icon={<Layers3 className="h-4 w-4" />} label="Suggested plates" value={plateCount} />
         </div>
       </div>
+
+      {nextPlate ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Next operator action</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Load {nextPlate.color} filament for {nextPlate.productPart.product.name} · {nextPlate.productPart.name}, plate {nextPlate.plateIndex} of {nextPlate.plateCount}.
+            </p>
+          </CardHeader>
+          <CardContent className="grid gap-3 text-sm">
+            <div className="grid gap-2 md:grid-cols-4">
+              <Metric icon={<PackageOpen className="h-4 w-4" />} label="Plate qty" value={nextPlate.quantityPlanned} />
+              <Metric icon={<PackageOpen className="h-4 w-4" />} label="Stored used" value={nextPlate.inventoryUsedQuantity} />
+              <Metric icon={<Layers3 className="h-4 w-4" />} label="Minutes" value={nextPlate.estimatedPrintMinutes ?? 0} />
+              <Metric icon={<Layers3 className="h-4 w-4" />} label="Grams" value={nextPlate.estimatedGrams ?? 0} />
+            </div>
+            <ProductionPlateControls jobId={nextPlate.id} />
+          </CardContent>
+        </Card>
+      ) : null}
 
       <section className="grid gap-3">
         <h3 className="text-lg font-semibold">Build plate plan</h3>
@@ -57,6 +81,36 @@ export default async function AdminPartsPage() {
             </div>
           </div>
         ) : <Card><CardContent className="p-5 text-sm text-muted-foreground">No paid or deposited orders currently need product parts.</CardContent></Card>}
+      </section>
+
+      <section className="grid gap-3">
+        <h3 className="text-lg font-semibold">Production plate jobs</h3>
+        {production.plateJobs.length ? (
+          <div className="overflow-x-auto rounded-md border bg-card">
+            <div className="min-w-[980px]">
+              <div className="grid grid-cols-[1fr_1fr_100px_90px_90px_100px_1.4fr] gap-3 bg-muted px-4 py-3 text-xs font-medium uppercase text-muted-foreground">
+                <span>Product</span>
+                <span>Part</span>
+                <span>Color</span>
+                <span>Status</span>
+                <span>Qty</span>
+                <span>Estimate</span>
+                <span>Controls</span>
+              </div>
+              {production.plateJobs.map((job) => (
+                <div key={job.id} className="grid grid-cols-[1fr_1fr_100px_90px_90px_100px_1.4fr] gap-3 border-t px-4 py-3 text-sm">
+                  <span className="font-medium">{job.productPart.product.name}</span>
+                  <span>{job.productPart.name} · plate {job.plateIndex}/{job.plateCount}</span>
+                  <span>{job.color}</span>
+                  <span><Badge>{job.status}</Badge></span>
+                  <span>{job.quantityPlanned}</span>
+                  <span>{job.estimatedPrintMinutes ? `${job.estimatedPrintMinutes}m` : "-"} · {job.estimatedGrams ? `${job.estimatedGrams}g` : "-"}</span>
+                  <ProductionPlateControls jobId={job.id} />
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : <Card><CardContent className="p-5 text-sm text-muted-foreground">No production plate jobs yet. Rebuild plate jobs after paid orders are entered.</CardContent></Card>}
       </section>
 
       <section className="grid gap-3">

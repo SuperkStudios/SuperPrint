@@ -1,18 +1,11 @@
-export const pricingFormulaVersion = "product-pricing-v1";
+export const pricingFormulaVersion = "fixed-product-pricing-v2";
+export const stripeStandardPaymentProcessingPercent = 0.029;
+export const stripeStandardPaymentProcessingFixedCents = 30;
 
 export type PricingMode = "FIXED" | "DYNAMIC";
 
 export type PricingSettingsInput = {
-  machineHourlyRateCents: number;
-  laborHourlyRateCents: number;
-  electricityHourlyRateCents: number;
-  maintenanceReservePercent: number;
-  failureReservePercent: number;
-  defaultProfitMultiplier: number;
-  paymentProcessingPercent: number;
-  paymentProcessingFixedCents: number;
   taxPercentEstimate?: number | null;
-  minimumOrderPriceCents: number;
 };
 
 export type PricingProductInput = {
@@ -89,40 +82,25 @@ export function calculateProductPrice(input: {
   const estimatedPrintMinutes = Math.max(1, Math.round(input.override?.estimatedPrintMinutesOverride ?? input.product.estimatedPrintMinutes));
   const shippingCents = input.shippingRequired ? Math.max(0, Math.round(input.shippingCents ?? 0)) : 0;
   const adjustmentCents = Math.round(input.override?.priceAdjustmentCents ?? 0);
-  const materialMultiplier = input.filament.markupMultiplier && input.filament.markupMultiplier > 0 ? input.filament.markupMultiplier : 1;
 
-  const materialCostCents = roundMoney(estimatedGrams * input.filament.costPerGramCents * materialMultiplier * quantity);
-  const printHours = estimatedPrintMinutes / 60;
-  const machineTimeCostCents = roundMoney(printHours * input.settings.machineHourlyRateCents * quantity);
-  const electricityCostCents = roundMoney(printHours * input.settings.electricityHourlyRateCents * quantity);
-  const laborCostCents = roundMoney((input.product.baseLaborMinutes / 60) * input.settings.laborHourlyRateCents * quantity);
-  const packagingCostCents = Math.max(0, Math.round(input.product.basePackagingCents * quantity));
+  const materialCostCents = 0;
+  const machineTimeCostCents = 0;
+  const electricityCostCents = 0;
+  const laborCostCents = 0;
+  const packagingCostCents = 0;
   const baseCost = materialCostCents + machineTimeCostCents + electricityCostCents + laborCostCents + packagingCostCents + shippingCents;
-  const maintenanceReserveCents = roundMoney(baseCost * normalizePercent(input.settings.maintenanceReservePercent));
-  const failureReserveCents = roundMoney(baseCost * normalizePercent(input.settings.failureReservePercent));
+  const maintenanceReserveCents = 0;
+  const failureReserveCents = 0;
   const internalCostCents = baseCost + maintenanceReserveCents + failureReserveCents;
-  const dynamicPriceBeforeFees = roundMoney(internalCostCents * Math.max(1, input.settings.defaultProfitMultiplier) + adjustmentCents);
-  const priceBeforeTaxAndFeesCents =
-    input.product.pricingMode === "FIXED"
-      ? Math.max(0, Math.round(input.product.fixedPriceCents ?? dynamicPriceBeforeFees))
-      : dynamicPriceBeforeFees;
-  const paymentFeeCents = roundMoney(priceBeforeTaxAndFeesCents * normalizePercent(input.settings.paymentProcessingPercent) + input.settings.paymentProcessingFixedCents);
+  const priceBeforeTaxAndFeesCents = Math.max(0, Math.round((input.product.fixedPriceCents ?? 0) * quantity + adjustmentCents));
+  const paymentFeeCents = roundMoney(priceBeforeTaxAndFeesCents * stripeStandardPaymentProcessingPercent + stripeStandardPaymentProcessingFixedCents);
   const taxCents = roundMoney(priceBeforeTaxAndFeesCents * normalizePercent(input.settings.taxPercentEstimate));
-  const finalBeforeMinimum = priceBeforeTaxAndFeesCents + paymentFeeCents + taxCents;
-  const finalCustomerPriceCents = input.product.pricingMode === "FIXED"
-    ? priceBeforeTaxAndFeesCents
-    : Math.max(finalBeforeMinimum, input.settings.minimumOrderPriceCents);
+  const finalCustomerPriceCents = priceBeforeTaxAndFeesCents;
   const subtotalCostCents = baseCost;
   const profitMarkupCents = Math.max(0, priceBeforeTaxAndFeesCents - internalCostCents);
   const marginCents = finalCustomerPriceCents - internalCostCents - paymentFeeCents - taxCents;
   const marginPercent = finalCustomerPriceCents > 0 ? marginCents / finalCustomerPriceCents : 0;
-  const targetMarginCents = dynamicPriceBeforeFees - internalCostCents;
-  const marginWarning =
-    input.product.pricingMode === "FIXED" && priceBeforeTaxAndFeesCents < dynamicPriceBeforeFees
-      ? `Fixed price is ${formatCents(dynamicPriceBeforeFees - priceBeforeTaxAndFeesCents)} below target dynamic price.`
-      : marginCents < targetMarginCents * 0.8
-        ? "Margin is below target."
-        : null;
+  const marginWarning = null;
   const unavailableReason = !input.filament.active
     ? "Filament is inactive."
     : input.filament.remainingGrams < estimatedGrams * quantity
@@ -158,10 +136,6 @@ export function calculateProductPrice(input: {
     requiresAdminApproval: input.filament.requiresAdminApproval,
     pricingFormulaVersion
   } satisfies ProductPriceQuote;
-}
-
-export function formatCents(cents: number) {
-  return `$${(Math.round(cents) / 100).toFixed(2)}`;
 }
 
 function roundMoney(value: number) {

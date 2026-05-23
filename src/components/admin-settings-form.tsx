@@ -4,6 +4,7 @@ import { type Dispatch, type SetStateAction, useEffect, useState } from "react";
 import { buildThemeCssVariables, normalizePrimaryColor } from "@/domain/theme";
 import { maskStripeSecret } from "@/domain/stripe-settings";
 import { defaultShippoPrintCommand, maskShippoSecret } from "@/domain/shippo-settings";
+import { stripeStandardPaymentProcessingFixedCents, stripeStandardPaymentProcessingPercent } from "@/domain/pricing";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -70,16 +71,7 @@ type PublicShippoSettings = {
 };
 
 type PublicPricingSettings = {
-  machineHourlyRateCents: number;
-  laborHourlyRateCents: number;
-  electricityHourlyRateCents: number;
-  maintenanceReservePercent: number;
-  failureReservePercent: number;
-  defaultProfitMultiplier: number;
-  paymentProcessingPercent: number;
-  paymentProcessingFixedCents: number;
   taxPercentEstimate?: number | null;
-  minimumOrderPriceCents: number;
 };
 
 type PublicRewardsSettings = {
@@ -106,16 +98,7 @@ type AdminSettingsDraft = {
 };
 
 const defaultPricingSettings: PublicPricingSettings = {
-  machineHourlyRateCents: 250,
-  laborHourlyRateCents: 1800,
-  electricityHourlyRateCents: 20,
-  maintenanceReservePercent: 0.08,
-  failureReservePercent: 0.12,
-  defaultProfitMultiplier: 2,
-  paymentProcessingPercent: 0.029,
-  paymentProcessingFixedCents: 30,
-  taxPercentEstimate: null,
-  minimumOrderPriceCents: 500
+  taxPercentEstimate: null
 };
 
 const defaultRewardsSettings: PublicRewardsSettings = {
@@ -515,19 +498,16 @@ export function AdminSettingsForm({
         <div className="md:col-span-3">
           <h3 className="font-semibold">Pricing settings</h3>
           <p className="mt-1 text-sm text-muted-foreground">
-            Used by dynamic product pricing, admin previews, checkout, and order pricing snapshots.
+            Product prices are fixed per product. Tax is configurable, and payment processing uses Stripe standard card defaults.
           </p>
         </div>
-        <PricingField label="Machine hourly rate" field="machineHourlyRateCents" draft={draft} setDraft={setDraft} />
-        <PricingField label="Labor hourly rate" field="laborHourlyRateCents" draft={draft} setDraft={setDraft} />
-        <PricingField label="Electricity hourly rate" field="electricityHourlyRateCents" draft={draft} setDraft={setDraft} />
-        <PricingField label="Maintenance reserve %" field="maintenanceReservePercent" draft={draft} setDraft={setDraft} percent />
-        <PricingField label="Failure reserve %" field="failureReservePercent" draft={draft} setDraft={setDraft} percent />
-        <PricingField label="Profit multiplier" field="defaultProfitMultiplier" draft={draft} setDraft={setDraft} step="0.01" />
-        <PricingField label="Payment processing %" field="paymentProcessingPercent" draft={draft} setDraft={setDraft} percent />
-        <PricingField label="Fixed payment fee" field="paymentProcessingFixedCents" draft={draft} setDraft={setDraft} />
         <PricingField label="Tax estimate %" field="taxPercentEstimate" draft={draft} setDraft={setDraft} percent optional />
-        <PricingField label="Minimum order price" field="minimumOrderPriceCents" draft={draft} setDraft={setDraft} />
+        <div className="grid gap-2 rounded-md border bg-muted/20 p-3 text-sm md:col-span-2">
+          <span className="font-medium">Stripe processing fee</span>
+          <span className="text-muted-foreground">
+            Auto-filled from Stripe standard US online card pricing: {(stripeStandardPaymentProcessingPercent * 100).toFixed(1)}% + ${(stripeStandardPaymentProcessingFixedCents / 100).toFixed(2)} per successful card transaction.
+          </span>
+        </div>
       </div>
 
       <div className="grid gap-4 border-t pt-5 md:col-span-2 md:grid-cols-3">
