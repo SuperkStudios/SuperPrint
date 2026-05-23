@@ -41,7 +41,7 @@ export function normalizeCentauriTask(task: CentauriTask, index = 0): CompletedP
   };
 }
 
-export function buildCentauriHistoryListRequest(mainboardId: string, from = 0) {
+export function buildCentauriHistoryListRequest(mainboardId: string) {
   const requestId = crypto.randomUUID();
   return {
     Id: requestId,
@@ -51,7 +51,7 @@ export function buildCentauriHistoryListRequest(mainboardId: string, from = 0) {
       RequestID: requestId,
       MainboardID: mainboardId,
       TimeStamp: Math.floor(Date.now() / 1000),
-      From: from
+      From: 0
     },
     Topic: `sdcp/request/${mainboardId}`
   };

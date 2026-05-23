@@ -12,8 +12,6 @@ import { filterCompletedPrinterHistory, type CompletedPrinterHistoryItem } from 
 
 const GCODE_HEAD_BYTES = 256 * 1024;
 const GCODE_TAIL_BYTES = 2 * 1024 * 1024;
-const HISTORY_PAGE_SIZE = 50;
-const MAX_HISTORY_PAGES = 200;
 
 export async function fetchCentauriCompletedHistory(input: {
   controlApiUrl: string;
@@ -237,11 +235,7 @@ function collectHistorySession(input: { controlApiUrl: string; mainboardId?: str
     const socket = new WebSocket(input.controlApiUrl);
     const messages: unknown[] = [];
     let mainboardId = input.mainboardId;
-    let listStarted = false;
-    let listComplete = false;
-    const listRequestOffsets = new Map<string, number>();
-    const requestedDetailIds = new Set<string>();
-    const detailQueue: string[] = [];
+    let listRequested = false;
     const pendingDetailRequestIds = new Set<string>();
     const detailRequestIds = new Set<string>();
     let settled = false;
@@ -263,40 +257,18 @@ function collectHistorySession(input: { controlApiUrl: string; mainboardId?: str
       settle(callback);
     };
     const requestList = (from = 0) => {
-      if (settled || listRequestOffsets.size >= MAX_HISTORY_PAGES) return;
-      listStarted = true;
-      const request = buildCentauriHistoryListRequest(mainboardId ?? "0000000000000000", from);
-      listRequestOffsets.set(request.Data.RequestID, from);
-      socket.send(JSON.stringify(request));
+      void from;
+      if (settled || listRequested) return;
+      listRequested = true;
+      socket.send(JSON.stringify(buildCentauriHistoryListRequest(mainboardId ?? "0000000000000000")));
     };
-    const queueDetails = (taskIds: string[]) => {
-      let queued = 0;
-      for (const taskId of taskIds) {
-        if (requestedDetailIds.has(taskId)) continue;
-        requestedDetailIds.add(taskId);
-        detailQueue.push(taskId);
-        queued += 1;
-      }
-      drainDetails();
-      return queued;
-    };
-    const drainDetails = () => {
-      if (settled || pendingDetailRequestIds.size > 0 || detailQueue.length === 0) {
-        maybeFinish();
-        return;
-      }
-      const nextIds = detailQueue.splice(0, 50);
-      for (const batch of chunk(nextIds, 10)) {
+    const requestDetails = (taskIds: string[]) => {
+      if (settled || pendingDetailRequestIds.size > 0 || taskIds.length === 0) return;
+      for (const batch of chunk(taskIds, 10)) {
         const request = buildCentauriHistoryDetailRequest(mainboardId ?? "0000000000000000", batch);
         detailRequestIds.add(request.Data.RequestID);
         pendingDetailRequestIds.add(request.Data.RequestID);
         socket.send(JSON.stringify(request));
-      }
-    };
-    const maybeFinish = () => {
-      if (!listComplete || pendingDetailRequestIds.size > 0 || detailQueue.length > 0) return;
-      if (detailRequestIds.size > 0 || requestedDetailIds.size === 0) {
-        finish(() => resolve(messages));
       }
     };
 
@@ -313,27 +285,16 @@ function collectHistorySession(input: { controlApiUrl: string; mainboardId?: str
         const message = JSON.parse(text);
         messages.push(message);
         mainboardId = mainboardId ?? readMainboardId(message);
-        if (mainboardId && !listStarted) requestList();
+        if (mainboardId) requestList();
         const cmd = readResponseCmd(message);
-        if (cmd === 320) {
-          const requestId = readResponseRequestId(message);
-          const offset = requestId ? listRequestOffsets.get(requestId) ?? 0 : 0;
-          const pageIds = extractCentauriTaskIds([message]);
-          const queued = queueDetails(pageIds);
-          const nextOffset = offset + pageIds.length;
-          if (queued > 0 && pageIds.length >= HISTORY_PAGE_SIZE && listRequestOffsets.size < MAX_HISTORY_PAGES) {
-            requestList(nextOffset);
-          } else {
-            listComplete = true;
-            maybeFinish();
-          }
-        }
+        if (cmd === 320) requestDetails(extractCentauriTaskIds(messages));
         if (cmd === 321) {
           const requestId = readResponseRequestId(message);
           if (requestId) pendingDetailRequestIds.delete(requestId);
-          drainDetails();
         }
-        maybeFinish();
+        if (detailRequestIds.size > 0 && pendingDetailRequestIds.size === 0 && extractCentauriTasks(messages).length > 0) {
+          finish(() => resolve(messages));
+        }
       } catch {
         messages.push(text);
       }

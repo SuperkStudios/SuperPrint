@@ -198,10 +198,11 @@ async function enrichFromAssignedHistory(prints: CompletedPrinterHistoryItem[]) 
 }
 
 async function cachePrinterHistory(prints: CompletedPrinterHistoryItem[]) {
+  const mergedPrints = mergePrinterHistory(await readCachedPrinterHistory(), prints);
   await prisma.systemSetting.upsert({
     where: { key: "printerHistory.lastPull" },
-    update: { value: prints },
-    create: { key: "printerHistory.lastPull", value: prints }
+    update: { value: mergedPrints },
+    create: { key: "printerHistory.lastPull", value: mergedPrints }
   });
 }
 
@@ -275,6 +276,17 @@ function compactPrint(print: z.infer<typeof printSchema>) {
 
 function readHistory(value: unknown): Array<{ id: string; name: string; gramsUsed: number; completedAt?: string; status?: string }> {
   return Array.isArray(value) ? value.filter((item): item is { id: string; name: string; gramsUsed: number; completedAt?: string; status?: string } => Boolean(item && typeof item === "object" && "id" in item)) : [];
+}
+
+function mergePrinterHistory(existing: CompletedPrinterHistoryItem[], incoming: CompletedPrinterHistoryItem[]) {
+  const byId = new Map<string, CompletedPrinterHistoryItem>();
+  for (const print of existing) byId.set(print.id, print);
+  for (const print of incoming) byId.set(print.id, { ...byId.get(print.id), ...print });
+  return [...byId.values()].sort((left, right) => {
+    const rightTime = right.completedAt ? Date.parse(right.completedAt) : 0;
+    const leftTime = left.completedAt ? Date.parse(left.completedAt) : 0;
+    return rightTime - leftTime;
+  });
 }
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number) {

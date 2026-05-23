@@ -8,7 +8,7 @@ describe("Centauri history extraction", () => {
     expect(extractCentauriTaskIds([{ Data: { HistoryData: ids } }])).toHaveLength(75);
   });
 
-  it("can request printer-history pages after the first 50 rows", () => {
-    expect(buildCentauriHistoryListRequest("mainboard-1", 50).Data.From).toBe(50);
+  it("uses the documented SDCP source field for history list requests", () => {
+    expect(buildCentauriHistoryListRequest("mainboard-1").Data.From).toBe(0);
   });
 });
