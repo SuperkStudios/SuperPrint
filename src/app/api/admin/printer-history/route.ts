@@ -38,8 +38,8 @@ export async function POST() {
   }
   try {
     const completedPrints = await withTimeout(
-      fetchCentauriCompletedHistory({ controlApiUrl: printer.controlApiUrl, timeoutMs: 15000, gcodeTimeoutMs: 5000, includeMissingGrams: true, enrichGcode: true }),
-      45000
+      fetchCentauriCompletedHistory({ controlApiUrl: printer.controlApiUrl, timeoutMs: 30000, gcodeTimeoutMs: 5000, includeMissingGrams: true, enrichGcode: true }),
+      90000
     );
     const enrichedPrints = await enrichFromAssignedHistory(completedPrints);
     if (enrichedPrints.length) {

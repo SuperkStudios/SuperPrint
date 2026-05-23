@@ -520,7 +520,7 @@ async function syncPrinterHistory() {
   lastPrinterHistorySyncAt = Date.now();
   const completedPrints = await fetchCentauriCompletedHistory({
     controlApiUrl: printerControlUrl,
-    timeoutMs: 15000,
+    timeoutMs: 30000,
     gcodeTimeoutMs: 5000,
     includeMissingGrams: true,
     enrichGcode: true
