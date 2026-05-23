@@ -10,9 +10,11 @@ const inboundSchema = z.object({
 });
 
 export async function POST(request: Request) {
-  const configuredSecret = process.env.SUPERMAIL_INBOUND_SECRET;
+  const configuredSecret = process.env.CLOUDFLARE_EMAIL_INBOUND_SECRET ?? process.env.SUPERMAIL_INBOUND_SECRET;
   if (configuredSecret) {
-    const provided = request.headers.get("x-supermail-signature") ?? request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
+    const provided = request.headers.get("x-cloudflare-email-secret")
+      ?? request.headers.get("x-supermail-signature")
+      ?? request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
     if (provided !== configuredSecret) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }

@@ -23,7 +23,7 @@ export async function getEmailSettings() {
 
 export async function sendTemplateEmail(input: SendTemplateEmailInput) {
   const settings = await getEmailSettings();
-  if (!settings.apiUrl || !settings.apiKey) return { skipped: true, reason: "SuperMail API is not configured." };
+  if (!settings.cloudflareAccountId || !settings.apiKey) return { skipped: true, reason: "Cloudflare Email Sending is not configured." };
   const template = settings.templates.find((item) => item.id === input.templateId) ?? defaultEmailTemplates.find((item) => item.id === input.templateId);
   if (!template) return { skipped: true, reason: "Unknown email template." };
 
@@ -47,25 +47,25 @@ export async function sendTemplateEmail(input: SendTemplateEmailInput) {
     footerHtml: renderTemplate(settings.footerHtml, variables),
     bodyHtml
   });
-  const response = await fetch(`${settings.apiUrl.replace(/\/$/, "")}/api/send`, {
+  const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(settings.cloudflareAccountId)}/email/sending/send`, {
     method: "POST",
     headers: {
-      authorization: `Bearer ${settings.apiKey}`,
+      Authorization: `Bearer ${settings.apiKey}`,
       "content-type": "application/json"
     },
     body: JSON.stringify({
       from: input.from === "support" ? settings.supportFrom : settings.noreplyFrom,
-      to: Array.isArray(input.to) ? input.to : [input.to],
+      to: input.to,
       subject,
       text,
       html,
-      ...(input.replyTo ? { replyTo: input.replyTo } : {})
+      ...(input.replyTo ? { reply_to: input.replyTo } : {})
     }),
     signal: AbortSignal.timeout(8000)
   });
   if (!response.ok) {
     const body = await response.text().catch(() => "");
-    throw new Error(`SuperMail send failed (${response.status}): ${body || response.statusText}`);
+    throw new Error(`Cloudflare Email send failed (${response.status}): ${body || response.statusText}`);
   }
   return response.json();
 }

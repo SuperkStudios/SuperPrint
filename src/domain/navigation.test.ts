@@ -16,7 +16,7 @@ describe("user navigation", () => {
   });
 
   it("shows admin operations separately for owners and admins", () => {
-    expect(buildAdminNavigation("OWNER").map((item) => item.label)).toEqual(["Dashboard", "Queue", "Orders", "Support", "Uploads", "Products", "Filament", "Printers", "Maintenance", "Factory Evolution", "History", "Staff", "Settings"]);
-    expect(buildAdminNavigation("ADMIN").map((item) => item.label)).toEqual(["Dashboard", "Queue", "Orders", "Support", "Uploads", "Products", "Filament", "Printers", "Maintenance", "Factory Evolution", "History", "Staff", "Settings"]);
+    expect(buildAdminNavigation("OWNER").map((item) => item.label)).toEqual(["Dashboard", "Queue", "In-person POS", "Orders", "Support", "Uploads", "Products", "Parts", "Filament", "Printers", "Maintenance", "Factory Evolution", "History", "Staff", "Settings"]);
+    expect(buildAdminNavigation("ADMIN").map((item) => item.label)).toEqual(["Dashboard", "Queue", "In-person POS", "Orders", "Support", "Uploads", "Products", "Parts", "Filament", "Printers", "Maintenance", "Factory Evolution", "History", "Staff", "Settings"]);
   });
 });

@@ -48,6 +48,7 @@ const settingsSchema = z.object({
     webhookUrl: z.string().optional()
   }).optional(),
   email: z.object({
+    cloudflareAccountId: z.string().optional(),
     apiUrl: z.string().optional(),
     apiKey: z.string().optional(),
     noreplyFrom: z.string().email().optional(),

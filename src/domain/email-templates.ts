@@ -19,7 +19,7 @@ export type EmailTemplate = {
 };
 
 export type EmailThemeSettings = {
-  apiUrl: string;
+  cloudflareAccountId: string;
   apiKey: string;
   noreplyFrom: string;
   supportFrom: string;
@@ -30,11 +30,13 @@ export type EmailThemeSettings = {
   footerHtml: string;
 };
 
+const transactionalEmailDomain = "print.superk.studio";
+
 export const defaultEmailThemeSettings: EmailThemeSettings = {
-  apiUrl: "https://email.superk.studio",
+  cloudflareAccountId: "",
   apiKey: "",
-  noreplyFrom: "noreply@print.superk.studio",
-  supportFrom: "support@print.superk.studio",
+  noreplyFrom: `noreply@${transactionalEmailDomain}`,
+  supportFrom: `support@${transactionalEmailDomain}`,
   brandName: "SuperPrint",
   headerImageUrl: "{{appUrl}}/brand/email-factory-banner.png",
   footerNote: "Live manufacturing. Transparent by design.",
@@ -173,6 +175,7 @@ export const defaultEmailTemplates: EmailTemplate[] = [
 
 export function emailSettingKeys() {
   return [
+    "email.cloudflareAccountId",
     "email.apiUrl",
     "email.apiKey",
     "email.noreplyFrom",
@@ -192,10 +195,10 @@ export function emailSettingKeys() {
 
 export function resolveEmailSettings(values: Record<string, unknown> = {}) {
   return {
-    apiUrl: stringSetting(values["email.apiUrl"], process.env.SUPERMAIL_API_URL ?? defaultEmailThemeSettings.apiUrl),
-    apiKey: stringSetting(values["email.apiKey"], process.env.SUPERMAIL_API_KEY ?? defaultEmailThemeSettings.apiKey),
-    noreplyFrom: stringSetting(values["email.noreplyFrom"], process.env.SUPERMAIL_NOREPLY_FROM ?? defaultEmailThemeSettings.noreplyFrom),
-    supportFrom: stringSetting(values["email.supportFrom"], process.env.SUPERMAIL_SUPPORT_FROM ?? defaultEmailThemeSettings.supportFrom),
+    cloudflareAccountId: stringSetting(values["email.cloudflareAccountId"], process.env.CLOUDFLARE_EMAIL_ACCOUNT_ID ?? legacyAccountId(values["email.apiUrl"]) ?? defaultEmailThemeSettings.cloudflareAccountId),
+    apiKey: stringSetting(values["email.apiKey"], process.env.CLOUDFLARE_EMAIL_API_TOKEN ?? process.env.SUPERMAIL_API_KEY ?? defaultEmailThemeSettings.apiKey),
+    noreplyFrom: senderSetting(values["email.noreplyFrom"], process.env.CLOUDFLARE_EMAIL_NOREPLY_FROM ?? process.env.SUPERMAIL_NOREPLY_FROM ?? defaultEmailThemeSettings.noreplyFrom),
+    supportFrom: senderSetting(values["email.supportFrom"], process.env.CLOUDFLARE_EMAIL_SUPPORT_FROM ?? process.env.SUPERMAIL_SUPPORT_FROM ?? defaultEmailThemeSettings.supportFrom),
     brandName: stringSetting(values["email.brandName"], defaultEmailThemeSettings.brandName),
     headerImageUrl: stringSetting(values["email.headerImageUrl"], defaultEmailThemeSettings.headerImageUrl),
     footerNote: stringSetting(values["email.footerNote"], defaultEmailThemeSettings.footerNote),
@@ -211,6 +214,7 @@ export function resolveEmailSettings(values: Record<string, unknown> = {}) {
 }
 
 export function buildEmailSettingsUpdate(input: {
+  cloudflareAccountId?: string;
   apiUrl?: string;
   apiKey?: string;
   noreplyFrom?: string;
@@ -223,11 +227,11 @@ export function buildEmailSettingsUpdate(input: {
   templates?: Array<Partial<EmailTemplate> & { id: EmailTemplateId }>;
 }, existing: Record<string, unknown> = {}) {
   const updates: Record<string, string> = {};
-  add(updates, "email.apiUrl", input.apiUrl);
+  add(updates, "email.cloudflareAccountId", input.cloudflareAccountId ?? input.apiUrl);
   if (input.apiKey && !isMaskedSecret(input.apiKey)) add(updates, "email.apiKey", input.apiKey);
   if (input.apiKey && isMaskedSecret(input.apiKey) && typeof existing["email.apiKey"] === "string") updates["email.apiKey"] = existing["email.apiKey"];
-  add(updates, "email.noreplyFrom", input.noreplyFrom);
-  add(updates, "email.supportFrom", input.supportFrom);
+  addSender(updates, "email.noreplyFrom", input.noreplyFrom);
+  addSender(updates, "email.supportFrom", input.supportFrom);
   add(updates, "email.brandName", input.brandName);
   add(updates, "email.headerImageUrl", input.headerImageUrl);
   add(updates, "email.footerNote", input.footerNote);
@@ -254,8 +258,25 @@ function add(updates: Record<string, string>, key: string, value?: string) {
   if (typeof value === "string") updates[key] = value.trim();
 }
 
+function addSender(updates: Record<string, string>, key: string, value?: string) {
+  if (typeof value === "string") updates[key] = normalizeSenderAddress(value);
+}
+
 function stringSetting(value: unknown, fallback: string) {
   return typeof value === "string" ? value : fallback;
+}
+
+function senderSetting(value: unknown, fallback: string) {
+  return normalizeSenderAddress(stringSetting(value, fallback));
+}
+
+function normalizeSenderAddress(value: string) {
+  const trimmed = value.trim();
+  const displayNameMatch = trimmed.match(/<([^>]+)>/);
+  const address = (displayNameMatch?.[1] ?? trimmed).trim().toLowerCase();
+  if (!address) return `noreply@${transactionalEmailDomain}`;
+  if (!address.includes("@")) return `${address}@${transactionalEmailDomain}`;
+  return address;
 }
 
 function maskSecret(value: string) {
@@ -266,4 +287,11 @@ function maskSecret(value: string) {
 
 function isMaskedSecret(value: string) {
   return value.includes("...");
+}
+
+function legacyAccountId(value: unknown) {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed || /^https?:\/\//i.test(trimmed)) return null;
+  return trimmed;
 }

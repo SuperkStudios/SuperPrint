@@ -26,7 +26,7 @@ type PublicNotificationSettings = {
 };
 
 type PublicEmailSettings = {
-  apiUrl: string;
+  cloudflareAccountId: string;
   apiKey: string;
   noreplyFrom: string;
   supportFrom: string;
@@ -129,7 +129,7 @@ const defaultRewardsSettings: PublicRewardsSettings = {
 };
 
 const defaultEmailSettings: PublicEmailSettings = {
-  apiUrl: "https://email.superk.studio",
+  cloudflareAccountId: "",
   apiKey: "",
   noreplyFrom: "noreply@print.superk.studio",
   supportFrom: "support@print.superk.studio",
@@ -421,12 +421,12 @@ export function AdminSettingsForm({
         <div className="md:col-span-3">
           <h3 className="font-semibold">Customer email</h3>
           <p className="mt-1 text-sm text-muted-foreground">
-            SuperMail API delivery plus editable shared header, footer, and transactional templates.
+            Cloudflare Email Service delivery plus editable shared header, footer, and transactional templates.
           </p>
         </div>
 
-        <EmailField label="SuperMail API URL" field="apiUrl" draft={draft} setDraft={setDraft} />
-        <EmailField label="API key" field="apiKey" draft={draft} setDraft={setDraft} />
+        <EmailField label="Cloudflare account ID" field="cloudflareAccountId" draft={draft} setDraft={setDraft} />
+        <EmailField label="Cloudflare API token" field="apiKey" draft={draft} setDraft={setDraft} />
         <EmailField label="Email brand name" field="brandName" draft={draft} setDraft={setDraft} />
         <EmailField label="No-reply sender" field="noreplyFrom" draft={draft} setDraft={setDraft} />
         <EmailField label="Support sender" field="supportFrom" draft={draft} setDraft={setDraft} />

@@ -1,6 +1,7 @@
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useMemo, useState } from "react";
 import * as AppleAuthentication from "expo-apple-authentication";
+import * as SecureStore from "expo-secure-store";
 import { StripeProvider, useStripe } from "@stripe/stripe-react-native";
 import { StripeTerminalProvider, useStripeTerminal, type Reader, type PaymentIntent as TerminalPaymentIntent } from "@stripe/stripe-terminal-react-native";
 import {
@@ -23,6 +24,8 @@ import {
 const brandLockupLight = require("./assets/superprint-compact-lockup-light.png");
 const brandLockupDark = require("./assets/superprint-compact-lockup-dark.png");
 const brandMark = require("./assets/superprint-mark.png");
+const secureSessionKey = "superprint.admin.sessionCookie";
+const secureEmailKey = "superprint.admin.email";
 
 type ScreenKey = "dashboard" | "pos" | "orders" | "queue" | "parts" | "products" | "customers" | "reports" | "settings";
 
@@ -33,6 +36,8 @@ type AdminSettings = {
   adminPassword: string;
   publishableKey: string;
   terminalLocationId: string;
+  stripeMode: string;
+  stripeConfigured: boolean;
   appearance: AppearanceMode;
 };
 
@@ -210,6 +215,9 @@ const navItems: Array<{ key: ScreenKey; title: string; detail: string }> = [
 export default function App() {
   const [screen, setScreen] = useState<ScreenKey>("dashboard");
   const systemScheme = useColorScheme();
+  const [authLoading, setAuthLoading] = useState(true);
+  const [authMessage, setAuthMessage] = useState("");
+  const [sessionInfo, setSessionInfo] = useState<MobileSessionInfo | null>(null);
   const [settings, setSettings] = useState<AdminSettings>({
     apiBaseUrl: "https://print.superk.studio",
     adminCookie: "",
@@ -217,6 +225,8 @@ export default function App() {
     adminPassword: "",
     publishableKey: "",
     terminalLocationId: "",
+    stripeMode: "",
+    stripeConfigured: false,
     appearance: "system"
   });
   const activeAppearance: ActiveAppearance = settings.appearance === "system" ? (systemScheme === "dark" ? "dark" : "light") : settings.appearance;
@@ -233,12 +243,219 @@ export default function App() {
     return response.secret;
   }, [client]);
 
+  useEffect(() => {
+    let cancelled = false;
+    async function restoreSavedSession() {
+      try {
+        const [cookie, email] = await Promise.all([
+          SecureStore.getItemAsync(secureSessionKey),
+          SecureStore.getItemAsync(secureEmailKey)
+        ]);
+        if (email && !cancelled) {
+          setSettings((current) => ({ ...current, adminEmail: email }));
+        }
+        if (!cookie) {
+          if (!cancelled) setSessionInfo({ signedIn: false });
+          return;
+        }
+        const nextSettings = {
+          ...settings,
+          adminCookie: cookie,
+          adminEmail: email ?? settings.adminEmail
+        };
+        const session = await new SuperPrintClient(nextSettings).get<MobileSessionInfo>("/api/admin/mobile-session");
+        if (!session.signedIn || !session.user?.adminAllowed) {
+          await clearStoredSession();
+          if (!cancelled) {
+            setSessionInfo({ signedIn: false });
+            setAuthMessage("Saved login expired. Sign in again.");
+          }
+          return;
+        }
+        if (!cancelled) {
+          setSettings((current) => ({
+            ...current,
+            adminCookie: cookie,
+            adminEmail: email ?? session.user?.email ?? current.adminEmail
+          }));
+          setSessionInfo(session);
+        }
+      } catch {
+        await clearStoredSession();
+        if (!cancelled) {
+          setSessionInfo({ signedIn: false });
+          setAuthMessage("Saved login could not be restored. Sign in again.");
+        }
+      } finally {
+        if (!cancelled) setAuthLoading(false);
+      }
+    }
+    restoreSavedSession();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function finishSignIn(cookie: string, emailFallback?: string) {
+    const nextSettings = { ...settings, adminCookie: cookie, adminEmail: emailFallback ?? settings.adminEmail };
+    const session = await new SuperPrintClient(nextSettings).get<MobileSessionInfo>("/api/admin/mobile-session");
+    if (!session.signedIn || !session.user?.adminAllowed) throw new Error("Signed in, but this account is not allowed to use SuperPrint admin.");
+    await SecureStore.setItemAsync(secureSessionKey, cookie, { keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY });
+    await SecureStore.setItemAsync(secureEmailKey, session.user.email, { keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY });
+    setSettings((current) => ({
+      ...current,
+      adminCookie: cookie,
+      adminEmail: session.user?.email ?? emailFallback ?? current.adminEmail,
+      adminPassword: ""
+    }));
+    setSessionInfo(session);
+    setAuthMessage("");
+    setScreen("dashboard");
+    return session;
+  }
+
+  async function signOut() {
+    await clearStoredSession();
+    setSettings((current) => ({ ...current, adminCookie: "", adminPassword: "" }));
+    setSessionInfo({ signedIn: false });
+    setScreen("settings");
+  }
+
+  const signedIn = Boolean(sessionInfo?.signedIn && sessionInfo.user?.adminAllowed && settings.adminCookie);
+
+  if (authLoading) {
+    return <LoadingShell activeAppearance={activeAppearance} message="Loading secure session..." />;
+  }
+
   return (
     <StripeProvider publishableKey={settings.publishableKey}>
       <StripeTerminalProvider tokenProvider={tokenProvider}>
-        <AppShell screen={screen} setScreen={setScreen} settings={settings} setSettings={setSettings} client={client} activeAppearance={activeAppearance} />
+        {signedIn ? (
+          <AppShell screen={screen} setScreen={setScreen} settings={settings} setSettings={setSettings} client={client} activeAppearance={activeAppearance} sessionInfo={sessionInfo} onSignOut={signOut} />
+        ) : (
+          <AuthScreen settings={settings} setSettings={setSettings} activeAppearance={activeAppearance} authMessage={authMessage} finishSignIn={finishSignIn} />
+        )}
       </StripeTerminalProvider>
     </StripeProvider>
+  );
+}
+
+async function clearStoredSession() {
+  await Promise.all([
+    SecureStore.deleteItemAsync(secureSessionKey),
+    SecureStore.deleteItemAsync(secureEmailKey)
+  ]);
+}
+
+function LoadingShell({ activeAppearance, message }: { activeAppearance: ActiveAppearance; message: string }) {
+  return (
+    <SafeAreaView style={styles.safe}>
+      <StatusBar style={activeAppearance === "dark" ? "light" : "dark"} />
+      <View style={[styles.screenBody, styles.centerPane]}>
+        <Image source={activeAppearance === "dark" ? brandLockupDark : brandLockupLight} style={styles.loginLogo} resizeMode="contain" />
+        <ActivityIndicator color={palette.cyan} />
+        <Text style={styles.cardCopy}>{message}</Text>
+      </View>
+    </SafeAreaView>
+  );
+}
+
+function AuthScreen({
+  settings,
+  setSettings,
+  activeAppearance,
+  authMessage,
+  finishSignIn
+}: {
+  settings: AdminSettings;
+  setSettings: (settings: AdminSettings) => void;
+  activeAppearance: ActiveAppearance;
+  authMessage: string;
+  finishSignIn: (cookie: string, emailFallback?: string) => Promise<MobileSessionInfo>;
+}) {
+  const client = useMemo(() => new SuperPrintClient(settings), [settings]);
+  const [signingIn, setSigningIn] = useState(false);
+  const [status, setStatus] = useState(authMessage);
+
+  useEffect(() => {
+    setStatus(authMessage);
+  }, [authMessage]);
+
+  async function signIn() {
+    if (!settings.adminEmail.trim() || !settings.adminPassword.trim()) {
+      setStatus("Email and password are required.");
+      return;
+    }
+    setSigningIn(true);
+    setStatus("Signing in...");
+    try {
+      const cookie = await client.signIn(settings.adminEmail, settings.adminPassword);
+      const session = await finishSignIn(cookie, settings.adminEmail);
+      setStatus(sessionStatusForSettings(session, { ...settings, adminEmail: session.user?.email ?? settings.adminEmail }));
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Sign in failed.");
+    } finally {
+      setSigningIn(false);
+    }
+  }
+
+  async function signInApple() {
+    setSigningIn(true);
+    setStatus("Opening Apple sign in...");
+    try {
+      const credential = await AppleAuthentication.signInAsync({
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL
+        ]
+      });
+      if (!credential.identityToken) throw new Error("Apple did not return an identity token.");
+      const cookie = await client.signInWithApple(credential.identityToken);
+      const session = await finishSignIn(cookie, credential.email ?? settings.adminEmail);
+      setStatus(sessionStatus(session));
+    } catch (error) {
+      if ((error as { code?: string }).code === "ERR_REQUEST_CANCELED") {
+        setStatus("Apple sign in canceled.");
+      } else {
+        setStatus(error instanceof Error ? error.message : "Apple sign in failed.");
+      }
+    } finally {
+      setSigningIn(false);
+    }
+  }
+
+  return (
+    <SafeAreaView style={styles.safe}>
+      <StatusBar style={activeAppearance === "dark" ? "light" : "dark"} />
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.content}>
+        <ScrollView style={styles.screen} contentContainerStyle={[styles.screenBody, styles.loginBody]}>
+          <Image source={activeAppearance === "dark" ? brandLockupDark : brandLockupLight} style={styles.loginLogo} resizeMode="contain" />
+          <Text style={styles.kicker}>Owner Admin</Text>
+          <Text style={styles.h1}>Sign In</Text>
+          <Text style={styles.copy}>Use your SuperPrint admin account. The session is saved in iOS secure storage so you do not have to sign in every time.</Text>
+          <Card>
+            <Field label="API base URL" value={settings.apiBaseUrl} onChangeText={(apiBaseUrl) => setSettings({ ...settings, apiBaseUrl })} autoCapitalize="none" />
+            <View style={styles.inline}>
+              <Pressable onPress={() => setSettings({ ...settings, apiBaseUrl: "https://print.superk.studio" })} style={[styles.secondaryButton, styles.grow]}>
+                <Text style={styles.secondaryButtonText}>Use Production</Text>
+              </Pressable>
+              <Pressable onPress={() => setSettings({ ...settings, apiBaseUrl: "http://localhost:3000" })} style={[styles.secondaryButton, styles.grow]}>
+                <Text style={styles.secondaryButtonText}>Use Localhost</Text>
+              </Pressable>
+            </View>
+            <Pressable onPress={signInApple} style={styles.primaryButton}>
+              {signingIn ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>Sign in with Apple</Text>}
+            </Pressable>
+            <Field label="Admin email" value={settings.adminEmail} onChangeText={(adminEmail) => setSettings({ ...settings, adminEmail })} autoCapitalize="none" keyboardType="email-address" />
+            <Field label="Admin password" value={settings.adminPassword} onChangeText={(adminPassword) => setSettings({ ...settings, adminPassword })} secureTextEntry />
+            <Pressable onPress={signIn} style={styles.primaryButton}>
+              {signingIn ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>Sign In</Text>}
+            </Pressable>
+            {status ? <Text style={styles.message}>{status}</Text> : null}
+          </Card>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
@@ -248,7 +465,9 @@ function AppShell({
   settings,
   setSettings,
   client,
-  activeAppearance
+  activeAppearance,
+  sessionInfo,
+  onSignOut
 }: {
   screen: ScreenKey;
   setScreen: (screen: ScreenKey) => void;
@@ -256,6 +475,8 @@ function AppShell({
   setSettings: (settings: AdminSettings) => void;
   client: SuperPrintClient;
   activeAppearance: ActiveAppearance;
+  sessionInfo: MobileSessionInfo | null;
+  onSignOut: () => Promise<void>;
 }) {
   return (
     <SafeAreaView style={styles.safe}>
@@ -286,7 +507,7 @@ function AppShell({
         {screen === "dashboard" && <DashboardScreen onOpen={setScreen} />}
         {screen === "pos" && <POSScreen client={client} settings={settings} setSettings={setSettings} />}
         {screen === "orders" && <OrdersScreen client={client} />}
-        {screen === "settings" && <SettingsScreen settings={settings} setSettings={setSettings} />}
+        {screen === "settings" && <SettingsScreen settings={settings} setSettings={setSettings} sessionInfo={sessionInfo} onSignOut={onSignOut} />}
         {screen === "queue" && <QueueScreen client={client} />}
         {screen === "parts" && <PartsScreen client={client} />}
         {screen === "products" && <ProductsScreen client={client} />}
@@ -397,8 +618,14 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
   }
 
   async function refreshTerminalConfig() {
-    const config = await client.get<{ publishableKey: string | null; terminalLocationId: string | null }>("/api/admin/pos/terminal/config");
-    setSettings({ ...settings, publishableKey: config.publishableKey ?? "", terminalLocationId: config.terminalLocationId ?? "" });
+    const config = await client.get<{ publishableKey: string | null; terminalLocationId: string | null; configured?: boolean; mode?: string }>("/api/admin/pos/terminal/config");
+    setSettings({
+      ...settings,
+      publishableKey: config.publishableKey ?? "",
+      terminalLocationId: config.terminalLocationId ?? "",
+      stripeMode: config.mode ?? settings.stripeMode,
+      stripeConfigured: Boolean(config.configured)
+    });
     return config;
   }
 
@@ -455,7 +682,7 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
     try {
       const started = await client.post<{ order: { id: string; orderNumber: string; stripePaymentIntentId?: string | null }; clientSecret: string; publishableKey: string | null }>("/api/admin/pos/manual/payment-intent", buildOrderPayload());
       if (started.publishableKey && started.publishableKey !== settings.publishableKey) {
-        setSettings({ ...settings, publishableKey: started.publishableKey });
+        setSettings({ ...settings, publishableKey: started.publishableKey, stripeConfigured: true });
       }
       const init = await stripe.initPaymentSheet({
         merchantDisplayName: "SuperPrint",
@@ -1078,82 +1305,36 @@ function ReportsScreen({ client }: { client: SuperPrintClient }) {
   );
 }
 
-function SettingsScreen({ settings, setSettings }: { settings: AdminSettings; setSettings: (settings: AdminSettings) => void }) {
+function SettingsScreen({
+  settings,
+  setSettings,
+  sessionInfo,
+  onSignOut
+}: {
+  settings: AdminSettings;
+  setSettings: (settings: AdminSettings) => void;
+  sessionInfo: MobileSessionInfo | null;
+  onSignOut: () => Promise<void>;
+}) {
   const client = useMemo(() => new SuperPrintClient(settings), [settings]);
   const [testing, setTesting] = useState(false);
-  const [signingIn, setSigningIn] = useState(false);
   const [status, setStatus] = useState("");
-
-  async function signIn() {
-    setSigningIn(true);
-    setStatus("Signing in...");
-    try {
-      const cookie = await client.signIn(settings.adminEmail, settings.adminPassword);
-      setSettings({ ...settings, adminCookie: cookie });
-      const session = await new SuperPrintClient({ ...settings, adminCookie: cookie }).get<MobileSessionInfo>("/api/admin/mobile-session");
-      setStatus(sessionStatusForSettings(session, settings));
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Sign in failed.");
-    } finally {
-      setSigningIn(false);
-    }
-  }
-
-  async function signInApple() {
-    setSigningIn(true);
-    setStatus("Opening Apple sign in...");
-    try {
-      const credential = await AppleAuthentication.signInAsync({
-        requestedScopes: [
-          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
-          AppleAuthentication.AppleAuthenticationScope.EMAIL
-        ]
-      });
-      if (!credential.identityToken) throw new Error("Apple did not return an identity token.");
-      const cookie = await client.signInWithApple(credential.identityToken);
-      setSettings({ ...settings, adminCookie: cookie });
-      const session = await new SuperPrintClient({ ...settings, adminCookie: cookie }).get<MobileSessionInfo>("/api/admin/mobile-session");
-      setStatus(sessionStatusForSettings(session, settings));
-    } catch (error) {
-      if ((error as { code?: string }).code === "ERR_REQUEST_CANCELED") {
-        setStatus("Apple sign in canceled.");
-      } else {
-        setStatus(error instanceof Error ? error.message : "Apple sign in failed.");
-      }
-    } finally {
-      setSigningIn(false);
-    }
-  }
 
   async function loadPaymentConfig() {
     setTesting(true);
     setStatus("Loading Stripe payment settings...");
     try {
       const config = await client.get<{ publishableKey: string | null; terminalLocationId: string | null; configured: boolean; mode: string }>("/api/admin/pos/terminal/config");
-      setSettings({ ...settings, publishableKey: config.publishableKey ?? "", terminalLocationId: config.terminalLocationId ?? "" });
+      setSettings({
+        ...settings,
+        publishableKey: config.publishableKey ?? "",
+        terminalLocationId: config.terminalLocationId ?? "",
+        stripeMode: config.mode,
+        stripeConfigured: config.configured
+      });
       setStatus(config.configured ? `Loaded Stripe ${config.mode} payments.` : "Stripe secret key is not configured yet in SuperPrint settings.");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Could not load payment settings.");
-    } finally {
-      setTesting(false);
-    }
-  }
-
-  async function saveSettings() {
-    setTesting(true);
-    setStatus("Saving settings...");
-    try {
-      await client.post("/api/admin/settings", {
-        primaryColor: lightPalette.cyan,
-        stripe: {
-          mode: inferStripeModeFromKey(settings.publishableKey),
-          publishableKey: settings.publishableKey,
-          terminalLocationId: settings.terminalLocationId
-        }
-      });
-      setStatus("Saved settings.");
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Could not save settings.");
     } finally {
       setTesting(false);
     }
@@ -1165,8 +1346,8 @@ function SettingsScreen({ settings, setSettings }: { settings: AdminSettings; se
       <View style={styles.grid}>
         {[
           ["Backend", settings.apiBaseUrl],
-          ["Auth", settings.adminCookie ? "Signed in" : "Not signed in"],
-          ["Payments", settings.publishableKey ? "Stripe loaded" : "Needs config"],
+          ["Auth", sessionInfo?.user?.email ?? "Signed in"],
+          ["Payments", settings.stripeConfigured ? `Stripe ${settings.stripeMode || "ready"}` : "Needs platform config"],
           ["Terminal", settings.terminalLocationId || "No location"]
         ].map(([title, detail]) => (
           <View key={title} style={styles.gridCard}>
@@ -1189,36 +1370,30 @@ function SettingsScreen({ settings, setSettings }: { settings: AdminSettings; se
         </View>
       </Card>
       <Card>
-        <Field label="API base URL" value={settings.apiBaseUrl} onChangeText={(apiBaseUrl) => setSettings({ ...settings, apiBaseUrl })} autoCapitalize="none" />
-        <View style={styles.inline}>
-          <Pressable onPress={() => setSettings({ ...settings, apiBaseUrl: "https://print.superk.studio" })} style={[styles.secondaryButton, styles.grow]}>
-            <Text style={styles.secondaryButtonText}>Use Production</Text>
-          </Pressable>
-          <Pressable onPress={() => setSettings({ ...settings, apiBaseUrl: "http://localhost:3000" })} style={[styles.secondaryButton, styles.grow]}>
-            <Text style={styles.secondaryButtonText}>Use Localhost</Text>
-          </Pressable>
+        <Text style={styles.cardTitle}>Account</Text>
+        <View style={styles.readOnlyPanel}>
+          <InfoRow label="Signed in as" value={(sessionInfo?.user?.email ?? settings.adminEmail) || "Admin"} />
+          <InfoRow label="Role" value={sessionInfo?.user?.role ?? "Admin"} />
+          <InfoRow label="Session storage" value="iOS secure storage" />
+          <InfoRow label="Backend" value={settings.apiBaseUrl} />
         </View>
-        <Pressable onPress={signInApple} style={styles.primaryButton}>
-          {signingIn ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>Sign in with Apple</Text>}
+        <Pressable onPress={onSignOut} style={styles.secondaryButton}>
+          <Text style={styles.secondaryButtonText}>Sign Out</Text>
         </Pressable>
-        <Field label="Admin email" value={settings.adminEmail} onChangeText={(adminEmail) => setSettings({ ...settings, adminEmail })} autoCapitalize="none" keyboardType="email-address" />
-        <Field label="Admin password" value={settings.adminPassword} onChangeText={(adminPassword) => setSettings({ ...settings, adminPassword })} secureTextEntry />
-        <Pressable onPress={signIn} style={styles.primaryButton}>
-          {signingIn ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>Sign In to Backend</Text>}
-        </Pressable>
-        <Field label="Admin session cookie" value={settings.adminCookie} onChangeText={(adminCookie) => setSettings({ ...settings, adminCookie })} autoCapitalize="none" multiline />
-        <Field label="Stripe publishable key" value={settings.publishableKey} onChangeText={(publishableKey) => setSettings({ ...settings, publishableKey })} autoCapitalize="none" />
-        <Field label="Terminal location" value={settings.terminalLocationId} onChangeText={(terminalLocationId) => setSettings({ ...settings, terminalLocationId })} autoCapitalize="none" />
-        <View style={styles.inline}>
-          <Pressable onPress={loadPaymentConfig} style={[styles.secondaryButton, styles.grow]}>
-            <Text style={styles.secondaryButtonText}>Load Payments</Text>
-          </Pressable>
-          <Pressable onPress={saveSettings} style={[styles.primaryButton, styles.grow]}>
-            {testing ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>Save</Text>}
-          </Pressable>
+      </Card>
+      <Card>
+        <Text style={styles.cardTitle}>Payments</Text>
+        <View style={styles.readOnlyPanel}>
+          <InfoRow label="Stripe source" value="SuperPrint platform settings" />
+          <InfoRow label="Mode" value={settings.stripeMode || "Not loaded"} />
+          <InfoRow label="Terminal location" value={settings.terminalLocationId || "Not loaded"} />
+          <InfoRow label="Publishable key" value={settings.publishableKey ? "Loaded from platform" : "Not loaded"} />
         </View>
+        <Pressable onPress={loadPaymentConfig} style={styles.primaryButton}>
+          {testing ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>Load Payments</Text>}
+        </Pressable>
         {status ? <Text style={styles.message}>{status}</Text> : null}
-        <Text style={styles.cardCopy}>Production points to print.superk.studio. Localhost works in Simulator; a physical iPhone needs production or your Mac LAN URL with trusted auth origins.</Text>
+        <Text style={styles.cardCopy}>Stripe keys are managed by the deployed SuperPrint platform. This app only loads the publishable payment config needed for Stripe SDKs.</Text>
       </Card>
     </ScrollView>
   );
@@ -1280,6 +1455,15 @@ function Field(props: {
         secureTextEntry={props.secureTextEntry}
         style={[styles.input, props.multiline && styles.multilineInput]}
       />
+    </View>
+  );
+}
+
+function InfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.infoRow}>
+      <Text style={styles.infoLabel}>{label}</Text>
+      <Text style={styles.infoValue}>{value}</Text>
     </View>
   );
 }
@@ -1456,10 +1640,6 @@ function sessionStatusForSettings(session: MobileSessionInfo, settings: AdminSet
     : `${status}. Email field is ${settings.adminEmail.trim()}.`;
 }
 
-function inferStripeModeFromKey(value: string) {
-  return value.startsWith("pk_live_") ? "live" : "test";
-}
-
 function sortPlannerRows(a: PartPlannerRow, b: PartPlannerRow) {
   return b.quantityToPrint - a.quantityToPrint || a.color.localeCompare(b.color) || a.productName.localeCompare(b.productName) || a.partName.localeCompare(b.partName);
 }
@@ -1523,6 +1703,9 @@ function createStyles(palette: ThemePalette) {
   content: { flex: 1 },
   screen: { flex: 1 },
   screenBody: { padding: 18, paddingBottom: 56, gap: 16 },
+  centerPane: { flex: 1, alignItems: "center", justifyContent: "center" },
+  loginBody: { justifyContent: "center", minHeight: "100%" },
+  loginLogo: { width: 176, height: 56 },
   kicker: { color: palette.cyanDark, fontSize: 12, fontWeight: "900", textTransform: "uppercase", letterSpacing: 1 },
   h1: { color: palette.ink, fontSize: 34, fontWeight: "900" },
   copy: { color: palette.slate, fontSize: 15, lineHeight: 22 },
@@ -1544,6 +1727,10 @@ function createStyles(palette: ThemePalette) {
   label: { color: palette.ink, fontSize: 12, fontWeight: "800" },
   input: { minHeight: 44, borderWidth: 1, borderColor: palette.line, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, color: palette.ink, backgroundColor: palette.field },
   multilineInput: { minHeight: 90, textAlignVertical: "top" },
+  readOnlyPanel: { borderWidth: 1, borderColor: palette.line, borderRadius: 8, backgroundColor: palette.field, overflow: "hidden" },
+  infoRow: { minHeight: 48, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: palette.line },
+  infoLabel: { color: palette.muted, fontSize: 12, fontWeight: "800" },
+  infoValue: { flex: 1, color: palette.ink, fontSize: 13, fontWeight: "900", textAlign: "right" },
   inline: { flexDirection: "row", gap: 10 },
   productRail: { gap: 8, paddingVertical: 2 },
   productChip: { width: 168, minHeight: 76, borderWidth: 1, borderColor: palette.line, borderRadius: 8, padding: 12, justifyContent: "space-between", backgroundColor: palette.field },

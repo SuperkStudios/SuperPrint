@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import Stripe from "stripe";
 import { getStripe, getStripeSettings } from "@/lib/stripe";
 import { markOrderPaidAndQueue } from "@/services/checkout";
 import { activateSupporterTier, applyFactoryContribution } from "@/services/factory-evolution";
@@ -18,32 +19,73 @@ export async function POST(request: Request) {
 
   const rawBody = await request.text();
   const event = stripe.webhooks.constructEvent(rawBody, signature, secret);
-  if (event.type === "checkout.session.completed") {
-    const session = event.data.object;
-    const orderId = session.metadata?.orderId;
-    if (orderId) await markOrderPaidAndQueue(orderId);
-    if (session.metadata?.kind === "factory_contribution") {
-      await applyFactoryContribution({
-        userId: session.metadata.userId!,
-        goalId: session.metadata.goalId!,
-        amountCents: Number(session.metadata.amountCents ?? 0),
-        message: session.metadata.message || undefined,
-        anonymous: session.metadata.anonymous === "true",
-        paymentStatus: "paid",
-        stripeCheckoutSessionId: session.id,
-        stripePaymentIntentId: typeof session.payment_intent === "string" ? session.payment_intent : undefined
-      });
+  switch (event.type) {
+    case "checkout.session.completed": {
+      const session = event.data.object;
+      const orderId = session.metadata?.orderId;
+      if (orderId) await markOrderPaidAndQueue(orderId);
+      if (session.metadata?.kind === "factory_contribution") {
+        await applyFactoryContribution({
+          userId: session.metadata.userId!,
+          goalId: session.metadata.goalId!,
+          amountCents: Number(session.metadata.amountCents ?? 0),
+          message: session.metadata.message || undefined,
+          anonymous: session.metadata.anonymous === "true",
+          paymentStatus: "paid",
+          stripeCheckoutSessionId: session.id,
+          stripePaymentIntentId: typeof session.payment_intent === "string" ? session.payment_intent : undefined
+        });
+      }
+      if (session.metadata?.kind === "factory_supporter_tier") {
+        const tier = await prisma.supporterTier.findUnique({ where: { id: session.metadata.tierId! } });
+        if (tier) await activateSupporterTier(session.metadata.userId!, tier.id, tier.priorityWeight);
+      }
+      break;
     }
-    if (session.metadata?.kind === "factory_supporter_tier") {
-      const tier = await prisma.supporterTier.findUnique({ where: { id: session.metadata.tierId! } });
-      if (tier) await activateSupporterTier(session.metadata.userId!, tier.id, tier.priorityWeight);
+    case "payment_intent.succeeded": {
+      const intent = event.data.object;
+      const orderId = intent.metadata?.orderId;
+      if (orderId) await markOrderPaidAndQueue(orderId);
+      break;
     }
-  }
-  if (event.type === "payment_intent.succeeded") {
-    const intent = event.data.object;
-    const orderId = intent.metadata?.orderId;
-    if (orderId) await markOrderPaidAndQueue(orderId);
+    case "payment_intent.payment_failed": {
+      await markPaymentIntentFailed(event.data.object);
+      break;
+    }
+    case "charge.refunded": {
+      await markChargeRefunded(event.data.object);
+      break;
+    }
+    case "terminal.reader.action_succeeded":
+    case "terminal.reader.action_failed":
+      break;
   }
 
   return NextResponse.json({ received: true });
+}
+
+async function markPaymentIntentFailed(intent: Stripe.PaymentIntent) {
+  const orderId = intent.metadata?.orderId;
+  const where = orderId ? { id: orderId } : { stripePaymentIntentId: intent.id };
+  await prisma.order.updateMany({
+    where,
+    data: {
+      paymentStatus: "FAILED",
+      paymentReference: intent.id
+    }
+  });
+}
+
+async function markChargeRefunded(charge: Stripe.Charge) {
+  const paymentIntentId = typeof charge.payment_intent === "string" ? charge.payment_intent : charge.payment_intent?.id;
+  if (!paymentIntentId) return;
+
+  await prisma.order.updateMany({
+    where: { stripePaymentIntentId: paymentIntentId },
+    data: {
+      paymentStatus: charge.amount_refunded >= charge.amount ? "REFUNDED" : "PARTIALLY_REFUNDED",
+      paymentReference: charge.id,
+      balanceDueCents: charge.amount_refunded >= charge.amount ? 0 : undefined
+    }
+  });
 }
