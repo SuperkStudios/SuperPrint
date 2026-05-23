@@ -77,6 +77,7 @@ export function CheckoutForm({
   });
   const [fulfillmentMethod, setFulfillmentMethod] = useState<"SHIP" | "PICKUP">("SHIP");
   const [savePaymentMethod, setSavePaymentMethod] = useState(true);
+  const [acceptedLegal, setAcceptedLegal] = useState(false);
   const [clientSecret, setClientSecret] = useState("");
   const [publishableKey, setPublishableKey] = useState("");
   const [stripe, setStripe] = useState<StripeLike | null>(null);
@@ -193,6 +194,7 @@ export function CheckoutForm({
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         savePaymentMethod,
+        acceptedLegal,
         fulfillment: { method: fulfillmentMethod, address: fulfillmentAddress }
       })
     });
@@ -243,10 +245,18 @@ export function CheckoutForm({
             ) : null}
           </div>
           {!clientSecret ? (
-            <Button className="mt-4" disabled={!addressReady || loading} onClick={startPayment}>
-              <CreditCard className="size-4" />
-              {loading ? "Preparing..." : "Continue to payment"}
-            </Button>
+            <>
+              <label className="mt-4 flex items-start gap-2 text-sm text-muted-foreground">
+                <input type="checkbox" className="mt-1" checked={acceptedLegal} onChange={(event) => setAcceptedLegal(event.target.checked)} />
+                <span>
+                  I agree to the <Link href="/legal#terms" className="font-medium text-primary hover:underline">Terms of Service</Link>, <Link href="/legal#refunds" className="font-medium text-primary hover:underline">refund policy</Link>, and <Link href="/legal#shipping" className="font-medium text-primary hover:underline">shipping/pickup terms</Link> for this order.
+                </span>
+              </label>
+              <Button className="mt-4" disabled={!addressReady || !acceptedLegal || loading} onClick={startPayment}>
+                <CreditCard className="size-4" />
+                {loading ? "Preparing..." : "Continue to payment"}
+              </Button>
+            </>
           ) : null}
         </div>
 

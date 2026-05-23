@@ -35,6 +35,8 @@ const footerGroups = [
     links: [
       { href: "/legal#terms", label: "Terms" },
       { href: "/legal#privacy", label: "Privacy" },
+      { href: "/legal#payments", label: "Payments" },
+      { href: "/legal#merchant-terms", label: "Merchants" },
       { href: "/legal#refunds", label: "Refunds" },
       { href: "/legal#supporters", label: "Supporters" }
     ]

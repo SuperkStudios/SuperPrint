@@ -44,6 +44,7 @@ export const adminNavigation: NavItem[] = [
   { href: "/admin", label: "Dashboard", permission: "dashboard" },
   { href: "/admin/queue", label: "Queue", permission: "queue" },
   { href: "/admin/pos", label: "In-person POS", permission: "orders" },
+  { href: "/admin/merchants", label: "Merchants", permission: "orders" },
   { href: "/admin/orders", label: "Orders", permission: "orders" },
   { href: "/admin/support", label: "Support", permission: "support" },
   { href: "/admin/uploads", label: "Uploads", permission: "uploads" },

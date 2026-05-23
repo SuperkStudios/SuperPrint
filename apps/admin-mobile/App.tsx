@@ -34,6 +34,7 @@ type AdminSettings = {
   adminCookie: string;
   adminEmail: string;
   adminPassword: string;
+  primaryColor: string;
   publishableKey: string;
   terminalLocationId: string;
   stripeMode: string;
@@ -94,6 +95,11 @@ type MobileSessionInfo = {
     emailVerified: boolean;
     adminAllowed: boolean;
   };
+};
+
+type PlatformTheme = {
+  brandName: string;
+  primaryColor: string;
 };
 
 type FulfillmentMethod = "PICKUP" | "SHIP";
@@ -166,6 +172,7 @@ type FilamentSpool = {
 type FilamentMaterial = "PLA" | "PLA_PLUS" | "PETG" | "ABS" | "TPU" | "NYLON" | "RESIN";
 
 const filamentMaterials: FilamentMaterial[] = ["PLA", "PLA_PLUS", "PETG", "ABS", "TPU", "NYLON", "RESIN"];
+const defaultPrimaryColor = "#00e5ff";
 
 type PrinterHistoryItem = {
   id: string;
@@ -192,6 +199,7 @@ type ThemePalette = {
   field: string;
   cyan: string;
   cyanDark: string;
+  orange: string;
   mint: string;
   warn: string;
   danger: string;
@@ -199,50 +207,94 @@ type ThemePalette = {
   secondaryBorder: string;
   badgeBg: string;
   actionBg: string;
+  actionText: string;
   markBg: string;
 };
 
 const lightPalette: ThemePalette = {
-  ink: "#0f172a",
-  slate: "#475569",
-  muted: "#64748b",
-  line: "#dbe2ea",
-  paper: "#f8fafc",
+  ink: "#0b0f14",
+  slate: "#5d6879",
+  muted: "#5d6879",
+  line: "#c3ccd5",
+  paper: "#f6f7f8",
   card: "#ffffff",
   field: "#ffffff",
-  cyan: "#06b6d4",
-  cyanDark: "#0891b2",
-  mint: "#2dd4bf",
-  warn: "#f59e0b",
-  danger: "#ef4444",
-  secondaryBg: "#e0f2fe",
-  secondaryBorder: "#bae6fd",
-  badgeBg: "#e0f2fe",
-  actionBg: "#0f172a",
-  markBg: "#0f172a"
+  cyan: "#00e5ff",
+  cyanDark: "#008ea3",
+  orange: "#ff6a00",
+  mint: "#22c55e",
+  warn: "#ff6a00",
+  danger: "#dc2626",
+  secondaryBg: "#e6fbff",
+  secondaryBorder: "#9eefff",
+  badgeBg: "#e6fbff",
+  actionBg: "#00e5ff",
+  actionText: "#0b0f14",
+  markBg: "#0b0f14"
 };
 
 const darkPalette: ThemePalette = {
   ink: "#f8fafc",
   slate: "#cbd5e1",
-  muted: "#94a3b8",
-  line: "#253244",
-  paper: "#070b12",
-  card: "#0f172a",
-  field: "#111827",
-  cyan: "#06b6d4",
+  muted: "#8995a6",
+  line: "#242e38",
+  paper: "#0b0f14",
+  card: "#0e131b",
+  field: "#111821",
+  cyan: "#00e5ff",
   cyanDark: "#67e8f9",
-  mint: "#2dd4bf",
-  warn: "#f59e0b",
-  danger: "#f87171",
-  secondaryBg: "#082f49",
-  secondaryBorder: "#155e75",
+  orange: "#ff6a00",
+  mint: "#22c55e",
+  warn: "#ff8a2a",
+  danger: "#ef4444",
+  secondaryBg: "#19212a",
+  secondaryBorder: "#242e38",
   badgeBg: "#083344",
-  actionBg: "#0891b2",
-  markBg: "#0f172a"
+  actionBg: "#00e5ff",
+  actionText: "#0b0f14",
+  markBg: "#0b0f14"
 };
 
 let palette = lightPalette;
+
+function buildMobilePalette(primaryColor: string, appearance: ActiveAppearance): ThemePalette {
+  const base = appearance === "dark" ? darkPalette : lightPalette;
+  const primary = normalizePrimaryColor(primaryColor);
+  const actionText = readableForeground(primary);
+  return {
+    ...base,
+    cyan: primary,
+    cyanDark: primary,
+    actionBg: primary,
+    actionText,
+    secondaryBg: appearance === "dark" ? mixHex(primary, "#0b0f14", 0.82) : mixHex(primary, "#ffffff", 0.84),
+    secondaryBorder: appearance === "dark" ? mixHex(primary, "#0b0f14", 0.56) : mixHex(primary, "#ffffff", 0.56),
+    badgeBg: appearance === "dark" ? mixHex(primary, "#0b0f14", 0.76) : mixHex(primary, "#ffffff", 0.84)
+  };
+}
+
+function normalizePrimaryColor(value?: unknown) {
+  return typeof value === "string" && /^#[0-9a-fA-F]{6}$/.test(value) ? value.toLowerCase() : defaultPrimaryColor;
+}
+
+function readableForeground(hex: string) {
+  const color = normalizePrimaryColor(hex);
+  const red = parseInt(color.slice(1, 3), 16);
+  const green = parseInt(color.slice(3, 5), 16);
+  const blue = parseInt(color.slice(5, 7), 16);
+  const brightness = (red * 299 + green * 587 + blue * 114) / 1000;
+  return brightness > 150 ? "#0b0f14" : "#ffffff";
+}
+
+function mixHex(color: string, base: string, weight: number) {
+  const a = normalizePrimaryColor(color);
+  const b = normalizePrimaryColor(base);
+  const channels = [1, 3, 5].map((index) => {
+    const value = Math.round(parseInt(a.slice(index, index + 2), 16) * (1 - weight) + parseInt(b.slice(index, index + 2), 16) * weight);
+    return value.toString(16).padStart(2, "0");
+  });
+  return `#${channels.join("")}`;
+}
 
 const navItems: Array<{ key: ScreenKey; title: string; detail: string }> = [
   { key: "pos", title: "Take Order", detail: "Cash, Stripe, deposits" },
@@ -267,6 +319,7 @@ export default function App() {
     adminCookie: "",
     adminEmail: "",
     adminPassword: "",
+    primaryColor: defaultPrimaryColor,
     publishableKey: "",
     terminalLocationId: "",
     stripeMode: "",
@@ -275,9 +328,9 @@ export default function App() {
   });
   const activeAppearance: ActiveAppearance = settings.appearance === "system" ? (systemScheme === "dark" ? "dark" : "light") : settings.appearance;
   const theme = useMemo(() => {
-    const nextPalette = activeAppearance === "dark" ? darkPalette : lightPalette;
+    const nextPalette = buildMobilePalette(settings.primaryColor, activeAppearance);
     return { palette: nextPalette, styles: createStyles(nextPalette) };
-  }, [activeAppearance]);
+  }, [activeAppearance, settings.primaryColor]);
   palette = theme.palette;
   styles = theme.styles;
 
@@ -339,6 +392,23 @@ export default function App() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    new SuperPrintClient(settings)
+      .getPublic<PlatformTheme>("/api/platform/theme")
+      .then((platformTheme) => {
+        if (cancelled) return;
+        setSettings((current) => ({
+          ...current,
+          primaryColor: normalizePrimaryColor(platformTheme.primaryColor)
+        }));
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [settings.apiBaseUrl]);
 
   async function finishSignIn(cookie: string, emailFallback?: string) {
     const nextSettings = { ...settings, adminCookie: cookie, adminEmail: emailFallback ?? settings.adminEmail };
@@ -488,12 +558,12 @@ function AuthScreen({
               </Pressable>
             </View>
             <Pressable onPress={signInApple} style={styles.primaryButton}>
-              {signingIn ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>Sign in with Apple</Text>}
+              {signingIn ? <ActivityIndicator color={palette.actionText} /> : <Text style={styles.primaryButtonText}>Sign in with Apple</Text>}
             </Pressable>
             <Field label="Admin email" value={settings.adminEmail} onChangeText={(adminEmail) => setSettings({ ...settings, adminEmail })} autoCapitalize="none" keyboardType="email-address" />
             <Field label="Admin password" value={settings.adminPassword} onChangeText={(adminPassword) => setSettings({ ...settings, adminPassword })} secureTextEntry />
             <Pressable onPress={signIn} style={styles.primaryButton}>
-              {signingIn ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>Sign In</Text>}
+              {signingIn ? <ActivityIndicator color={palette.actionText} /> : <Text style={styles.primaryButtonText}>Sign In</Text>}
             </Pressable>
             {status ? <Text style={styles.message}>{status}</Text> : null}
           </Card>
@@ -587,7 +657,16 @@ function DashboardScreen({ onOpen }: { onOpen: (screen: ScreenKey) => void }) {
 
 function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient; settings: AdminSettings; setSettings: (settings: AdminSettings) => void }) {
   const stripe = useStripe();
-  useStripeTerminal({
+  const {
+    initialize,
+    easyConnect,
+    retrievePaymentIntent,
+    collectPaymentMethod,
+    confirmPaymentIntent,
+    setReaderDisplay,
+    connectedReader,
+    supportsReadersOfType
+  } = useStripeTerminal({
     onDidAcceptTermsOfService: () => setMessage("Tap to Pay terms accepted."),
     onDidChangeConnectionStatus: (status) => setMessage(`Reader ${status}.`),
     onDidRequestReaderInput: (input) => setMessage(`Reader input: ${input.join(", ")}`),
@@ -616,6 +695,10 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const totalCents = lines.reduce((total, line) => total + cents(line.unitPrice) * positiveInt(line.quantity, 1), 0) + (shippingQuote?.shippingAmountCents ?? 0);
+
+  useEffect(() => {
+    initialize().catch(() => undefined);
+  }, [initialize]);
 
   useEffect(() => {
     setProductLoading(true);
@@ -735,6 +818,96 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
       setMessage(`Paid ${completed.order.orderNumber}.`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Manual card payment failed.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function ensureTapToPayReady() {
+    let terminalLocationId = settings.terminalLocationId;
+    if (!terminalLocationId) {
+      setMessage("Loading payment configuration...");
+      const config = await client.get<{ publishableKey: string | null; terminalLocationId: string | null; configured: boolean; mode: string }>("/api/admin/pos/terminal/config");
+      terminalLocationId = config.terminalLocationId ?? "";
+      setSettings({
+        ...settings,
+        publishableKey: config.publishableKey ?? settings.publishableKey,
+        terminalLocationId,
+        stripeConfigured: config.configured,
+        stripeMode: config.mode
+      });
+    }
+    if (!terminalLocationId) throw new Error("Add a Stripe Terminal location ID in Settings before using Tap to Pay on iPhone.");
+
+    const support = await supportsReadersOfType({ discoveryMethod: "tapToPay", deviceType: "tapToPay" });
+    if (!support.readerSupportResult) {
+      throw new Error("Tap to Pay on iPhone requires a compatible iPhone running a supported iOS version.");
+    }
+    if (connectedReader) return terminalLocationId;
+
+    setMessage("Initializing Tap to Pay on iPhone...");
+    const connected = await easyConnect({
+      discoveryMethod: "tapToPay",
+      locationId: terminalLocationId,
+      merchantDisplayName: "SuperPrint",
+      tosAcceptancePermitted: true,
+      autoReconnectOnUnexpectedDisconnect: true
+    });
+    if (connected.error) throw new Error(connected.error.message);
+    return terminalLocationId;
+  }
+
+  async function chargeTapToPay() {
+    if (!customerName.trim() || !customerEmail.trim() || !lines.length) {
+      setMessage("Customer, email, and product are required.");
+      return;
+    }
+    setSaving(true);
+    try {
+      await ensureTapToPayReady();
+      setMessage("Creating order and preparing Tap to Pay on iPhone...");
+      const started = await client.post<{ order: { id: string; orderNumber: string; stripePaymentIntentId?: string | null }; clientSecret: string }>("/api/admin/pos/terminal/payment-intent", {
+        ...buildOrderPayload(),
+        savePaymentMethod: true
+      });
+      const display = await setReaderDisplay({
+        currency: "usd",
+        tax: 0,
+        total: totalCents,
+        lineItems: lines.map((line) => {
+          const product = productFor(line, products);
+          const quantity = positiveInt(line.quantity, 1);
+          return {
+            displayName: product?.name ?? "SuperPrint item",
+            quantity,
+            amount: cents(line.unitPrice) * quantity
+          };
+        })
+      });
+      if (display.error) setMessage(display.error.message);
+
+      const retrieved = await retrievePaymentIntent(started.clientSecret);
+      if (retrieved.error || !retrieved.paymentIntent) throw new Error(retrieved.error?.message ?? "Could not retrieve payment.");
+      setMessage("Waiting for customer to present a contactless card or wallet...");
+      const collected = await collectPaymentMethod({
+        paymentIntent: retrieved.paymentIntent,
+        customerCancellation: "enableIfAvailable",
+        allowRedisplay: "limited"
+      });
+      if (collected.error || !collected.paymentIntent) throw new Error(collected.error?.message ?? "Could not collect payment method.");
+      setMessage("Processing payment...");
+      const confirmed = await confirmPaymentIntent({ paymentIntent: collected.paymentIntent });
+      if (confirmed.error || !confirmed.paymentIntent) throw new Error(confirmed.error?.message ?? "Could not confirm payment.");
+      const paymentIntentId = confirmed.paymentIntent.id ?? started.order.stripePaymentIntentId;
+      if (!paymentIntentId) throw new Error("Stripe did not return the payment intent id.");
+      const completed = await client.post<{ order: { orderNumber: string } }>("/api/admin/pos/terminal/complete", {
+        orderId: started.order.id,
+        paymentIntentId,
+        queueNow
+      });
+      setMessage(`Approved ${completed.order.orderNumber}. Digital receipt is sent to ${customerEmail}.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Tap to Pay payment failed.");
     } finally {
       setSaving(false);
     }
@@ -912,9 +1085,9 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
         </Pressable>
         <Text style={styles.cardCopy}>Total {money(totalCents)}{shippingQuote ? ` · fulfillment ${money(shippingQuote.shippingAmountCents)}` : ""}</Text>
         <View style={styles.segment}>
-          {["UNPAID", "CASH", "STRIPE_MANUAL"].map((method) => (
+          {["UNPAID", "CASH", "STRIPE_TERMINAL", "STRIPE_MANUAL"].map((method) => (
             <Pressable key={method} onPress={() => setPaymentMethod(method)} style={[styles.segmentItem, paymentMethod === method && styles.segmentItemActive]}>
-              <Text style={[styles.segmentText, paymentMethod === method && styles.segmentTextActive]}>{method.replace("STRIPE_", "")}</Text>
+              <Text style={[styles.segmentText, paymentMethod === method && styles.segmentTextActive]}>{method === "STRIPE_TERMINAL" ? "Tap to Pay" : method.replace("STRIPE_", "")}</Text>
             </Pressable>
           ))}
         </View>
@@ -943,11 +1116,16 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
         </View>
         <Field label="Notes" value={internalNotes} onChangeText={setInternalNotes} multiline />
         <Pressable onPress={saveOrder} disabled={saving} style={[styles.primaryButton, saving && styles.disabled]}>
-          {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>{paymentMethod === "UNPAID" ? "Save Without Payment" : "Save Order"}</Text>}
+          {saving ? <ActivityIndicator color={palette.actionText} /> : <Text style={styles.primaryButtonText}>{paymentMethod === "UNPAID" ? "Save Without Payment" : "Save Order"}</Text>}
         </Pressable>
         {paymentMethod === "STRIPE_MANUAL" ? (
           <Pressable onPress={chargeManualCard} disabled={saving} style={[styles.primaryButton, saving && styles.disabled]}>
             <Text style={styles.primaryButtonText}>Enter Card Securely</Text>
+          </Pressable>
+        ) : null}
+        {paymentMethod === "STRIPE_TERMINAL" ? (
+          <Pressable onPress={chargeTapToPay} disabled={saving} style={[styles.primaryButton, saving && styles.disabled]}>
+            {saving ? <ActivityIndicator color={palette.actionText} /> : <Text style={styles.primaryButtonText}>Tap to Pay on iPhone</Text>}
           </Pressable>
         ) : null}
         {message ? <Text style={styles.message}>{message}</Text> : null}
@@ -978,7 +1156,7 @@ function OrdersScreen({ client }: { client: SuperPrintClient }) {
     <ScrollView style={styles.screen} contentContainerStyle={styles.screenBody}>
       <ScreenHeader title="Orders" detail="Paid, partial, imported, cash, and Stripe work." />
       <Pressable onPress={load} style={styles.primaryButton}>
-        {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>Refresh Orders</Text>}
+        {loading ? <ActivityIndicator color={palette.actionText} /> : <Text style={styles.primaryButtonText}>Refresh Orders</Text>}
       </Pressable>
       {orders.length ? orders.map((order) => (
         <Card key={order.id}>
@@ -1447,7 +1625,7 @@ function FilamentScreen({ client }: { client: SuperPrintClient }) {
             </Pressable>
           ) : null}
           <Pressable disabled={saving} onPress={save} style={[styles.primaryButton, styles.grow, saving && styles.disabled]}>
-            {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>{form.id ? "Update Roll" : "Add 1kg Roll"}</Text>}
+            {saving ? <ActivityIndicator color={palette.actionText} /> : <Text style={styles.primaryButtonText}>{form.id ? "Update Roll" : "Add 1kg Roll"}</Text>}
           </Pressable>
         </View>
       </Card>
@@ -1761,7 +1939,7 @@ function SettingsScreen({
           <InfoRow label="Publishable key" value={settings.publishableKey ? "Loaded from platform" : "Not loaded"} />
         </View>
         <Pressable onPress={loadPaymentConfig} style={styles.primaryButton}>
-          {testing ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>Load Payments</Text>}
+          {testing ? <ActivityIndicator color={palette.actionText} /> : <Text style={styles.primaryButtonText}>Load Payments</Text>}
         </Pressable>
         {status ? <Text style={styles.message}>{status}</Text> : null}
         <Text style={styles.cardCopy}>Stripe keys are managed by the deployed SuperPrint platform. This app only loads the publishable payment config needed for Stripe SDKs.</Text>
@@ -1850,7 +2028,7 @@ function Badge({ label }: { label: string }) {
 function LoadButton({ title, loading, onPress }: { title: string; loading: boolean; onPress: () => void }) {
   return (
     <Pressable onPress={onPress} style={styles.primaryButton}>
-      {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>{title}</Text>}
+      {loading ? <ActivityIndicator color={palette.actionText} /> : <Text style={styles.primaryButtonText}>{title}</Text>}
     </Pressable>
   );
 }
@@ -1864,6 +2042,10 @@ class SuperPrintClient {
 
   async get<T>(path: string): Promise<T> {
     return this.request<T>(path, { method: "GET" });
+  }
+
+  async getPublic<T>(path: string): Promise<T> {
+    return this.request<T>(path, { method: "GET" }, false);
   }
 
   async post<T>(path: string, body: unknown): Promise<T> {
@@ -2105,7 +2287,7 @@ function createStyles(palette: ThemePalette) {
   navPill: { height: 38, justifyContent: "center", borderWidth: 1, borderColor: palette.line, borderRadius: 8, paddingHorizontal: 12 },
   navPillActive: { backgroundColor: palette.actionBg, borderColor: palette.actionBg },
   navPillText: { color: palette.slate, fontWeight: "800", fontSize: 12 },
-  navPillTextActive: { color: "#fff" },
+  navPillTextActive: { color: palette.actionText },
   content: { flex: 1 },
   screen: { flex: 1 },
   screenBody: { padding: 18, paddingBottom: 56, gap: 16 },
@@ -2143,24 +2325,24 @@ function createStyles(palette: ThemePalette) {
   productChip: { width: 168, minHeight: 76, borderWidth: 1, borderColor: palette.line, borderRadius: 8, padding: 12, justifyContent: "space-between", backgroundColor: palette.field },
   productChipActive: { backgroundColor: palette.actionBg, borderColor: palette.actionBg },
   productChipTitle: { color: palette.ink, fontSize: 14, fontWeight: "900" },
-  productChipTitleActive: { color: "#fff" },
+  productChipTitleActive: { color: palette.actionText },
   productChipMeta: { color: palette.muted, fontSize: 11, fontWeight: "800" },
-  productChipMetaActive: { color: "#cffafe" },
+  productChipMetaActive: { color: palette.actionText },
   chipRail: { gap: 8, paddingVertical: 2 },
   choiceChip: { minHeight: 38, minWidth: 72, borderWidth: 1, borderColor: palette.line, borderRadius: 8, alignItems: "center", justifyContent: "center", paddingHorizontal: 12, backgroundColor: palette.field },
   choiceChipActive: { backgroundColor: palette.actionBg, borderColor: palette.actionBg },
   choiceChipText: { color: palette.slate, fontSize: 12, fontWeight: "900" },
-  choiceChipTextActive: { color: "#fff" },
+  choiceChipTextActive: { color: palette.actionText },
   segment: { flexDirection: "row", borderWidth: 1, borderColor: palette.line, borderRadius: 8, padding: 4, gap: 4 },
   segmentItem: { flex: 1, alignItems: "center", borderRadius: 6, paddingVertical: 10 },
   segmentItemActive: { backgroundColor: palette.cyan },
   segmentText: { color: palette.slate, fontSize: 12, fontWeight: "900" },
-  segmentTextActive: { color: "#fff" },
+  segmentTextActive: { color: palette.actionText },
   summaryBand: { borderWidth: 1, borderColor: palette.line, borderRadius: 8, backgroundColor: palette.secondaryBg, padding: 12, gap: 6 },
   summaryText: { color: palette.slate, fontSize: 12, fontWeight: "800" },
   switchRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   primaryButton: { minHeight: 48, borderRadius: 8, backgroundColor: palette.actionBg, alignItems: "center", justifyContent: "center", paddingHorizontal: 16 },
-  primaryButtonText: { color: "#fff", fontWeight: "900", fontSize: 15 },
+  primaryButtonText: { color: palette.actionText, fontWeight: "900", fontSize: 15 },
   secondaryButton: { minHeight: 48, borderRadius: 8, backgroundColor: palette.secondaryBg, borderWidth: 1, borderColor: palette.secondaryBorder, alignItems: "center", justifyContent: "center", paddingHorizontal: 12 },
   secondaryButtonText: { color: palette.cyanDark, fontWeight: "900", fontSize: 13 },
   dangerButton: { minHeight: 48, borderRadius: 8, backgroundColor: "#fee2e2", borderWidth: 1, borderColor: "#fecaca", alignItems: "center", justifyContent: "center", paddingHorizontal: 12 },
@@ -2177,7 +2359,7 @@ function createStyles(palette: ThemePalette) {
   progressFill: { height: 10, borderRadius: 999, backgroundColor: palette.cyan },
   actionButtons: { flexDirection: "row", gap: 8 },
   compactButton: { minHeight: 38, borderRadius: 8, backgroundColor: palette.actionBg, alignItems: "center", justifyContent: "center", paddingHorizontal: 14 },
-  compactButtonText: { color: "#fff", fontSize: 12, fontWeight: "900" },
+  compactButtonText: { color: palette.actionText, fontSize: 12, fontWeight: "900" },
   stepList: { gap: 6, borderTopWidth: 1, borderTopColor: palette.line, paddingTop: 12 },
   stepText: { color: palette.slate, fontSize: 13, lineHeight: 19, fontWeight: "700" },
   choiceList: { borderWidth: 1, borderColor: palette.line, borderRadius: 8, overflow: "hidden" },

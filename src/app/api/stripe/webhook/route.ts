@@ -4,6 +4,7 @@ import { getStripe, getStripeSettings } from "@/lib/stripe";
 import { markOrderPaidAndQueue } from "@/services/checkout";
 import { activateSupporterTier, applyFactoryContribution } from "@/services/factory-evolution";
 import { prisma } from "@/lib/prisma";
+import { syncMerchantConnectAccount } from "@/services/stripe-connect";
 
 export const runtime = "nodejs";
 
@@ -54,6 +55,10 @@ export async function POST(request: Request) {
     }
     case "charge.refunded": {
       await markChargeRefunded(event.data.object);
+      break;
+    }
+    case "account.updated": {
+      await syncMerchantConnectAccount(event.data.object);
       break;
     }
     case "terminal.reader.action_succeeded":

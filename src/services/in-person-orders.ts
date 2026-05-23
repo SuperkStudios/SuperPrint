@@ -272,6 +272,7 @@ export async function createTerminalOrderPayment(input: TerminalOrderInput, acto
     amount: order.totalCents,
     currency: "usd",
     customer: stripeCustomerId,
+    receipt_email: customer.email,
     payment_method_types: ["card_present"],
     ...(input.savePaymentMethod === false ? {} : { setup_future_usage: "off_session" as const }),
     metadata: {

@@ -14,6 +14,45 @@ enum UserRole {
   STAFF
 }
 
+enum MerchantApplicationStatus {
+  DRAFT
+  SUBMITTED
+  NEEDS_REVIEW
+  APPROVED
+  REJECTED
+}
+
+enum MerchantBusinessType {
+  SOLE_PROPRIETORSHIP
+  LLC
+  CORPORATION
+  PARTNERSHIP
+  NONPROFIT
+  OTHER
+}
+
+enum MerchantTaxIdType {
+  EIN
+  SSN
+}
+
+enum MerchantDocumentType {
+  BUSINESS_LICENSE
+  TAX_DOCUMENT
+  IDENTITY_DOCUMENT
+  ADDRESS_VERIFICATION
+  OTHER
+}
+
+enum MerchantConnectStatus {
+  NOT_STARTED
+  ACCOUNT_CREATED
+  ONBOARDING_STARTED
+  RESTRICTED
+  ENABLED
+  FAILED
+}
+
 enum ProductStatus {
   ACTIVE
   ARCHIVED
@@ -241,10 +280,105 @@ model User {
   rewardTransactions RewardTransaction[]
   factoryContributions FactoryContribution[]
   supporterProfile UserSupporterProfile?
+  merchantApplications MerchantApplication[]
+  merchantProducts MerchantProduct[]
+  merchantOrders MerchantOrder[]
   events       PlatformEvent[]
   operatorPrintStarts PrintJob[] @relation("OperatorPrintStarts")
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
+}
+
+model MerchantApplication {
+  id                  String                    @id @default(cuid())
+  userId              String
+  user                User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status              MerchantApplicationStatus @default(DRAFT)
+  businessName        String
+  legalBusinessName   String?
+  businessType        MerchantBusinessType
+  siteUrl             String
+  ownerName           String
+  ownerEmail          String
+  phone               String
+  street1             String
+  street2             String?
+  city                String
+  state               String
+  zip                 String
+  country             String                    @default("US")
+  taxIdType           MerchantTaxIdType
+  taxIdLast4          String
+  encryptedTaxId      Json?
+  stripeConnectStatus MerchantConnectStatus      @default(NOT_STARTED)
+  stripeAccountId     String?
+  stripeTerminalLocationId String?
+  stripeChargesEnabled Boolean                   @default(false)
+  stripePayoutsEnabled Boolean                   @default(false)
+  stripeDetailsSubmitted Boolean                 @default(false)
+  stripeRequirementsDue Json                     @default("[]")
+  reviewNotes         String?
+  submittedAt         DateTime?
+  approvedAt          DateTime?
+  rejectedAt          DateTime?
+  documents           MerchantDocument[]
+  products            MerchantProduct[]
+  orders              MerchantOrder[]
+  createdAt           DateTime                  @default(now())
+  updatedAt           DateTime                  @updatedAt
+
+  @@index([userId, status])
+  @@index([status, updatedAt])
+}
+
+model MerchantDocument {
+  id             String               @id @default(cuid())
+  applicationId  String
+  application    MerchantApplication  @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  type           MerchantDocumentType
+  fileName       String
+  storageKey     String
+  contentType    String
+  fileSizeBytes  Int
+  uploadedAt     DateTime             @default(now())
+
+  @@index([applicationId, uploadedAt])
+}
+
+model MerchantProduct {
+  id             String               @id @default(cuid())
+  merchantUserId String
+  merchantUser   User                 @relation(fields: [merchantUserId], references: [id], onDelete: Cascade)
+  applicationId  String?
+  application    MerchantApplication? @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+  name           String
+  priceCents     Int
+  active         Boolean              @default(true)
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  orders         MerchantOrder[]
+
+  @@index([merchantUserId, active])
+}
+
+model MerchantOrder {
+  id                    String               @id @default(cuid())
+  merchantUserId        String
+  merchantUser          User                 @relation(fields: [merchantUserId], references: [id], onDelete: Cascade)
+  applicationId         String?
+  application           MerchantApplication? @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+  productId             String?
+  product               MerchantProduct?     @relation(fields: [productId], references: [id], onDelete: SetNull)
+  customerEmail         String
+  itemSummary           String
+  amountCents           Int
+  status                String               @default("PENDING")
+  receiptUrl            String?
+  stripePaymentIntentId String?              @unique
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+
+  @@index([merchantUserId, createdAt])
 }
 
 model SupportTicket {

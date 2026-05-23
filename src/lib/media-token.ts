@@ -44,5 +44,10 @@ function safeEqual(left: string, right: string) {
 }
 
 function getMediaSecret() {
-  return process.env.MEDIA_TOKEN_SECRET ?? process.env.NEXTAUTH_SECRET ?? "dev-media-secret";
+  const secret = process.env.MEDIA_TOKEN_SECRET ?? process.env.BETTER_AUTH_SECRET ?? process.env.NEXTAUTH_SECRET;
+  if (secret && secret.length >= 32) return secret;
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("MEDIA_TOKEN_SECRET, BETTER_AUTH_SECRET, or NEXTAUTH_SECRET must be at least 32 characters in production.");
+  }
+  return "dev-media-secret";
 }

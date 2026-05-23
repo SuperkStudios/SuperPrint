@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 export function UploadForm() {
   const [file, setFile] = useState<File | null>(null);
   const [notes, setNotes] = useState("");
+  const [acceptedLegal, setAcceptedLegal] = useState(false);
   const [message, setMessage] = useState("");
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -20,6 +21,7 @@ export function UploadForm() {
     const body = new FormData();
     body.set("file", file);
     body.set("notes", notes);
+    body.set("acceptedLegal", String(acceptedLegal));
     const response = await fetch("/api/uploads", {
       method: "POST",
       body
@@ -38,7 +40,13 @@ export function UploadForm() {
         <Label htmlFor="notes">Print notes</Label>
         <Input id="notes" value={notes} onChange={(event) => setNotes(event.target.value)} />
       </div>
-      <Button type="submit">
+      <label className="flex items-start gap-2 text-sm text-muted-foreground">
+        <input type="checkbox" className="mt-1" checked={acceptedLegal} onChange={(event) => setAcceptedLegal(event.target.checked)} />
+        <span>
+          I have rights to this file and agree to the <a href="/legal#terms" className="font-medium text-primary hover:underline">Terms</a>, <a href="/legal#content" className="font-medium text-primary hover:underline">model content policy</a>, and <a href="/legal#ip" className="font-medium text-primary hover:underline">IP terms</a>.
+        </span>
+      </label>
+      <Button type="submit" disabled={!acceptedLegal}>
         <Upload className="size-4" />
         Request approval
       </Button>

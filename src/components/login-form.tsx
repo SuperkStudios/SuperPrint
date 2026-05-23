@@ -15,6 +15,7 @@ export function LoginForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [acceptedLegal, setAcceptedLegal] = useState(false);
   const [message, setMessage] = useState("");
   const [canResendVerification, setCanResendVerification] = useState(false);
 
@@ -28,6 +29,10 @@ export function LoginForm() {
     }
     if (mode === "signup" && username.trim().length < 3) {
       setMessage("Choose a username with at least 3 characters.");
+      return;
+    }
+    if (mode === "signup" && !acceptedLegal) {
+      setMessage("Accept the Terms and Privacy Policy before creating an account.");
       return;
     }
     const endpoint = mode === "signin" ? "/api/auth/sign-in/email" : "/api/auth/sign-up/email";
@@ -125,6 +130,14 @@ export function LoginForm() {
             <Label htmlFor="confirm-password">Confirm password</Label>
             <Input id="confirm-password" type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} />
           </div>
+        ) : null}
+        {mode === "signup" ? (
+          <label className="flex items-start gap-2 text-sm text-muted-foreground">
+            <input type="checkbox" className="mt-1" checked={acceptedLegal} onChange={(event) => setAcceptedLegal(event.target.checked)} />
+            <span>
+              I agree to the <a href="/legal#terms" className="font-medium text-primary hover:underline">Terms of Service</a> and <a href="/legal#privacy" className="font-medium text-primary hover:underline">Privacy Policy</a>.
+            </span>
+          </label>
         ) : null}
         <Button type="submit" className="w-full">{mode === "signin" ? "Sign in" : "Create account"}</Button>
         {message ? <p className="text-sm text-muted-foreground">{message}</p> : null}

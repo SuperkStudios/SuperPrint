@@ -9,6 +9,7 @@ import type { StaffPermission } from "@/domain/navigation";
 import { sendAccountCreatedEmail, sendPasswordResetEmail } from "@/services/email";
 
 const socialProviders = await buildSocialProviders();
+const authSecret = resolveAuthSecret();
 
 async function buildSocialProviders() {
   const generatedAppleClientSecret = await resolveAppleClientSecret();
@@ -37,7 +38,7 @@ export const auth = betterAuth({
   appName: "SuperPrint",
   baseURL: process.env.BETTER_AUTH_URL ?? process.env.NEXTAUTH_URL ?? "http://localhost:3000",
   trustedOrigins: trustedAuthOrigins(),
-  secret: process.env.BETTER_AUTH_SECRET ?? process.env.NEXTAUTH_SECRET ?? "dev-secret-change-me",
+  secret: authSecret,
   database: prismaAdapter(prisma, {
     provider: "postgresql"
   }),
@@ -99,6 +100,15 @@ function trustedAuthOrigins() {
     .flatMap((value) => value?.split(",") ?? [])
     .map((value) => value.trim())
     .filter(Boolean);
+}
+
+function resolveAuthSecret() {
+  const secret = process.env.BETTER_AUTH_SECRET ?? process.env.NEXTAUTH_SECRET;
+  if (secret && secret.length >= 32) return secret;
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("BETTER_AUTH_SECRET or NEXTAUTH_SECRET must be at least 32 characters in production.");
+  }
+  return "dev-secret-change-me";
 }
 
 async function resolveAppleClientSecret() {
@@ -188,8 +198,16 @@ function bearerToken(requestHeaders: Headers) {
 }
 
 function normalizeSessionToken(value: string) {
-  const decoded = decodeURIComponent(value);
+  const decoded = safeDecodeURIComponent(value);
   return decoded.split(".")[0]?.trim() || null;
+}
+
+function safeDecodeURIComponent(value: string) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
 }
 
 export function hasAdminRole(role?: string | null) {

@@ -8,8 +8,12 @@ import { requireCustomer } from "@/lib/http";
 import { recordPlatformEvent } from "@/services/events";
 import { getBootstrapStatus } from "@/lib/bootstrap";
 import { estimatePrintFile } from "@/services/slicer-estimates";
+import { rateLimitRequest } from "@/lib/rate-limit";
 
 export async function POST(request: Request) {
+  const limited = rateLimitRequest(request, { key: "model-upload", limit: 30, windowMs: 60 * 60 * 1000 });
+  if (limited) return limited;
+
   if (!(await getBootstrapStatus()).isComplete) {
     return NextResponse.json({ error: "Setup required" }, { status: 503 });
   }
@@ -19,6 +23,10 @@ export async function POST(request: Request) {
   const formData = await request.formData();
   const file = formData.get("file");
   const notes = formData.get("notes");
+  const acceptedLegal = formData.get("acceptedLegal");
+  if (acceptedLegal !== "true") {
+    return NextResponse.json({ error: "You must accept the upload and platform terms before submitting a model." }, { status: 400 });
+  }
   if (!(file instanceof File)) {
     return NextResponse.json({ error: "file is required" }, { status: 400 });
   }

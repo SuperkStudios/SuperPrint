@@ -8,7 +8,7 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/superprint-compact-lockup-light.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
@@ -22,9 +22,9 @@
       "entitlements": {
         "com.apple.developer.applesignin": [
           "Default"
-        ]
+        ],
+        "com.apple.developer.proximity-reader.payment.acceptance": true
       },
-      "tapToPayTodo": "Waiting on Apple approval for com.apple.developer.proximity-reader.payment.acceptance before re-enabling Tap to Pay on iPhone.",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Location access is required for Stripe Terminal readers and Tap to Pay.",
         "NSBluetoothAlwaysUsageDescription": "Bluetooth is used to connect to supported Stripe readers.",

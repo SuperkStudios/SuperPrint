@@ -124,6 +124,17 @@ Order media links are served through signed local tokens at `/api/media/[token]`
 - Local volume storage: add richer file processing, thumbnail generation, and private media authorization policy.
 - Social Blade bucket upload: replace `SOCIAL_BLADE_UPLOAD_COMMAND` with the real bucket CLI/API once credentials and endpoint behavior are available.
 
+## Mobile Release Checklist
+
+- Confirm Apple Tap to Pay on iPhone entitlement is enabled on both bundle IDs:
+  - `studio.superk.superprint.admin`
+  - `studio.superk.superprint.merchant`
+- Build the admin app from `apps/admin-mobile` with `npx eas build --platform ios --profile production`.
+- Build the merchant app from `apps/merchant-mobile` with `npx eas build --platform ios --profile review` for Apple review videos or `--profile production` for App Store release.
+- Set `EXPO_PUBLIC_SUPERPRINT_URL=https://print.superk.studio` for merchant release builds.
+- Set production `STRIPE_WEBHOOK_SECRET` and subscribe the webhook endpoint to checkout, payment intent, charge refund, and connected account update events.
+- Record Apple review videos using `docs/apple-tap-to-pay-review.md`.
+
 ## Local Docker Volumes
 
 The MVP mounts separate volumes under `SUPERPRINT_DATA_ROOT`:

@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireCustomer } from "@/lib/http";
+import { rateLimitRequest } from "@/lib/rate-limit";
 import { createCartPaymentIntent } from "@/services/checkout";
 
 const schema = z.object({
+  acceptedLegal: z.literal(true),
   savePaymentMethod: z.boolean().optional(),
   fulfillment: z.object({
     method: z.enum(["SHIP", "PICKUP"]),
@@ -22,6 +24,9 @@ const schema = z.object({
 });
 
 export async function POST(request: Request) {
+  const limited = rateLimitRequest(request, { key: "checkout-payment-intent", limit: 60, windowMs: 15 * 60 * 1000 });
+  if (limited) return limited;
+
   const { session, response } = await requireCustomer();
   if (response) return response;
   try {
