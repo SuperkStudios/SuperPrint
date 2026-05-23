@@ -5,6 +5,7 @@ import https from "node:https";
 import path from "node:path";
 import WebSocket from "ws";
 import { signNodeHeartbeat } from "../../src/domain/supernode-auth";
+import { fetchCentauriCompletedHistory } from "../../src/lib/centauri-history-client";
 
 const apiBaseUrl = process.env.SUPERPRINT_API_URL ?? "http://app:3000";
 const nodeId = process.env.SUPERNODE_ID ?? "supernode-local";
@@ -13,6 +14,7 @@ const printerId = process.env.SUPERNODE_PRINTER_ID;
 const printerControlUrl = process.env.SUPERNODE_PRINTER_CONTROL_URL;
 const printerCameraUrl = process.env.SUPERNODE_PRINTER_CAMERA_URL;
 const heartbeatIntervalMs = Number(process.env.SUPERNODE_HEARTBEAT_INTERVAL_MS ?? 15000);
+const printerHistoryIntervalMs = Number(process.env.SUPERNODE_PRINTER_HISTORY_INTERVAL_MS ?? 300000);
 const cameraFrameIntervalMs = Number(process.env.SUPERNODE_CAMERA_FRAME_INTERVAL_MS ?? 100);
 const mediaPushUrl = process.env.SUPERNODE_MEDIA_PUSH_URL?.trim();
 const mediaSourceUrl = process.env.SUPERNODE_MEDIA_SOURCE_URL?.trim() || printerCameraUrl;
@@ -33,6 +35,7 @@ let cameraFrameUploadInFlight = false;
 let cameraBridgeLastFrameAt = 0;
 let cameraBridgeLastError: string | null = null;
 let mediaRelayLastError: string | null = null;
+let lastPrinterHistorySyncAt = 0;
 
 async function sendHeartbeat() {
   const printerHealth = await probeConfiguredPrinter();
@@ -512,12 +515,36 @@ async function acknowledgeApprovedPrintCommands() {
   }
 }
 
+async function syncPrinterHistory() {
+  if (!printerControlUrl || Date.now() - lastPrinterHistorySyncAt < printerHistoryIntervalMs) return;
+  lastPrinterHistorySyncAt = Date.now();
+  const completedPrints = await fetchCentauriCompletedHistory({
+    controlApiUrl: printerControlUrl,
+    timeoutMs: 15000,
+    gcodeTimeoutMs: 5000,
+    includeMissingGrams: true,
+    enrichGcode: true
+  });
+  const response = await fetch(`${apiBaseUrl}/api/supernode/printer-history`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${nodeSigningSecret}`
+    },
+    body: JSON.stringify({ nodeId, printerId, completedPrints })
+  });
+  if (!response.ok) {
+    throw new Error(`printer history sync rejected with ${response.status}`);
+  }
+}
+
 async function loop() {
   try {
     await sendHeartbeat();
     await syncReadyJobs();
     await syncProductionPlateJobs();
     await acknowledgeApprovedPrintCommands();
+    await syncPrinterHistory();
   } catch (error) {
     retryCount += 1;
     console.error(error instanceof Error ? error.message : error);

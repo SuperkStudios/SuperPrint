@@ -57,6 +57,34 @@ const schema = z.object({
   status: z.enum(["ACTIVE", "ARCHIVED"]).default("ACTIVE")
 });
 
+export async function GET() {
+  const { response } = await requireAdmin("products");
+  if (response) return response;
+  const products = await prisma.product.findMany({
+    where: { status: "ACTIVE" },
+    include: { allowedFilaments: { where: { enabled: true }, include: { filamentMaterial: true } } },
+    orderBy: { name: "asc" }
+  });
+  return NextResponse.json({
+    products: products.map((product) => ({
+      id: product.id,
+      name: product.name,
+      priceCents: product.priceCents,
+      colorSlotCount: product.colorSlotCount,
+      defaultMaterial: product.defaultMaterial,
+      status: product.status,
+      maxBatchQuantity: product.maxBatchQuantity,
+      allowedFilaments: product.allowedFilaments.map((item) => ({
+        filamentMaterialId: item.filamentMaterialId,
+        filamentMaterial: {
+          color: item.filamentMaterial.color,
+          material: item.filamentMaterial.material
+        }
+      }))
+    }))
+  });
+}
+
 export async function POST(request: Request) {
   const { session, response } = await requireAdmin("products");
   if (response) return response;

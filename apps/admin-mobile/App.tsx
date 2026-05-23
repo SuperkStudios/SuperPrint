@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import * as AppleAuthentication from "expo-apple-authentication";
 import * as SecureStore from "expo-secure-store";
 import { StripeProvider, useStripe } from "@stripe/stripe-react-native";
-import { StripeTerminalProvider, useStripeTerminal, type Reader, type PaymentIntent as TerminalPaymentIntent } from "@stripe/stripe-terminal-react-native";
+import { StripeTerminalProvider, useStripeTerminal } from "@stripe/stripe-terminal-react-native";
 import {
   ActivityIndicator,
   Image,
@@ -27,7 +27,7 @@ const brandMark = require("./assets/superprint-mark.png");
 const secureSessionKey = "superprint.admin.sessionCookie";
 const secureEmailKey = "superprint.admin.email";
 
-type ScreenKey = "dashboard" | "pos" | "orders" | "queue" | "parts" | "products" | "customers" | "reports" | "settings";
+type ScreenKey = "dashboard" | "pos" | "orders" | "queue" | "parts" | "filament" | "products" | "customers" | "reports" | "settings";
 
 type AdminSettings = {
   apiBaseUrl: string;
@@ -62,9 +62,18 @@ type ProductOption = {
   priceCents: number;
   colorSlotCount?: number;
   defaultMaterial?: string;
+  allowedFilaments?: Array<{ filamentMaterialId: string; filamentMaterial: { color: string; material: string } }>;
   status?: string;
   maxBatchQuantity?: number;
   parts?: Array<{ id: string; name: string; colorSlotIndex: number; quantityPerUnit: number }>;
+};
+
+type LineDraft = {
+  productId: string;
+  quantity: string;
+  unitPrice: string;
+  selectedFilamentMaterialIds: string[];
+  selectedColors: string[];
 };
 
 type AdminCustomer = {
@@ -137,6 +146,40 @@ type PartInventoryRow = {
   inventory: Array<{ id: string; color: string; quantityOnHand: number; location: string; notes?: string | null }>;
 };
 
+type FilamentSpool = {
+  id: string;
+  material: FilamentMaterial;
+  type?: FilamentMaterial;
+  color: string;
+  brand: string;
+  startingGrams: number;
+  spoolWeightGrams?: number;
+  remainingGrams: number;
+  thresholdGrams: number;
+  rollCostCents: number;
+  location: string;
+  active: boolean;
+  requiresAdminApproval?: boolean;
+  notes?: string | null;
+};
+
+type FilamentMaterial = "PLA" | "PLA_PLUS" | "PETG" | "ABS" | "TPU" | "NYLON" | "RESIN";
+
+const filamentMaterials: FilamentMaterial[] = ["PLA", "PLA_PLUS", "PETG", "ABS", "TPU", "NYLON", "RESIN"];
+
+type PrinterHistoryItem = {
+  id: string;
+  name: string;
+  status: string;
+  gramsUsed?: number;
+  completedAt?: string;
+  gramsSource?: string;
+  printedLayers?: number;
+  totalLayers?: number;
+  printTimeSeconds?: number;
+  material?: string;
+};
+
 LogBox.ignoreAllLogs(true);
 
 type ThemePalette = {
@@ -206,6 +249,7 @@ const navItems: Array<{ key: ScreenKey; title: string; detail: string }> = [
   { key: "orders", title: "Orders", detail: "Past and live orders" },
   { key: "queue", title: "Queue", detail: "Build plate work" },
   { key: "parts", title: "Action Items", detail: "Print, build, deliver" },
+  { key: "filament", title: "Filament", detail: "Add rolls and stock" },
   { key: "products", title: "Products", detail: "Catalog and slots" },
   { key: "customers", title: "Customers", detail: "Names, email, Stripe" },
   { key: "reports", title: "Reports", detail: "Cash and deposits" },
@@ -510,6 +554,7 @@ function AppShell({
         {screen === "settings" && <SettingsScreen settings={settings} setSettings={setSettings} sessionInfo={sessionInfo} onSignOut={onSignOut} />}
         {screen === "queue" && <QueueScreen client={client} />}
         {screen === "parts" && <PartsScreen client={client} />}
+        {screen === "filament" && <FilamentScreen client={client} />}
         {screen === "products" && <ProductsScreen client={client} />}
         {screen === "customers" && <CustomersScreen client={client} />}
         {screen === "reports" && <ReportsScreen client={client} />}
@@ -542,7 +587,7 @@ function DashboardScreen({ onOpen }: { onOpen: (screen: ScreenKey) => void }) {
 
 function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient; settings: AdminSettings; setSettings: (settings: AdminSettings) => void }) {
   const stripe = useStripe();
-  const terminal = useStripeTerminal({
+  useStripeTerminal({
     onDidAcceptTermsOfService: () => setMessage("Tap to Pay terms accepted."),
     onDidChangeConnectionStatus: (status) => setMessage(`Reader ${status}.`),
     onDidRequestReaderInput: (input) => setMessage(`Reader input: ${input.join(", ")}`),
@@ -554,35 +599,31 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
   const [customerName, setCustomerName] = useState("");
   const [customerEmail, setCustomerEmail] = useState("");
   const [customerQuery, setCustomerQuery] = useState("");
-  const [productId, setProductId] = useState("");
-  const [quantity, setQuantity] = useState("1");
-  const [unitPrice, setUnitPrice] = useState("0.00");
-  const [colors, setColors] = useState<string[]>(["PLA"]);
+  const [lines, setLines] = useState<LineDraft[]>([]);
   const [fulfillmentMethod, setFulfillmentMethod] = useState<FulfillmentMethod>("PICKUP");
   const [estimatedPickupAt, setEstimatedPickupAt] = useState("");
   const [address, setAddress] = useState({ street1: "", street2: "", city: "", state: "CO", zip: "", phone: "" });
   const [shippingQuote, setShippingQuote] = useState<ShippingQuote | null>(null);
-  const [paymentMethod, setPaymentMethod] = useState("CASH");
+  const [paymentMethod, setPaymentMethod] = useState("UNPAID");
   const [paidNow, setPaidNow] = useState("0.00");
+  const [paymentReference, setPaymentReference] = useState("");
+  const [cardBrand, setCardBrand] = useState("");
+  const [cardLast4, setCardLast4] = useState("");
+  const [internalNotes, setInternalNotes] = useState("");
+  const [orderDate, setOrderDate] = useState("");
+  const [source, setSource] = useState<"IN_PERSON" | "PAST_IMPORT">("IN_PERSON");
   const [queueNow, setQueueNow] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
-  const selectedProduct = products.find((product) => product.id === productId);
-  const slotCount = Math.max(1, selectedProduct?.colorSlotCount ?? 1);
-  const itemTotalCents = cents(unitPrice) * Math.max(1, Number.parseInt(quantity, 10) || 1);
-  const totalCents = itemTotalCents + (shippingQuote?.shippingAmountCents ?? 0);
+  const totalCents = lines.reduce((total, line) => total + cents(line.unitPrice) * positiveInt(line.quantity, 1), 0) + (shippingQuote?.shippingAmountCents ?? 0);
 
   useEffect(() => {
     setProductLoading(true);
-    client.get<{ products: ProductOption[] }>("/api/products")
+    client.get<{ products: ProductOption[] }>("/api/admin/products")
       .then((response) => {
         setProducts(response.products);
         const first = response.products[0];
-        if (first) {
-          setProductId(first.id);
-          setUnitPrice((first.priceCents / 100).toFixed(2));
-          setColors(Array.from({ length: Math.max(1, first.colorSlotCount ?? 1) }, () => first.defaultMaterial ?? "PLA"));
-        }
+        if (first) setLines([newOrderLine(first)]);
       })
       .catch((error) => setMessage(error instanceof Error ? error.message : "Could not load products."))
       .finally(() => setProductLoading(false));
@@ -617,27 +658,16 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
     setCustomers([]);
   }
 
-  async function refreshTerminalConfig() {
-    const config = await client.get<{ publishableKey: string | null; terminalLocationId: string | null; configured?: boolean; mode?: string }>("/api/admin/pos/terminal/config");
-    setSettings({
-      ...settings,
-      publishableKey: config.publishableKey ?? "",
-      terminalLocationId: config.terminalLocationId ?? "",
-      stripeMode: config.mode ?? settings.stripeMode,
-      stripeConfigured: Boolean(config.configured)
-    });
-    return config;
-  }
-
   async function quoteShipping() {
-    if (!selectedProduct) return;
+    const firstLine = lines[0];
+    if (!firstLine) return;
     setSaving(true);
     setMessage("Estimating fulfillment...");
     try {
       const quote = await client.post<ShippingQuote>("/api/admin/pos/shipping/quote", {
-        productId,
-        quantity: Math.max(1, Number.parseInt(quantity, 10) || 1),
-        productPriceCents: itemTotalCents,
+        productId: firstLine.productId,
+        quantity: positiveInt(firstLine.quantity, 1),
+        productPriceCents: Math.max(0, totalCents - (shippingQuote?.shippingAmountCents ?? 0)),
         customerEmail,
         fulfillment: {
           method: fulfillmentMethod,
@@ -654,7 +684,7 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
   }
 
   async function saveOrder() {
-    if (!customerName.trim() || !customerEmail.trim() || !productId) {
+    if (!customerName.trim() || !customerEmail.trim() || !lines.length) {
       setMessage("Customer, email, and product are required.");
       return;
     }
@@ -666,7 +696,10 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
         ...buildOrderPayload(),
         paymentMethod,
         amountPaidCents: paidCents,
-        depositCents: paidCents
+        depositCents: paidCents,
+        paymentReference: paymentReference.trim() || null,
+        cardBrand: cardBrand.trim() || null,
+        cardLast4: cardLast4.replace(/\D/g, "").slice(0, 4) || null
       });
       setMessage(`Saved ${response.order.orderNumber}`);
     } catch (error) {
@@ -707,53 +740,6 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
     }
   }
 
-  async function chargeTapToPay() {
-    setSaving(true);
-    setMessage("Connecting Tap to Pay...");
-    try {
-      const config = await refreshTerminalConfig();
-      const locationId = config.terminalLocationId ?? settings.terminalLocationId;
-      if (!locationId) throw new Error("Add a Stripe Terminal location ID in SuperPrint admin settings.");
-      if (!terminal.getIsInitialized()) {
-        const initialized = await terminal.initialize();
-        if (initialized.error) throw new Error(initialized.error.message);
-      }
-      const support = await terminal.supportsReadersOfType({
-        deviceType: "tapToPay",
-        discoveryMethod: "tapToPay"
-      });
-      if (support.error || !support.readerSupportResult) throw new Error(support.error?.message ?? "This device is not ready for Tap to Pay.");
-      const connected = terminal.connectedReader ?? (await terminal.easyConnect({
-        discoveryMethod: "tapToPay",
-        locationId,
-        merchantDisplayName: "SuperPrint",
-        tosAcceptancePermitted: true,
-        autoReconnectOnUnexpectedDisconnect: true
-      })).reader;
-      if (!connected) throw new Error("Could not connect this iPhone as the Tap to Pay reader.");
-      const started = await client.post<{ order: { id: string; orderNumber: string }; clientSecret: string }>("/api/admin/pos/terminal/payment-intent", buildOrderPayload());
-      const retrieved = await terminal.retrievePaymentIntent(started.clientSecret);
-      if (retrieved.error || !retrieved.paymentIntent) throw new Error(retrieved.error?.message ?? "Could not retrieve Stripe Terminal payment.");
-      const collected = await terminal.collectPaymentMethod({
-        paymentIntent: retrieved.paymentIntent,
-        customerCancellation: "enableIfAvailable"
-      });
-      if (collected.error || !collected.paymentIntent) throw new Error(collected.error?.message ?? "Card collection failed.");
-      const confirmed = await terminal.confirmPaymentIntent({ paymentIntent: collected.paymentIntent as TerminalPaymentIntent.Type });
-      if (confirmed.error || !confirmed.paymentIntent) throw new Error(confirmed.error?.message ?? "Stripe Terminal confirmation failed.");
-      const completed = await client.post<{ order: { orderNumber: string } }>("/api/admin/pos/terminal/complete", {
-        orderId: started.order.id,
-        paymentIntentId: confirmed.paymentIntent.id,
-        queueNow
-      });
-      setMessage(`Paid ${completed.order.orderNumber}.`);
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Tap to Pay failed.");
-    } finally {
-      setSaving(false);
-    }
-  }
-
   function fulfillmentAddress() {
     return {
       name: customerName,
@@ -772,8 +758,9 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
     return {
       customerName,
       customerEmail,
-      internalNotes: "Created in SuperPrint Admin iOS",
-      source: "IN_PERSON",
+      internalNotes: [internalNotes.trim(), "Created in SuperPrint Admin iOS"].filter(Boolean).join("\n"),
+      orderDate: orderDate || null,
+      source,
       queueNow,
       estimatedPickupAt: estimatedPickupAt || null,
       fulfillment: {
@@ -784,16 +771,37 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
       shippingRateCents: shippingQuote?.shippingRateCents ?? 0,
       shippoRateId: shippingQuote?.rateId ?? null,
       shippoShipmentId: shippingQuote?.shippoShipmentId ?? null,
-      lines: [
-        {
-          productId,
-          quantity: Math.max(1, Number.parseInt(quantity, 10) || 1),
-          unitPriceCents: cents(unitPrice),
-          selectedFilamentMaterialIds: [],
-          selectedColors: colors.slice(0, slotCount).map((color) => color.trim()).filter(Boolean)
-        }
-      ]
+      lines: lines.map((line) => {
+        const product = productFor(line, products);
+        const slotCount = Math.max(1, product?.colorSlotCount ?? 1);
+        const selectedIds = line.selectedFilamentMaterialIds.slice(0, slotCount);
+        const selectedColors = Array.from({ length: slotCount }, (_, index) => {
+          const selectedId = selectedIds[index] ?? selectedIds[0] ?? "";
+          const allowed = product?.allowedFilaments?.find((item) => item.filamentMaterialId === selectedId);
+          return line.selectedColors[index]?.trim() || allowed?.filamentMaterial.color || "";
+        }).filter(Boolean);
+        return {
+          productId: line.productId,
+          quantity: positiveInt(line.quantity, 1),
+          unitPriceCents: cents(line.unitPrice),
+          selectedFilamentMaterialIds: selectedIds.filter(Boolean),
+          selectedColors
+        };
+      })
     };
+  }
+
+  function updateLine(index: number, patch: Partial<LineDraft>) {
+    setLines((current) => current.map((line, lineIndex) => {
+      if (lineIndex !== index) return line;
+      const next = { ...line, ...patch };
+      if (patch.productId) {
+        const product = products.find((item) => item.id === patch.productId);
+        if (product) return newOrderLine(product, next.quantity);
+      }
+      return next;
+    }));
+    setShippingQuote(null);
   }
 
   return (
@@ -813,42 +821,72 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
         ) : null}
         <Field label="Customer name" value={customerName} onChangeText={setCustomerName} />
         <Field label="Email" value={customerEmail} onChangeText={setCustomerEmail} keyboardType="email-address" autoCapitalize="none" />
-        <Text style={styles.label}>Product</Text>
         {productLoading ? <ActivityIndicator color={palette.cyanDark} /> : null}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.productRail}>
-          {products.map((product) => (
-            <Pressable
-              key={product.id}
-              onPress={() => {
-                setProductId(product.id);
-                setUnitPrice((product.priceCents / 100).toFixed(2));
-                setColors(Array.from({ length: Math.max(1, product.colorSlotCount ?? 1) }, (_, index) => colors[index] ?? product.defaultMaterial ?? "PLA"));
-                setShippingQuote(null);
-              }}
-              style={[styles.productChip, productId === product.id && styles.productChipActive]}
-            >
-              <Text style={[styles.productChipTitle, productId === product.id && styles.productChipTitleActive]}>{product.name}</Text>
-              <Text style={[styles.productChipMeta, productId === product.id && styles.productChipMetaActive]}>{money(product.priceCents)} · {Math.max(1, product.colorSlotCount ?? 1)} color</Text>
-            </Pressable>
-          ))}
-        </ScrollView>
-        {!products.length && !productLoading ? <Field label="Product ID" value={productId} onChangeText={setProductId} autoCapitalize="none" /> : null}
-        <View style={styles.inline}>
-          <Field label="Qty" value={quantity} onChangeText={setQuantity} keyboardType="number-pad" grow />
-          <Field label="Unit price" value={unitPrice} onChangeText={setUnitPrice} keyboardType="decimal-pad" grow />
-        </View>
-        {Array.from({ length: slotCount }, (_, index) => (
-          <Field
-            key={index}
-            label={slotCount === 1 ? "Color / material" : `Color ${index + 1}`}
-            value={colors[index] ?? ""}
-            onChangeText={(value) => setColors((current) => {
-              const next = [...current];
-              next[index] = value;
-              return next;
-            })}
-          />
-        ))}
+        {lines.map((line, index) => {
+          const product = productFor(line, products);
+          const slotCount = Math.max(1, product?.colorSlotCount ?? 1);
+          return (
+            <View key={index} style={styles.actionItem}>
+              <Text style={styles.cardTitle}>Item {index + 1}</Text>
+              <Text style={styles.label}>Product</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.productRail}>
+                {products.map((item) => (
+                  <Pressable key={item.id} onPress={() => updateLine(index, { productId: item.id })} style={[styles.productChip, line.productId === item.id && styles.productChipActive]}>
+                    <Text style={[styles.productChipTitle, line.productId === item.id && styles.productChipTitleActive]}>{item.name}</Text>
+                    <Text style={[styles.productChipMeta, line.productId === item.id && styles.productChipMetaActive]}>{money(item.priceCents)} · {Math.max(1, item.colorSlotCount ?? 1)} color</Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+              {!products.length && !productLoading ? <Field label="Product ID" value={line.productId} onChangeText={(productId) => updateLine(index, { productId })} autoCapitalize="none" /> : null}
+              <View style={styles.inline}>
+                <Field label="Qty" value={line.quantity} onChangeText={(quantity) => updateLine(index, { quantity })} keyboardType="number-pad" grow />
+                <Field label="Unit price" value={line.unitPrice} onChangeText={(unitPrice) => updateLine(index, { unitPrice })} keyboardType="decimal-pad" grow />
+              </View>
+              {Array.from({ length: slotCount }, (_, slotIndex) => {
+                const allowed = product?.allowedFilaments ?? [];
+                return (
+                  <View key={slotIndex} style={styles.field}>
+                    <Text style={styles.label}>{slotCount === 1 ? "Filament / color" : `Filament ${slotIndex + 1}`}</Text>
+                    {allowed.length ? (
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRail}>
+                        {allowed.map((item) => {
+                          const active = (line.selectedFilamentMaterialIds[slotIndex] ?? line.selectedFilamentMaterialIds[0]) === item.filamentMaterialId;
+                          return (
+                            <Pressable key={item.filamentMaterialId} onPress={() => {
+                              const selectedFilamentMaterialIds = [...line.selectedFilamentMaterialIds];
+                              const selectedColors = [...line.selectedColors];
+                              selectedFilamentMaterialIds[slotIndex] = item.filamentMaterialId;
+                              selectedColors[slotIndex] = item.filamentMaterial.color;
+                              updateLine(index, { selectedFilamentMaterialIds, selectedColors });
+                            }} style={[styles.choiceChip, active && styles.choiceChipActive]}>
+                              <Text style={[styles.choiceChipText, active && styles.choiceChipTextActive]}>{item.filamentMaterial.color} {item.filamentMaterial.material.replace("_PLUS", "+")}</Text>
+                            </Pressable>
+                          );
+                        })}
+                      </ScrollView>
+                    ) : (
+                      <Field label="Color / material" value={line.selectedColors[slotIndex] ?? ""} onChangeText={(value) => {
+                        const selectedColors = [...line.selectedColors];
+                        selectedColors[slotIndex] = value;
+                        updateLine(index, { selectedColors });
+                      }} />
+                    )}
+                  </View>
+                );
+              })}
+              {lines.length > 1 ? (
+                <Pressable disabled={saving} onPress={() => setLines((current) => current.filter((_, lineIndex) => lineIndex !== index))} style={styles.dangerButton}>
+                  <Text style={styles.dangerButtonText}>Remove Item</Text>
+                </Pressable>
+              ) : null}
+            </View>
+          );
+        })}
+        {products[0] ? (
+          <Pressable disabled={saving} onPress={() => setLines((current) => [...current, newOrderLine(products[0])])} style={styles.secondaryButton}>
+            <Text style={styles.secondaryButtonText}>Add Item</Text>
+          </Pressable>
+        ) : null}
         <View style={styles.segment}>
           {(["PICKUP", "SHIP"] as const).map((method) => (
             <Pressable key={method} onPress={() => { setFulfillmentMethod(method); setShippingQuote(null); }} style={[styles.segmentItem, fulfillmentMethod === method && styles.segmentItemActive]}>
@@ -874,25 +912,39 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
         </Pressable>
         <Text style={styles.cardCopy}>Total {money(totalCents)}{shippingQuote ? ` · fulfillment ${money(shippingQuote.shippingAmountCents)}` : ""}</Text>
         <View style={styles.segment}>
-          {["CASH", "STRIPE_TERMINAL", "STRIPE_MANUAL"].map((method) => (
+          {["UNPAID", "CASH", "STRIPE_MANUAL"].map((method) => (
             <Pressable key={method} onPress={() => setPaymentMethod(method)} style={[styles.segmentItem, paymentMethod === method && styles.segmentItemActive]}>
               <Text style={[styles.segmentText, paymentMethod === method && styles.segmentTextActive]}>{method.replace("STRIPE_", "")}</Text>
             </Pressable>
           ))}
         </View>
         <Field label="Paid now" value={paidNow} onChangeText={setPaidNow} keyboardType="decimal-pad" />
+        <View style={styles.inline}>
+          <Field label="Reference" value={paymentReference} onChangeText={setPaymentReference} grow />
+          <Field label="Last 4" value={cardLast4} onChangeText={(value) => setCardLast4(value.replace(/\D/g, "").slice(0, 4))} keyboardType="number-pad" grow />
+        </View>
+        <View style={styles.inline}>
+          <Field label="Card brand" value={cardBrand} onChangeText={setCardBrand} grow />
+          <Field label="Order date" value={orderDate} onChangeText={setOrderDate} grow />
+        </View>
+        <View style={styles.segment}>
+          {([
+            ["IN_PERSON", "New"],
+            ["PAST_IMPORT", "Past"]
+          ] as const).map(([value, label]) => (
+            <Pressable key={value} onPress={() => setSource(value)} style={[styles.segmentItem, source === value && styles.segmentItemActive]}>
+              <Text style={[styles.segmentText, source === value && styles.segmentTextActive]}>{label}</Text>
+            </Pressable>
+          ))}
+        </View>
         <View style={styles.switchRow}>
           <Text style={styles.label}>Queue paid items now</Text>
           <Switch value={queueNow} onValueChange={setQueueNow} />
         </View>
+        <Field label="Notes" value={internalNotes} onChangeText={setInternalNotes} multiline />
         <Pressable onPress={saveOrder} disabled={saving} style={[styles.primaryButton, saving && styles.disabled]}>
-          {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>{paymentMethod === "CASH" ? "Save Cash Order" : "Save Without Charging"}</Text>}
+          {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>{paymentMethod === "UNPAID" ? "Save Without Payment" : "Save Order"}</Text>}
         </Pressable>
-        {paymentMethod === "STRIPE_TERMINAL" ? (
-          <Pressable onPress={chargeTapToPay} disabled={saving} style={[styles.primaryButton, saving && styles.disabled]}>
-            <Text style={styles.primaryButtonText}>Tap to Pay on iPhone</Text>
-          </Pressable>
-        ) : null}
         {paymentMethod === "STRIPE_MANUAL" ? (
           <Pressable onPress={chargeManualCard} disabled={saving} style={[styles.primaryButton, saving && styles.disabled]}>
             <Text style={styles.primaryButtonText}>Enter Card Securely</Text>
@@ -1173,6 +1225,305 @@ function PartsScreen({ client }: { client: SuperPrintClient }) {
           </View>
         </Card>
       )) : null}
+      {message ? <Text style={styles.message}>{message}</Text> : null}
+    </ScrollView>
+  );
+}
+
+function FilamentScreen({ client }: { client: SuperPrintClient }) {
+  const emptyForm = {
+    id: "",
+    material: "PLA" as FilamentMaterial,
+    color: "",
+    brand: "",
+    startingGrams: "1000",
+    remainingGrams: "1000",
+    thresholdGrams: "150",
+    rollCostDollars: "20.00",
+    location: "Stock",
+    notes: ""
+  };
+  const [spools, setSpools] = useState<FilamentSpool[]>([]);
+  const [form, setForm] = useState(emptyForm);
+  const [showInactive, setShowInactive] = useState(false);
+  const [requiresApproval, setRequiresApproval] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState("Loading filament inventory...");
+  const [history, setHistory] = useState<PrinterHistoryItem[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [selectedHistorySpoolId, setSelectedHistorySpoolId] = useState("");
+
+  useEffect(() => {
+    void load();
+  }, [client]);
+
+  async function load() {
+    setLoading(true);
+    try {
+      const response = await client.get<{ spools: FilamentSpool[] }>("/api/admin/filament");
+      setSpools(response.spools);
+      setMessage(response.spools.length ? "" : "No filament rolls in the system yet.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not load filament.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function save() {
+    if (!form.color.trim() || !form.brand.trim()) {
+      setMessage("Color and brand are required.");
+      return;
+    }
+    setSaving(true);
+    setMessage(form.id ? "Updating filament roll..." : "Adding filament roll...");
+    try {
+      await client.post<{ spool: FilamentSpool }>("/api/admin/filament", {
+        id: form.id || undefined,
+        material: form.material,
+        color: form.color.trim(),
+        brand: form.brand.trim(),
+        startingGrams: positiveInt(form.startingGrams, 1000),
+        remainingGrams: nonNegativeInt(form.remainingGrams, 1000),
+        thresholdGrams: nonNegativeInt(form.thresholdGrams, 150),
+        rollCostCents: cents(form.rollCostDollars),
+        location: form.location.trim() || "Stock",
+        active: true,
+        requiresAdminApproval: requiresApproval,
+        notes: form.notes.trim() || null
+      });
+      setForm(emptyForm);
+      setRequiresApproval(false);
+      setMessage(form.id ? "Filament updated." : "Filament added.");
+      await load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not save filament.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function remove(spool: FilamentSpool) {
+    setSaving(true);
+    setMessage(`Removing ${spool.color} ${spool.material}...`);
+    try {
+      const response = await client.delete<{ removed: boolean; deactivated: boolean }>("/api/admin/filament", { id: spool.id });
+      setMessage(response.removed ? "Filament removed." : "Filament is referenced by existing records, so it was deactivated.");
+      if (form.id === spool.id) {
+        setForm(emptyForm);
+        setRequiresApproval(false);
+      }
+      await load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not remove filament.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function pullHistory() {
+    setHistoryLoading(true);
+    setMessage("Pulling printer history...");
+    try {
+      const response = await client.post<{ completedPrints: PrinterHistoryItem[]; message: string }>("/api/admin/printer-history", {});
+      setHistory(response.completedPrints);
+      setMessage(response.message);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not pull printer history.");
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
+
+  async function updateHistory(action: "assign" | "ignore" | "importCompleted", print: PrinterHistoryItem) {
+    if (action !== "ignore" && !selectedHistorySpoolId) {
+      setMessage("Choose a filament roll for this history action.");
+      return;
+    }
+    setSaving(true);
+    setMessage(action === "ignore" ? "Ignoring history row..." : "Updating filament from history...");
+    try {
+      const response = await client.patch<{ message: string }>("/api/admin/printer-history", {
+        action,
+        print,
+        spoolId: action === "ignore" ? undefined : selectedHistorySpoolId
+      });
+      setMessage(response.message);
+      setHistory((current) => current.filter((item) => item.id !== print.id));
+      await load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not update printer history.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function edit(spool: FilamentSpool) {
+    setForm({
+      id: spool.id,
+      material: spool.material,
+      color: spool.color,
+      brand: spool.brand,
+      startingGrams: String(spool.startingGrams),
+      remainingGrams: String(spool.remainingGrams),
+      thresholdGrams: String(spool.thresholdGrams),
+      rollCostDollars: (spool.rollCostCents / 100).toFixed(2),
+      location: spool.location,
+      notes: spool.notes ?? ""
+    });
+    setRequiresApproval(Boolean(spool.requiresAdminApproval));
+    setMessage(`Editing ${spool.color} ${spool.material}.`);
+  }
+
+  const visibleSpools = spools.filter((spool) => showInactive || spool.active);
+  const totalGrams = visibleSpools.reduce((total, spool) => total + spool.remainingGrams, 0);
+  const lowCount = visibleSpools.filter((spool) => spool.remainingGrams <= spool.thresholdGrams).length;
+
+  return (
+    <ScrollView style={styles.screen} contentContainerStyle={styles.screenBody}>
+      <ScreenHeader title="Filament" detail="Add 1kg rolls, update existing stock, and pull printer history." />
+      <LoadButton title="Refresh Filament" loading={loading} onPress={load} />
+      <View style={styles.metricRow}>
+        <Metric label="Active rolls" value={String(spools.filter((spool) => spool.active).length)} />
+        <Metric label="In stock" value={`${(totalGrams / 1000).toFixed(1)}kg`} />
+        <Metric label="Low rolls" value={String(lowCount)} />
+        <Metric label="Materials" value={String(new Set(visibleSpools.map((spool) => spool.material)).size)} />
+      </View>
+
+      <Card>
+        <Text style={styles.cardTitle}>{form.id ? "Edit filament" : "Add 1kg filament roll"}</Text>
+        <Text style={styles.cardCopy}>
+          {form.id ? "Update the stock details for this roll." : "New rolls start at 1000g in Stock, matching the main admin app."}
+        </Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRail}>
+          {filamentMaterials.map((material) => (
+            <Pressable key={material} onPress={() => setForm({ ...form, material })} style={[styles.choiceChip, form.material === material && styles.choiceChipActive]}>
+              <Text style={[styles.choiceChipText, form.material === material && styles.choiceChipTextActive]}>{material.replace("_PLUS", "+")}</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+        <View style={styles.inline}>
+          <Field label="Color" value={form.color} onChangeText={(color) => setForm({ ...form, color })} grow />
+          <Field label="Brand" value={form.brand} onChangeText={(brand) => setForm({ ...form, brand })} grow />
+        </View>
+        <View style={styles.inline}>
+          <Field label="1kg roll cost" value={form.rollCostDollars} onChangeText={(rollCostDollars) => setForm({ ...form, rollCostDollars })} keyboardType="decimal-pad" grow />
+          <Field label="Low alert grams" value={form.thresholdGrams} onChangeText={(thresholdGrams) => setForm({ ...form, thresholdGrams })} keyboardType="number-pad" grow />
+        </View>
+        {form.id ? (
+          <>
+            <View style={styles.inline}>
+              <Field label="Start g" value={form.startingGrams} onChangeText={(startingGrams) => setForm({ ...form, startingGrams })} keyboardType="number-pad" grow />
+              <Field label="Left g" value={form.remainingGrams} onChangeText={(remainingGrams) => setForm({ ...form, remainingGrams })} keyboardType="number-pad" grow />
+              <Field label="Location" value={form.location} onChangeText={(location) => setForm({ ...form, location })} grow />
+            </View>
+            <Field label="Notes" value={form.notes} onChangeText={(notes) => setForm({ ...form, notes })} multiline />
+            <View style={styles.switchRow}>
+              <View style={styles.grow}>
+                <Text style={styles.rowTitle}>Requires approval</Text>
+                <Text style={styles.cardCopy}>Use for specialty filament customers should not freely select.</Text>
+              </View>
+              <Switch value={requiresApproval} onValueChange={setRequiresApproval} />
+            </View>
+          </>
+        ) : (
+          <View style={styles.summaryBand}>
+            <Text style={styles.summaryText}>Starting grams: 1000</Text>
+            <Text style={styles.summaryText}>Remaining grams: 1000</Text>
+            <Text style={styles.summaryText}>Location: Stock</Text>
+          </View>
+        )}
+        <View style={styles.inline}>
+          {form.id ? (
+            <Pressable onPress={() => { setForm(emptyForm); setRequiresApproval(false); }} style={[styles.secondaryButton, styles.grow]}>
+              <Text style={styles.secondaryButtonText}>Cancel Edit</Text>
+            </Pressable>
+          ) : null}
+          <Pressable disabled={saving} onPress={save} style={[styles.primaryButton, styles.grow, saving && styles.disabled]}>
+            {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>{form.id ? "Update Roll" : "Add 1kg Roll"}</Text>}
+          </Pressable>
+        </View>
+      </Card>
+
+      <Card>
+        <View style={styles.orderTop}>
+          <View style={styles.grow}>
+            <Text style={styles.cardTitle}>Printer History</Text>
+            <Text style={styles.cardCopy}>Pull completed, stopped, and failed prints, then assign grams to a roll or import old prints.</Text>
+          </View>
+          <Badge label={`${history.length} rows`} />
+        </View>
+        <Pressable disabled={historyLoading || saving} onPress={pullHistory} style={styles.secondaryButton}>
+          {historyLoading ? <ActivityIndicator color={palette.cyanDark} /> : <Text style={styles.secondaryButtonText}>Pull Printer History</Text>}
+        </Pressable>
+        <Text style={styles.label}>Filament roll for history</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRail}>
+          {spools.filter((spool) => spool.active).map((spool) => (
+            <Pressable key={spool.id} onPress={() => setSelectedHistorySpoolId(spool.id)} style={[styles.choiceChip, selectedHistorySpoolId === spool.id && styles.choiceChipActive]}>
+              <Text style={[styles.choiceChipText, selectedHistorySpoolId === spool.id && styles.choiceChipTextActive]}>{spool.color} {spool.material.replace("_PLUS", "+")}</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+        {history.length ? history.slice(0, 20).map((print) => (
+          <View key={print.id} style={styles.spoolRow}>
+            <View style={styles.orderTop}>
+              <View style={styles.grow}>
+                <Text style={styles.rowTitle}>{print.name}</Text>
+                <Text style={styles.cardCopy}>{print.status} · {typeof print.gramsUsed === "number" ? `${Math.round(print.gramsUsed)}g` : "no grams"}{print.completedAt ? ` · ${new Date(print.completedAt).toLocaleDateString()}` : ""}</Text>
+              </View>
+              <Badge label={print.gramsSource ?? print.material ?? "history"} />
+            </View>
+            <View style={styles.inline}>
+              <Pressable disabled={saving || typeof print.gramsUsed !== "number"} onPress={() => updateHistory("assign", print)} style={[styles.secondaryButton, styles.grow]}>
+                <Text style={styles.secondaryButtonText}>Assign</Text>
+              </Pressable>
+              <Pressable disabled={saving || typeof print.gramsUsed !== "number"} onPress={() => updateHistory("importCompleted", print)} style={[styles.primaryButton, styles.grow]}>
+                <Text style={styles.primaryButtonText}>Import</Text>
+              </Pressable>
+              <Pressable disabled={saving} onPress={() => updateHistory("ignore", print)} style={[styles.dangerButton, styles.grow]}>
+                <Text style={styles.dangerButtonText}>Ignore</Text>
+              </Pressable>
+            </View>
+          </View>
+        )) : <Text style={styles.cardCopy}>No pulled printer history yet.</Text>}
+      </Card>
+
+      <Card>
+        <View style={styles.switchRow}>
+          <Text style={styles.cardTitle}>Inventory</Text>
+          <View style={styles.inlineCenter}>
+            <Text style={styles.cardCopy}>Inactive</Text>
+            <Switch value={showInactive} onValueChange={setShowInactive} />
+          </View>
+        </View>
+        {visibleSpools.length ? visibleSpools.map((spool) => {
+          const percent = Math.min(100, Math.max(0, Math.round((spool.remainingGrams / Math.max(1, spool.startingGrams)) * 100)));
+          return (
+            <View key={spool.id} style={styles.spoolRow}>
+              <View style={styles.orderTop}>
+                <View style={styles.grow}>
+                  <Text style={styles.cardTitle}>{spool.color} {spool.material.replace("_PLUS", "+")}</Text>
+                  <Text style={styles.cardCopy}>{spool.brand} · {spool.location} · {money(spool.rollCostCents)}</Text>
+                </View>
+                <Badge label={spool.active ? (spool.remainingGrams <= spool.thresholdGrams ? "LOW" : "ACTIVE") : "INACTIVE"} />
+              </View>
+              <View style={styles.progressTrack}>
+                <View style={[styles.progressFill, { width: `${Math.max(3, percent)}%` }]} />
+              </View>
+              <Text style={styles.cardCopy}>{spool.remainingGrams}g left of {spool.startingGrams}g · low at {spool.thresholdGrams}g</Text>
+              <View style={styles.inline}>
+                <Pressable disabled={saving} onPress={() => edit(spool)} style={[styles.secondaryButton, styles.grow]}>
+                  <Text style={styles.secondaryButtonText}>Edit</Text>
+                </Pressable>
+                <Pressable disabled={saving} onPress={() => remove(spool)} style={[styles.dangerButton, styles.grow]}>
+                  <Text style={styles.dangerButtonText}>{spool.active ? "Remove" : "Delete"}</Text>
+                </Pressable>
+              </View>
+            </View>
+          );
+        }) : <Text style={styles.cardCopy}>{message || "No filament rolls to show."}</Text>}
+      </Card>
       {message ? <Text style={styles.message}>{message}</Text> : null}
     </ScrollView>
   );
@@ -1499,6 +1850,14 @@ class SuperPrintClient {
     return this.request<T>(path, { method: "POST", body: JSON.stringify(body) });
   }
 
+  async patch<T>(path: string, body: unknown): Promise<T> {
+    return this.request<T>(path, { method: "PATCH", body: JSON.stringify(body) });
+  }
+
+  async delete<T>(path: string, body: unknown): Promise<T> {
+    return this.request<T>(path, { method: "DELETE", body: JSON.stringify(body) });
+  }
+
   async signIn(email: string, password: string): Promise<string> {
     const base = this.settings.apiBaseUrl.replace(/\/$/, "");
     const response = await fetch(`${base}/api/auth/sign-in/email`, {
@@ -1571,6 +1930,16 @@ class SuperPrintClient {
 
 function cents(value: string) {
   return Math.max(0, Math.round((Number(value) || 0) * 100));
+}
+
+function positiveInt(value: string, fallback: number) {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function nonNegativeInt(value: string, fallback: number) {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
 }
 
 function uniqueCustomers(orders: AdminOrder[]) {
@@ -1657,6 +2026,23 @@ function groupPlannerByColor(rows: PartPlannerRow[]) {
     .sort((a, b) => b.quantityToPrint - a.quantityToPrint || a.color.localeCompare(b.color));
 }
 
+function productFor(line: LineDraft, products: ProductOption[]) {
+  return products.find((product) => product.id === line.productId) ?? products[0];
+}
+
+function newOrderLine(product: ProductOption, quantity = "1"): LineDraft {
+  const slotCount = Math.max(1, product.colorSlotCount ?? 1);
+  const selectedFilamentMaterialIds = Array.from({ length: slotCount }, (_, index) => product.allowedFilaments?.[index]?.filamentMaterialId ?? product.allowedFilaments?.[0]?.filamentMaterialId ?? "");
+  const selectedColors = Array.from({ length: slotCount }, (_, index) => product.allowedFilaments?.[index]?.filamentMaterial.color ?? product.allowedFilaments?.[0]?.filamentMaterial.color ?? product.defaultMaterial ?? "");
+  return {
+    productId: product.id,
+    quantity,
+    unitPrice: (product.priceCents / 100).toFixed(2),
+    selectedFilamentMaterialIds,
+    selectedColors
+  };
+}
+
 function money(centsValue: number) {
   return (centsValue / 100).toLocaleString("en-US", { style: "currency", currency: "USD" });
 }
@@ -1732,6 +2118,7 @@ function createStyles(palette: ThemePalette) {
   infoLabel: { color: palette.muted, fontSize: 12, fontWeight: "800" },
   infoValue: { flex: 1, color: palette.ink, fontSize: 13, fontWeight: "900", textAlign: "right" },
   inline: { flexDirection: "row", gap: 10 },
+  inlineCenter: { flexDirection: "row", gap: 8, alignItems: "center" },
   productRail: { gap: 8, paddingVertical: 2 },
   productChip: { width: 168, minHeight: 76, borderWidth: 1, borderColor: palette.line, borderRadius: 8, padding: 12, justifyContent: "space-between", backgroundColor: palette.field },
   productChipActive: { backgroundColor: palette.actionBg, borderColor: palette.actionBg },
@@ -1739,16 +2126,25 @@ function createStyles(palette: ThemePalette) {
   productChipTitleActive: { color: "#fff" },
   productChipMeta: { color: palette.muted, fontSize: 11, fontWeight: "800" },
   productChipMetaActive: { color: "#cffafe" },
+  chipRail: { gap: 8, paddingVertical: 2 },
+  choiceChip: { minHeight: 38, minWidth: 72, borderWidth: 1, borderColor: palette.line, borderRadius: 8, alignItems: "center", justifyContent: "center", paddingHorizontal: 12, backgroundColor: palette.field },
+  choiceChipActive: { backgroundColor: palette.actionBg, borderColor: palette.actionBg },
+  choiceChipText: { color: palette.slate, fontSize: 12, fontWeight: "900" },
+  choiceChipTextActive: { color: "#fff" },
   segment: { flexDirection: "row", borderWidth: 1, borderColor: palette.line, borderRadius: 8, padding: 4, gap: 4 },
   segmentItem: { flex: 1, alignItems: "center", borderRadius: 6, paddingVertical: 10 },
   segmentItemActive: { backgroundColor: palette.cyan },
   segmentText: { color: palette.slate, fontSize: 12, fontWeight: "900" },
   segmentTextActive: { color: "#fff" },
+  summaryBand: { borderWidth: 1, borderColor: palette.line, borderRadius: 8, backgroundColor: palette.secondaryBg, padding: 12, gap: 6 },
+  summaryText: { color: palette.slate, fontSize: 12, fontWeight: "800" },
   switchRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   primaryButton: { minHeight: 48, borderRadius: 8, backgroundColor: palette.actionBg, alignItems: "center", justifyContent: "center", paddingHorizontal: 16 },
   primaryButtonText: { color: "#fff", fontWeight: "900", fontSize: 15 },
   secondaryButton: { minHeight: 48, borderRadius: 8, backgroundColor: palette.secondaryBg, borderWidth: 1, borderColor: palette.secondaryBorder, alignItems: "center", justifyContent: "center", paddingHorizontal: 12 },
   secondaryButtonText: { color: palette.cyanDark, fontWeight: "900", fontSize: 13 },
+  dangerButton: { minHeight: 48, borderRadius: 8, backgroundColor: "#fee2e2", borderWidth: 1, borderColor: "#fecaca", alignItems: "center", justifyContent: "center", paddingHorizontal: 12 },
+  dangerButtonText: { color: "#b91c1c", fontWeight: "900", fontSize: 13 },
   disabled: { opacity: 0.7 },
   message: { color: palette.slate, fontSize: 13 },
   orderTop: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 12 },
@@ -1756,6 +2152,9 @@ function createStyles(palette: ThemePalette) {
   rowLine: { flexDirection: "row", alignItems: "center", gap: 12, borderTopWidth: 1, borderTopColor: palette.line, paddingTop: 10 },
   rowTitle: { color: palette.ink, fontSize: 14, fontWeight: "900" },
   actionItem: { borderTopWidth: 1, borderTopColor: palette.line, paddingTop: 12, gap: 10 },
+  spoolRow: { borderTopWidth: 1, borderTopColor: palette.line, paddingTop: 12, gap: 10 },
+  progressTrack: { height: 10, borderRadius: 999, backgroundColor: palette.secondaryBg, overflow: "hidden" },
+  progressFill: { height: 10, borderRadius: 999, backgroundColor: palette.cyan },
   actionButtons: { flexDirection: "row", gap: 8 },
   compactButton: { minHeight: 38, borderRadius: 8, backgroundColor: palette.actionBg, alignItems: "center", justifyContent: "center", paddingHorizontal: 14 },
   compactButtonText: { color: "#fff", fontSize: 12, fontWeight: "900" },

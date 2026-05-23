@@ -13,7 +13,10 @@ const filamentSchema = z.object({
   remainingGrams: z.number().int().nonnegative(),
   thresholdGrams: z.number().int().nonnegative().default(150),
   rollCostCents: z.number().int().nonnegative().default(0),
-  location: z.string().default("Stock")
+  location: z.string().default("Stock"),
+  active: z.boolean().optional(),
+  requiresAdminApproval: z.boolean().optional(),
+  notes: z.string().optional().nullable()
 });
 
 export async function GET() {
@@ -21,7 +24,7 @@ export async function GET() {
   if (response) return response;
 
   return NextResponse.json({
-    spools: await prisma.filamentSpool.findMany({ where: { active: true }, orderBy: { updatedAt: "desc" } })
+    spools: await prisma.filamentSpool.findMany({ orderBy: { updatedAt: "desc" } })
   });
 }
 
@@ -29,15 +32,15 @@ export async function POST(request: Request) {
   const { session, response } = await requireAdmin("filament");
   if (response) return response;
 
-  const body = filamentSchema.parse(await request.json());
+  const { id, ...body } = filamentSchema.parse(await request.json());
   const data = {
     ...body,
     type: body.material,
     costPerSpoolCents: body.rollCostCents,
     costPerGramCents: body.rollCostCents / Math.max(1, body.startingGrams)
   };
-  const spool = body.id
-    ? await prisma.filamentSpool.update({ where: { id: body.id }, data })
+  const spool = id
+    ? await prisma.filamentSpool.update({ where: { id }, data })
     : await prisma.filamentSpool.create({ data });
 
   if (spool.remainingGrams <= spool.thresholdGrams) {
@@ -86,11 +89,16 @@ export async function DELETE(request: Request) {
 
   if (hasHistory) {
     const spool = await prisma.filamentSpool.update({ where: { id }, data: { active: false } });
-    return NextResponse.json({ spool, message: "Filament is referenced by existing records, so it was deactivated instead of deleted." });
+    return NextResponse.json({
+      removed: false,
+      deactivated: true,
+      spool,
+      message: "Filament is referenced by existing records, so it was deactivated instead of deleted."
+    });
   }
 
   await prisma.filamentSpool.delete({ where: { id } });
-  return NextResponse.json({ message: "Filament deleted." });
+  return NextResponse.json({ removed: true, deactivated: false, message: "Filament deleted." });
 }
 
 async function readDeleteId(request: Request) {

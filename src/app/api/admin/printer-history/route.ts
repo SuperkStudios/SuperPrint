@@ -57,6 +57,16 @@ export async function POST() {
         : "No printer-history entries were found."
     });
   } catch (error) {
+    const fallbackPrints = await readCachedPrinterHistory();
+    if (fallbackPrints.length) {
+      const withGrams = fallbackPrints.filter((print) => typeof print.gramsUsed === "number" && print.gramsUsed > 0).length;
+      const stopped = fallbackPrints.filter((print) => print.status === "STOPPED").length;
+      const failed = fallbackPrints.filter((print) => print.status === "FAILED").length;
+      return NextResponse.json({
+        completedPrints: fallbackPrints,
+        message: `Using SuperNode-synced printer history because the VPS could not reach the printer directly. ${fallbackPrints.length} row(s), including ${stopped} stopped and ${failed} failed. ${withGrams} include material usage.`
+      });
+    }
     return NextResponse.json({ completedPrints: [], message: error instanceof Error ? error.message : "Could not read printer history." }, { status: 400 });
   }
 }
