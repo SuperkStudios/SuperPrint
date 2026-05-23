@@ -46,25 +46,26 @@ export async function POST() {
       await cachePrinterHistory(enrichedPrints);
     }
     const fallbackPrints = enrichedPrints.length ? enrichedPrints : await readCachedPrinterHistory();
-    const syncedManualEvents = await syncManualPrintEventsFromHistory(fallbackPrints);
-    const withGrams = fallbackPrints.filter((print) => typeof print.gramsUsed === "number" && print.gramsUsed > 0).length;
-    const stopped = fallbackPrints.filter((print) => print.status === "STOPPED").length;
-    const failed = fallbackPrints.filter((print) => print.status === "FAILED").length;
+    const actionablePrints = await filterActionablePrinterHistory(fallbackPrints);
+    const syncedManualEvents = await syncManualPrintEventsFromHistory(actionablePrints);
+    const withGrams = actionablePrints.filter((print) => typeof print.gramsUsed === "number" && print.gramsUsed > 0).length;
+    const stopped = actionablePrints.filter((print) => print.status === "STOPPED").length;
+    const failed = actionablePrints.filter((print) => print.status === "FAILED").length;
     return NextResponse.json({
-      completedPrints: fallbackPrints,
-      message: fallbackPrints.length
-        ? `${enrichedPrints.length ? "Found" : "Using last pulled"} ${fallbackPrints.length} printer-history row(s), including ${stopped} stopped and ${failed} failed. ${withGrams} include material usage. ${syncedManualEvents.updated} manual event(s) synced.`
+      completedPrints: actionablePrints,
+      message: actionablePrints.length
+        ? `${enrichedPrints.length ? "Found" : "Using last pulled"} ${actionablePrints.length} untracked printer-history row(s), including ${stopped} stopped and ${failed} failed. ${withGrams} include material usage. ${syncedManualEvents.updated} manual event(s) synced.`
         : "No printer-history entries were found."
     });
   } catch (error) {
-    const fallbackPrints = await readCachedPrinterHistory();
+    const fallbackPrints = await filterActionablePrinterHistory(await readCachedPrinterHistory());
     if (fallbackPrints.length) {
       const withGrams = fallbackPrints.filter((print) => typeof print.gramsUsed === "number" && print.gramsUsed > 0).length;
       const stopped = fallbackPrints.filter((print) => print.status === "STOPPED").length;
       const failed = fallbackPrints.filter((print) => print.status === "FAILED").length;
       return NextResponse.json({
         completedPrints: fallbackPrints,
-        message: `Using SuperNode-synced printer history because the VPS could not reach the printer directly. ${fallbackPrints.length} row(s), including ${stopped} stopped and ${failed} failed. ${withGrams} include material usage.`
+        message: `Using SuperNode-synced printer history because the VPS could not reach the printer directly. ${fallbackPrints.length} untracked row(s), including ${stopped} stopped and ${failed} failed. ${withGrams} include material usage.`
       });
     }
     return NextResponse.json({ completedPrints: [], message: error instanceof Error ? error.message : "Could not read printer history." }, { status: 400 });
@@ -238,6 +239,24 @@ async function appendIgnoredPrint(print: z.infer<typeof printSchema>) {
     update: { value: [...ignored, compactPrint(print)] },
     create: { key: "printerHistory.ignored", value: [compactPrint(print)] }
   });
+}
+
+async function filterActionablePrinterHistory(prints: CompletedPrinterHistoryItem[]) {
+  const hiddenIds = await readProcessedPrinterHistoryIds();
+  return prints.filter((print) => !hiddenIds.has(print.id));
+}
+
+async function readProcessedPrinterHistoryIds() {
+  const [ignoredSetting, spools] = await Promise.all([
+    prisma.systemSetting.findUnique({ where: { key: "printerHistory.ignored" } }),
+    prisma.filamentSpool.findMany({ select: { assignedPrinterHistory: true } })
+  ]);
+  const ids = new Set<string>();
+  for (const item of readHistory(ignoredSetting?.value)) ids.add(item.id);
+  for (const spool of spools) {
+    for (const item of readHistory(spool.assignedPrinterHistory)) ids.add(item.id);
+  }
+  return ids;
 }
 
 function compactPrint(print: z.infer<typeof printSchema>) {

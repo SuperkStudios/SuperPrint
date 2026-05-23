@@ -1253,6 +1253,11 @@ function FilamentScreen({ client }: { client: SuperPrintClient }) {
   const [history, setHistory] = useState<PrinterHistoryItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [selectedHistorySpoolId, setSelectedHistorySpoolId] = useState("");
+  const [historyPage, setHistoryPage] = useState(0);
+  const historyPageSize = 20;
+  const historyPageCount = Math.max(1, Math.ceil(history.length / historyPageSize));
+  const currentHistoryPage = Math.min(historyPage, historyPageCount - 1);
+  const visibleHistory = history.slice(currentHistoryPage * historyPageSize, currentHistoryPage * historyPageSize + historyPageSize);
 
   useEffect(() => {
     void load();
@@ -1328,6 +1333,7 @@ function FilamentScreen({ client }: { client: SuperPrintClient }) {
     try {
       const response = await client.post<{ completedPrints: PrinterHistoryItem[]; message: string }>("/api/admin/printer-history", {});
       setHistory(response.completedPrints);
+      setHistoryPage(0);
       setMessage(response.message);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not pull printer history.");
@@ -1465,7 +1471,21 @@ function FilamentScreen({ client }: { client: SuperPrintClient }) {
             </Pressable>
           ))}
         </ScrollView>
-        {history.length ? history.slice(0, 20).map((print) => (
+        {history.length > historyPageSize ? (
+          <View style={styles.inline}>
+            <Pressable disabled={currentHistoryPage === 0} onPress={() => setHistoryPage((page) => Math.max(0, page - 1))} style={[styles.secondaryButton, styles.grow, currentHistoryPage === 0 && styles.disabled]}>
+              <Text style={styles.secondaryButtonText}>Previous</Text>
+            </Pressable>
+            <View style={[styles.summaryBand, styles.grow]}>
+              <Text style={styles.summaryText}>Page {currentHistoryPage + 1} of {historyPageCount}</Text>
+              <Text style={styles.summaryText}>{currentHistoryPage * historyPageSize + 1}-{Math.min(history.length, (currentHistoryPage + 1) * historyPageSize)} of {history.length}</Text>
+            </View>
+            <Pressable disabled={currentHistoryPage >= historyPageCount - 1} onPress={() => setHistoryPage((page) => Math.min(historyPageCount - 1, page + 1))} style={[styles.secondaryButton, styles.grow, currentHistoryPage >= historyPageCount - 1 && styles.disabled]}>
+              <Text style={styles.secondaryButtonText}>Next</Text>
+            </Pressable>
+          </View>
+        ) : null}
+        {visibleHistory.length ? visibleHistory.map((print) => (
           <View key={print.id} style={styles.spoolRow}>
             <View style={styles.orderTop}>
               <View style={styles.grow}>

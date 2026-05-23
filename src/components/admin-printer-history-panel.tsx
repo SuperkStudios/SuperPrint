@@ -21,11 +21,17 @@ type Spool = {
   label: string;
 };
 
+const pageSize = 50;
+
 export function AdminPrinterHistoryPanel({ spools }: { spools: Spool[] }) {
   const [prints, setPrints] = useState<HistoryPrint[]>([]);
   const [assignments, setAssignments] = useState<Record<string, string>>({});
   const [message, setMessage] = useState("Pull printer history to review completed, stopped, and failed prints.");
   const [loading, setLoading] = useState(false);
+  const [page, setPage] = useState(0);
+  const totalPages = Math.max(1, Math.ceil(prints.length / pageSize));
+  const currentPage = Math.min(page, totalPages - 1);
+  const pagePrints = prints.slice(currentPage * pageSize, currentPage * pageSize + pageSize);
 
   async function pullHistory() {
     setLoading(true);
@@ -40,6 +46,7 @@ export function AdminPrinterHistoryPanel({ spools }: { spools: Spool[] }) {
         return;
       }
       setPrints(body.completedPrints ?? []);
+      setPage(0);
       setMessage(body.message ?? "History updated.");
     } catch (error) {
       setMessage(error instanceof DOMException && error.name === "AbortError" ? "Printer history pull timed out. Try again or check the printer connection." : "Could not pull printer history.");
@@ -80,6 +87,17 @@ export function AdminPrinterHistoryPanel({ spools }: { spools: Spool[] }) {
           {loading ? "Pulling..." : "Pull printer history"}
         </Button>
       </div>
+      {prints.length > pageSize ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded border bg-card px-3 py-2 text-sm">
+          <span className="text-muted-foreground">
+            Showing {currentPage * pageSize + 1}-{Math.min(prints.length, (currentPage + 1) * pageSize)} of {prints.length}
+          </span>
+          <div className="flex gap-2">
+            <Button type="button" size="sm" variant="outline" disabled={currentPage === 0} onClick={() => setPage((value) => Math.max(0, value - 1))}>Previous</Button>
+            <Button type="button" size="sm" variant="outline" disabled={currentPage >= totalPages - 1} onClick={() => setPage((value) => Math.min(totalPages - 1, value + 1))}>Next</Button>
+          </div>
+        </div>
+      ) : null}
       <div className="overflow-hidden rounded border">
         <div className="grid grid-cols-[1fr_110px_130px_180px_230px] bg-muted px-3 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
           <span>Print file</span>
@@ -88,7 +106,7 @@ export function AdminPrinterHistoryPanel({ spools }: { spools: Spool[] }) {
           <span>Filament roll</span>
           <span>Actions</span>
         </div>
-        {prints.length ? prints.map((print) => (
+        {pagePrints.length ? pagePrints.map((print) => (
           <div key={print.id} className="grid grid-cols-[minmax(0,1fr)_110px_130px_180px_230px] items-center gap-3 border-t px-3 py-3 text-sm">
             <div className="min-w-0">
               <p className="truncate font-medium">{print.name}</p>

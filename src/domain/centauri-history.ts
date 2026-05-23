@@ -84,7 +84,7 @@ export function extractCentauriTaskIds(messages: unknown[]) {
       }
     }
   }
-  return [...new Set(ids)].slice(0, 50);
+  return [...new Set(ids)];
 }
 
 export function extractCentauriTasks(messages: unknown[]) {
