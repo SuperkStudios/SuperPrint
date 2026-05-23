@@ -21,7 +21,7 @@ export async function GET() {
   if (response) return response;
 
   return NextResponse.json({
-    spools: await prisma.filamentSpool.findMany({ orderBy: { updatedAt: "desc" } })
+    spools: await prisma.filamentSpool.findMany({ where: { active: true }, orderBy: { updatedAt: "desc" } })
   });
 }
 
@@ -54,4 +54,52 @@ export async function POST(request: Request) {
   }
 
   return NextResponse.json({ spool });
+}
+
+export async function DELETE(request: Request) {
+  const { response } = await requireAdmin("filament");
+  if (response) return response;
+
+  const id = await readDeleteId(request);
+  if (!id) return NextResponse.json({ error: "Filament id is required" }, { status: 400 });
+
+  const [
+    printerCount,
+    printJobCount,
+    productCount,
+    cartItemCount,
+    orderCount,
+    orderItemCount,
+    pricingSnapshotCount,
+    plateJobCount
+  ] = await Promise.all([
+    prisma.printer.count({ where: { currentFilamentId: id } }),
+    prisma.printJob.count({ where: { filamentId: id } }),
+    prisma.product.count({ where: { defaultFilamentMaterialId: id } }),
+    prisma.cartItem.count({ where: { selectedFilamentMaterialId: id } }),
+    prisma.order.count({ where: { selectedFilamentMaterialId: id } }),
+    prisma.orderItem.count({ where: { selectedFilamentMaterialId: id } }),
+    prisma.orderPricingSnapshot.count({ where: { filamentMaterialId: id } }),
+    prisma.productionPlateJob.count({ where: { filamentId: id } })
+  ]);
+  const hasHistory = printerCount + printJobCount + productCount + cartItemCount + orderCount + orderItemCount + pricingSnapshotCount + plateJobCount > 0;
+
+  if (hasHistory) {
+    const spool = await prisma.filamentSpool.update({ where: { id }, data: { active: false } });
+    return NextResponse.json({ spool, message: "Filament is referenced by existing records, so it was deactivated instead of deleted." });
+  }
+
+  await prisma.filamentSpool.delete({ where: { id } });
+  return NextResponse.json({ message: "Filament deleted." });
+}
+
+async function readDeleteId(request: Request) {
+  const queryId = new URL(request.url).searchParams.get("id");
+  if (queryId) return queryId;
+  try {
+    const body = await request.json();
+    return typeof body?.id === "string" ? body.id : null;
+  } catch {
+    return null;
+  }
 }

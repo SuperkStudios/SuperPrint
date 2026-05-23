@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 
 export default async function AdminFilamentPage() {
   await requireAdminPage("filament");
-  const spools = await prisma.filamentSpool.findMany({ orderBy: { remainingGrams: "asc" } });
+  const spools = await prisma.filamentSpool.findMany({ where: { active: true }, orderBy: { remainingGrams: "asc" } });
 
   return (
     <div className="grid gap-6 lg:grid-cols-[0.85fr_1.15fr]">
