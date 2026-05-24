@@ -211,7 +211,20 @@ type FilamentSpool = {
   location: string;
   active: boolean;
   requiresAdminApproval?: boolean;
+  assignedPrinterHistory?: AssignedPrinterHistoryItem[];
   notes?: string | null;
+};
+
+type AssignedPrinterHistoryItem = {
+  id: string;
+  name: string;
+  gramsUsed?: number;
+  completedAt?: string;
+  status?: string;
+  gramsSource?: string;
+  printedLayers?: number;
+  totalLayers?: number;
+  material?: string;
 };
 
 type FilamentMaterial = "PLA" | "PLA_PLUS" | "PETG" | "ABS" | "TPU" | "NYLON" | "RESIN";
@@ -2114,6 +2127,7 @@ function FilamentScreen({ client }: { client: SuperPrintClient }) {
   const [history, setHistory] = useState<PrinterHistoryItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [selectedHistorySpoolId, setSelectedHistorySpoolId] = useState("");
+  const [moveTargets, setMoveTargets] = useState<Record<string, string>>({});
   const [historyPage, setHistoryPage] = useState(0);
   const historyPageSize = 20;
   const historyPageCount = Math.max(1, Math.ceil(history.length / historyPageSize));
@@ -2221,6 +2235,53 @@ function FilamentScreen({ client }: { client: SuperPrintClient }) {
       await load();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not update printer history.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function removeAssignedHistory(spool: FilamentSpool, item: AssignedPrinterHistoryItem) {
+    setSaving(true);
+    setMessage(`Removing ${item.name} from ${spool.color}...`);
+    try {
+      const response = await client.patch<{ message: string }>("/api/admin/filament", {
+        action: "removeHistory",
+        spoolId: spool.id,
+        historyId: item.id
+      });
+      setMessage(response.message);
+      await load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not remove assigned history.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function moveAssignedHistory(spool: FilamentSpool, item: AssignedPrinterHistoryItem) {
+    const targetSpoolId = moveTargets[item.id];
+    if (!targetSpoolId) {
+      setMessage("Choose the filament roll to move this history row to.");
+      return;
+    }
+    setSaving(true);
+    setMessage(`Moving ${item.name}...`);
+    try {
+      const response = await client.patch<{ message: string }>("/api/admin/filament", {
+        action: "moveHistory",
+        spoolId: spool.id,
+        targetSpoolId,
+        historyId: item.id
+      });
+      setMoveTargets((current) => {
+        const next = { ...current };
+        delete next[item.id];
+        return next;
+      });
+      setMessage(response.message);
+      await load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not move assigned history.");
     } finally {
       setSaving(false);
     }
@@ -2380,6 +2441,8 @@ function FilamentScreen({ client }: { client: SuperPrintClient }) {
         </View>
         {visibleSpools.length ? visibleSpools.map((spool) => {
           const percent = Math.min(100, Math.max(0, Math.round((spool.remainingGrams / Math.max(1, spool.startingGrams)) * 100)));
+          const assignedHistory = Array.isArray(spool.assignedPrinterHistory) ? spool.assignedPrinterHistory : [];
+          const assignedGrams = assignedHistory.reduce((total, item) => total + Math.max(0, Math.round(item.gramsUsed ?? 0)), 0);
           return (
             <View key={spool.id} style={styles.spoolRow}>
               <View style={styles.orderTop}>
@@ -2393,6 +2456,40 @@ function FilamentScreen({ client }: { client: SuperPrintClient }) {
                 <View style={[styles.progressFill, { width: `${Math.max(3, percent)}%` }]} />
               </View>
               <Text style={styles.cardCopy}>{spool.remainingGrams}g left of {spool.startingGrams}g · low at {spool.thresholdGrams}g</Text>
+              <View style={styles.summaryBand}>
+                <Text style={styles.summaryText}>Assigned history: {assignedHistory.length} print{assignedHistory.length === 1 ? "" : "s"}</Text>
+                <Text style={styles.summaryText}>Assigned grams: {assignedGrams}g</Text>
+              </View>
+              {assignedHistory.length ? assignedHistory.map((item) => (
+                <View key={item.id} style={styles.actionItem}>
+                  <View style={styles.orderTop}>
+                    <View style={styles.grow}>
+                      <Text style={styles.rowTitle}>{item.name}</Text>
+                      <Text style={styles.cardCopy}>{item.status ?? "history"} · {typeof item.gramsUsed === "number" ? `${Math.round(item.gramsUsed)}g` : "no grams"}{item.completedAt ? ` · ${new Date(item.completedAt).toLocaleDateString()}` : ""}</Text>
+                    </View>
+                    <Badge label={item.gramsSource ?? item.material ?? "assigned"} />
+                  </View>
+                  <Text style={styles.label}>Move to filament</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRail}>
+                    {spools.filter((target) => target.id !== spool.id && target.active).map((target) => {
+                      const active = moveTargets[item.id] === target.id;
+                      return (
+                        <Pressable key={target.id} onPress={() => setMoveTargets((current) => ({ ...current, [item.id]: target.id }))} style={[styles.choiceChip, active && styles.choiceChipActive]}>
+                          <Text style={[styles.choiceChipText, active && styles.choiceChipTextActive]}>{target.color} {target.material.replace("_PLUS", "+")}</Text>
+                        </Pressable>
+                      );
+                    })}
+                  </ScrollView>
+                  <View style={styles.inline}>
+                    <Pressable disabled={saving || !moveTargets[item.id]} onPress={() => moveAssignedHistory(spool, item)} style={[styles.secondaryButton, styles.grow, (!moveTargets[item.id] || saving) && styles.disabled]}>
+                      <Text style={styles.secondaryButtonText}>Move</Text>
+                    </Pressable>
+                    <Pressable disabled={saving} onPress={() => removeAssignedHistory(spool, item)} style={[styles.dangerButton, styles.grow, saving && styles.disabled]}>
+                      <Text style={styles.dangerButtonText}>Remove</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              )) : null}
               <View style={styles.inline}>
                 <Pressable disabled={saving} onPress={() => edit(spool)} style={[styles.secondaryButton, styles.grow]}>
                   <Text style={styles.secondaryButtonText}>Edit</Text>

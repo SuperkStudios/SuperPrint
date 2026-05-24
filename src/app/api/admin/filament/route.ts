@@ -19,6 +19,13 @@ const filamentSchema = z.object({
   notes: z.string().optional().nullable()
 });
 
+const historyActionSchema = z.object({
+  action: z.enum(["removeHistory", "moveHistory"]),
+  spoolId: z.string(),
+  historyId: z.string(),
+  targetSpoolId: z.string().optional()
+});
+
 export async function GET() {
   const { response } = await requireAdmin("filament");
   if (response) return response;
@@ -57,6 +64,61 @@ export async function POST(request: Request) {
   }
 
   return NextResponse.json({ spool });
+}
+
+export async function PATCH(request: Request) {
+  const { response } = await requireAdmin("filament");
+  if (response) return response;
+
+  const body = historyActionSchema.parse(await request.json());
+  if (body.action === "moveHistory" && !body.targetSpoolId) {
+    return NextResponse.json({ error: "targetSpoolId is required" }, { status: 400 });
+  }
+  if (body.targetSpoolId && body.targetSpoolId === body.spoolId) {
+    return NextResponse.json({ error: "Choose a different filament roll." }, { status: 400 });
+  }
+
+  const result = await prisma.$transaction(async (tx) => {
+    const source = await tx.filamentSpool.findUniqueOrThrow({ where: { id: body.spoolId } });
+    const sourceHistory = readHistory(source.assignedPrinterHistory);
+    const item = sourceHistory.find((history) => history.id === body.historyId);
+    if (!item) throw new Error("Assigned printer-history row was not found on this filament roll.");
+    const gramsUsed = Math.max(0, Math.round(item.gramsUsed || 0));
+    const nextSourceHistory = sourceHistory.filter((history) => history.id !== body.historyId);
+
+    const updatedSource = await tx.filamentSpool.update({
+      where: { id: body.spoolId },
+      data: {
+        remainingGrams: { increment: gramsUsed },
+        assignedPrinterHistory: nextSourceHistory
+      }
+    });
+
+    if (body.action === "removeHistory") {
+      return {
+        message: `Removed ${item.name} from ${source.color} ${source.material}.`,
+        source: updatedSource,
+        target: null
+      };
+    }
+
+    const target = await tx.filamentSpool.findUniqueOrThrow({ where: { id: body.targetSpoolId! } });
+    const targetHistory = readHistory(target.assignedPrinterHistory);
+    const updatedTarget = await tx.filamentSpool.update({
+      where: { id: target.id },
+      data: {
+        remainingGrams: targetHistory.some((history) => history.id === item.id) ? undefined : { decrement: gramsUsed },
+        assignedPrinterHistory: targetHistory.some((history) => history.id === item.id) ? targetHistory : [...targetHistory, item]
+      }
+    });
+    return {
+      message: `Moved ${item.name} to ${target.color} ${target.material}.`,
+      source: updatedSource,
+      target: updatedTarget
+    };
+  });
+
+  return NextResponse.json(result);
 }
 
 export async function DELETE(request: Request) {
@@ -99,6 +161,14 @@ export async function DELETE(request: Request) {
 
   await prisma.filamentSpool.delete({ where: { id } });
   return NextResponse.json({ removed: true, deactivated: false, message: "Filament deleted." });
+}
+
+function readHistory(value: unknown): Array<{ id: string; name: string; gramsUsed: number; completedAt?: string; status?: string; gramsSource?: string; printedLayers?: number; totalLayers?: number; material?: string }> {
+  return Array.isArray(value)
+    ? value.filter((item): item is { id: string; name: string; gramsUsed: number; completedAt?: string; status?: string; gramsSource?: string; printedLayers?: number; totalLayers?: number; material?: string } => {
+        return Boolean(item && typeof item === "object" && "id" in item && "name" in item);
+      })
+    : [];
 }
 
 async function readDeleteId(request: Request) {

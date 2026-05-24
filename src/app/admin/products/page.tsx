@@ -79,7 +79,7 @@ export default async function AdminProductsPage() {
               <p className="truncate font-medium">{product.name}</p>
               <p className="truncate text-sm text-muted-foreground">{product.slug}</p>
               <p className="mt-1 truncate text-sm text-muted-foreground">
-                {money(product.priceCents)} · {product.estimatedPrintMinutes} min · {product.estimatedGrams}g · {product.defaultMaterial}
+                {money(product.fixedPriceCents ?? product.priceCents)} · {product.estimatedPrintMinutes} min · {product.estimatedGrams}g · {product.defaultMaterial}
               </p>
             </div>
             <Badge className="w-fit">{product.status}</Badge>

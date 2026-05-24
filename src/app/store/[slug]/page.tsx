@@ -21,6 +21,7 @@ export default async function StoreProductPage({ params }: { params: Promise<{ s
   ]);
   if (!product) notFound();
   const savedUser = session?.user.id ? await prisma.user.findUnique({ where: { id: session.user.id } }) : null;
+  const fixedProductPriceCents = product.fixedPriceCents ?? product.priceCents;
 
   const quotes = await calculateProductPriceOptions(product.id);
   const quoteByFilament = new Map(quotes.map((quote) => [quote.filamentMaterialId, quote]));
@@ -34,7 +35,7 @@ export default async function StoreProductPage({ params }: { params: Promise<{ s
       remainingGrams: allowed.filamentMaterial.remainingGrams,
       requiresAdminApproval: allowed.filamentMaterial.requiresAdminApproval,
       estimatedPrintMinutes: quote?.estimatedPrintMinutes ?? product.estimatedPrintMinutes,
-      finalCustomerPriceCents: quote?.finalCustomerPriceCents ?? product.priceCents,
+      finalCustomerPriceCents: quote?.finalCustomerPriceCents ?? fixedProductPriceCents,
       unavailableReason: quote?.unavailableReason ?? null,
       marginWarning: quote?.marginWarning ?? null
     };
@@ -66,7 +67,7 @@ export default async function StoreProductPage({ params }: { params: Promise<{ s
             imageUrl: product.imageUrl,
             modelUrl: product.previewPlateStorageKey || (product.productFileStorageKey && /\.(stl|3mf)$/i.test(product.productFileStorageKey)) ? `/api/products/${product.id}/model` : null,
             modelFormat: product.previewPlateStorageKey && /\.3mf$/i.test(product.previewPlateStorageKey) ? "3mf" : product.productFileStorageKey && /\.3mf$/i.test(product.productFileStorageKey) ? "3mf" : "stl",
-            priceCents: product.priceCents,
+            priceCents: fixedProductPriceCents,
             estimatedPrintMinutes: product.estimatedPrintMinutes,
             estimatedGrams: product.estimatedGrams,
             defaultMaterial: product.defaultMaterial,
