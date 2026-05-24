@@ -3,7 +3,7 @@
     "name": "SuperPrint Admin",
     "slug": "superprint-admin",
     "scheme": "superprint-admin",
-    "version": "1.0.0",
+    "version": "0.0.1",
     "runtimeVersion": {
       "policy": "appVersion"
     },
@@ -17,7 +17,7 @@
     },
     "ios": {
       "supportsTablet": true,
-      "buildNumber": "3",
+      "buildNumber": "1",
       "bundleIdentifier": "studio.superk.superprint.admin",
       "associatedDomains": [
         "webcredentials:print.superk.studio",

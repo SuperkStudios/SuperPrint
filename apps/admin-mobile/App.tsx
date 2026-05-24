@@ -3001,17 +3001,22 @@ function FlowNav({
 function PickupTimeSelector({ value, onChange }: { value: Date | null; onChange: (value: Date | null) => void }) {
   const pickerValue = value ?? nextPickupDefault();
 
-  function handleChange(event: DateTimePickerEvent, selected?: Date) {
+  function handleDateChange(event: DateTimePickerEvent, selected?: Date) {
     if (event.type === "dismissed") return;
-    if (selected) onChange(copyTimeToToday(selected));
+    if (selected) onChange(copyDateToPickup(pickerValue, selected));
+  }
+
+  function handleTimeChange(event: DateTimePickerEvent, selected?: Date) {
+    if (event.type === "dismissed") return;
+    if (selected) onChange(copyTimeToPickup(pickerValue, selected));
   }
 
   return (
     <View style={styles.field}>
       <View style={styles.switchRow}>
         <View>
-          <Text style={styles.label}>Estimated pickup time</Text>
-          <Text style={styles.cardCopy}>{value ? formatPickupTime(value) : "No pickup time selected"}</Text>
+          <Text style={styles.label}>Estimated pickup</Text>
+          <Text style={styles.cardCopy}>{value ? formatPickupDateTime(value) : "No pickup date selected"}</Text>
         </View>
         {value ? (
           <Pressable onPress={() => onChange(null)} style={styles.smallButton}>
@@ -3019,14 +3024,26 @@ function PickupTimeSelector({ value, onChange }: { value: Date | null; onChange:
           </Pressable>
         ) : null}
       </View>
-      <View style={styles.timePickerShell}>
-        <DateTimePicker
-          value={pickerValue}
-          mode="time"
-          display={Platform.OS === "ios" ? "compact" : "default"}
-          minuteInterval={5}
-          onChange={handleChange}
-        />
+      <View style={styles.pickerRow}>
+        <View style={styles.datePickerShell}>
+          <Text style={styles.label}>Date</Text>
+          <DateTimePicker
+            value={pickerValue}
+            mode="date"
+            display={Platform.OS === "ios" ? "compact" : "default"}
+            onChange={handleDateChange}
+          />
+        </View>
+        <View style={styles.datePickerShell}>
+          <Text style={styles.label}>Time</Text>
+          <DateTimePicker
+            value={pickerValue}
+            mode="time"
+            display={Platform.OS === "ios" ? "compact" : "default"}
+            minuteInterval={5}
+            onChange={handleTimeChange}
+          />
+        </View>
       </View>
     </View>
   );
@@ -3353,14 +3370,20 @@ function nextPickupDefault() {
   return next;
 }
 
-function copyTimeToToday(value: Date) {
-  const next = new Date();
-  next.setHours(value.getHours(), value.getMinutes(), 0, 0);
+function copyDateToPickup(current: Date, selectedDate: Date) {
+  const next = new Date(current);
+  next.setFullYear(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate());
   return next;
 }
 
-function formatPickupTime(value: Date) {
-  return value.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+function copyTimeToPickup(current: Date, selectedTime: Date) {
+  const next = new Date(current);
+  next.setHours(selectedTime.getHours(), selectedTime.getMinutes(), 0, 0);
+  return next;
+}
+
+function formatPickupDateTime(value: Date) {
+  return value.toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
 function normalizeSetCookie(value: string) {
@@ -3445,7 +3468,8 @@ function createStyles(palette: ThemePalette) {
   label: { color: palette.ink, fontSize: 12, fontWeight: "800" },
   input: { minHeight: 44, borderWidth: 1, borderColor: palette.line, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, color: palette.ink, backgroundColor: palette.field },
   multilineInput: { minHeight: 90, textAlignVertical: "top" },
-  timePickerShell: { minHeight: 48, borderWidth: 1, borderColor: palette.line, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 6, alignItems: "flex-start", justifyContent: "center", backgroundColor: palette.field },
+  pickerRow: { flexDirection: "row", gap: 10 },
+  datePickerShell: { flex: 1, minHeight: 64, borderWidth: 1, borderColor: palette.line, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 6, alignItems: "flex-start", justifyContent: "center", backgroundColor: palette.field, gap: 4 },
   readOnlyPanel: { borderWidth: 1, borderColor: palette.line, borderRadius: 8, backgroundColor: palette.field, overflow: "hidden" },
   infoRow: { minHeight: 48, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: palette.line },
   infoLabel: { color: palette.muted, fontSize: 12, fontWeight: "800" },
