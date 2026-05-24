@@ -102,7 +102,7 @@ type ProductOption = {
   }>;
   status?: string;
   maxBatchQuantity?: number;
-  parts?: Array<{ id: string; name: string; colorSlotIndex: number; quantityPerUnit: number }>;
+  parts?: Array<{ id: string; name: string; colorSlotIndex: number; colorSlotPattern?: number[]; quantityPerUnit: number }>;
 };
 
 type LineDraft = {
@@ -2911,11 +2911,11 @@ function ProductionEstimatePanel({ line, product }: { line: LineDraft; product?:
   const estimate = estimateLineProduction(line, product);
   return (
     <View style={styles.summaryBand}>
-      <Text style={styles.summaryText}>Expected print time: {formatMinutes(estimate.totalMinutes)}</Text>
-      <Text style={styles.summaryText}>Build plates: {estimate.totalPlates} · {estimate.quantity} unit{estimate.quantity === 1 ? "" : "s"} · max {estimate.maxPerPlate}/plate</Text>
-      {estimate.colors.map((color) => (
-        <Text key={`${color.slot}-${color.name}`} style={styles.summaryText}>
-          {color.name}: {color.plates} plate{color.plates === 1 ? "" : "s"} · {formatMinutes(color.minutes)}
+      <Text style={styles.summaryText}>Catalog print time: {formatMinutes(estimate.totalMinutes)}</Text>
+      <Text style={styles.summaryText}>Platform plates: {estimate.totalPlates} · {estimate.quantity} unit{estimate.quantity === 1 ? "" : "s"}</Text>
+      {estimate.plates.map((plate) => (
+        <Text key={plate.key} style={styles.summaryText}>
+          {plate.label}: {plate.quantity} part{plate.quantity === 1 ? "" : "s"} · {plate.plates} plate{plate.plates === 1 ? "" : "s"} · max {plate.maxPerPlate}/plate
         </Text>
       ))}
     </View>
@@ -3238,28 +3238,42 @@ function newOrderLine(product: ProductOption, quantity = "1"): LineDraft {
 
 function estimateLineProduction(line: LineDraft, product: ProductOption) {
   const quantity = positiveInt(line.quantity, 1);
-  const slotCount = Math.max(1, product.colorSlotCount ?? 1);
-  const maxPerPlate = Math.max(1, product.maxBatchQuantity ?? 1);
-  const platesPerColor = Math.max(1, Math.ceil(quantity / maxPerPlate));
-  const colors = Array.from({ length: slotCount }, (_, index) => {
-    const selectedId = line.selectedFilamentMaterialIds[index] ?? line.selectedFilamentMaterialIds[0] ?? "";
-    const filament = product.allowedFilaments?.find((item) => item.filamentMaterialId === selectedId);
-    const minutesPerUnit = Math.max(1, Math.ceil((filament?.estimatedPrintMinutesOverride ?? product.estimatedPrintMinutes ?? 0) / slotCount));
-    const color = line.selectedColors[index]?.trim() || filament?.filamentMaterial.color || `Color ${index + 1}`;
-    return {
-      slot: index + 1,
-      name: slotCount === 1 ? color : `Color ${index + 1} ${color}`,
-      minutes: minutesPerUnit * quantity,
-      plates: platesPerColor
-    };
-  });
+  const selectedId = line.selectedFilamentMaterialIds[0] ?? "";
+  const filament = product.allowedFilaments?.find((item) => item.filamentMaterialId === selectedId);
+  const minutesPerUnit = Math.max(1, Math.ceil(filament?.estimatedPrintMinutesOverride ?? product.estimatedPrintMinutes ?? 0));
+  const plates = estimatePlatformPlates(line, product, quantity);
   return {
     quantity,
-    maxPerPlate,
-    colors,
-    totalMinutes: colors.reduce((total, color) => total + color.minutes, 0),
-    totalPlates: colors.reduce((total, color) => total + color.plates, 0)
+    plates,
+    totalMinutes: minutesPerUnit * quantity,
+    totalPlates: plates.reduce((total, plate) => total + plate.plates, 0)
   };
+}
+
+function estimatePlatformPlates(line: LineDraft, product: ProductOption, quantity: number) {
+  const parts = product.parts?.length
+    ? product.parts
+    : [{ id: product.id, name: product.name, colorSlotIndex: 0, colorSlotPattern: [], quantityPerUnit: 1 }];
+  const rows = new Map<string, { key: string; label: string; quantity: number; maxPerPlate: number; plates: number }>();
+  for (const part of parts) {
+    const pattern = part.colorSlotPattern?.length ? part.colorSlotPattern : Array.from({ length: Math.max(1, part.quantityPerUnit) }, () => part.colorSlotIndex);
+    for (const slotIndex of pattern) {
+      const color = line.selectedColors[slotIndex]?.trim() || line.selectedColors[0]?.trim() || `Color ${slotIndex + 1}`;
+      const key = `${part.id}:${color.toLowerCase()}`;
+      const maxPerPlate = Math.max(1, (product.maxBatchQuantity ?? 1) * Math.max(1, part.quantityPerUnit));
+      const existing = rows.get(key) ?? {
+        key,
+        label: `${part.name} ${color}`,
+        quantity: 0,
+        maxPerPlate,
+        plates: 0
+      };
+      existing.quantity += quantity;
+      existing.plates = Math.ceil(existing.quantity / existing.maxPerPlate);
+      rows.set(key, existing);
+    }
+  }
+  return [...rows.values()];
 }
 
 function formatMinutes(minutes: number) {

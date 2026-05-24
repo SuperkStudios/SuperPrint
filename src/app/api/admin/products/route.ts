@@ -62,7 +62,10 @@ export async function GET() {
   if (response) return response;
   const products = await prisma.product.findMany({
     where: { status: "ACTIVE" },
-    include: { allowedFilaments: { where: { enabled: true }, include: { filamentMaterial: true } } },
+    include: {
+      allowedFilaments: { where: { enabled: true }, include: { filamentMaterial: true } },
+      parts: { orderBy: { displayOrder: "asc" } }
+    },
     orderBy: { name: "asc" }
   });
   return NextResponse.json({
@@ -76,6 +79,13 @@ export async function GET() {
       defaultMaterial: product.defaultMaterial,
       status: product.status,
       maxBatchQuantity: product.maxBatchQuantity,
+      parts: product.parts.map((part) => ({
+        id: part.id,
+        name: part.name,
+        colorSlotIndex: part.colorSlotIndex,
+        colorSlotPattern: part.colorSlotPattern,
+        quantityPerUnit: part.quantityPerUnit
+      })),
       allowedFilaments: product.allowedFilaments.map((item) => ({
         filamentMaterialId: item.filamentMaterialId,
         estimatedGramsOverride: item.estimatedGramsOverride,
