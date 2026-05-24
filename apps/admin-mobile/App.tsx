@@ -90,9 +90,16 @@ type ProductOption = {
   id: string;
   name: string;
   priceCents: number;
+  estimatedPrintMinutes?: number;
+  estimatedGrams?: number;
   colorSlotCount?: number;
   defaultMaterial?: string;
-  allowedFilaments?: Array<{ filamentMaterialId: string; filamentMaterial: { color: string; material: string } }>;
+  allowedFilaments?: Array<{
+    filamentMaterialId: string;
+    estimatedGramsOverride?: number | null;
+    estimatedPrintMinutesOverride?: number | null;
+    filamentMaterial: { color: string; material: string };
+  }>;
   status?: string;
   maxBatchQuantity?: number;
   parts?: Array<{ id: string; name: string; colorSlotIndex: number; quantityPerUnit: number }>;
@@ -988,10 +995,7 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
   });
   const [products, setProducts] = useState<ProductOption[]>([]);
   const [customers, setCustomers] = useState<AdminCustomer[]>([]);
-  const [spools, setSpools] = useState<FilamentSpool[]>([]);
-  const [history, setHistory] = useState<PrinterHistoryItem[]>([]);
   const [productLoading, setProductLoading] = useState(false);
-  const [historyLoading, setHistoryLoading] = useState(false);
   const [stripePayments, setStripePayments] = useState<StripePaymentChoice[]>([]);
   const [stripePaymentLoading, setStripePaymentLoading] = useState(false);
   const [customerName, setCustomerName] = useState("");
@@ -1001,8 +1005,6 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
   const [flowStep, setFlowStep] = useState<PosFlowStep>("customer");
   const [fulfillmentMethod, setFulfillmentMethod] = useState<FulfillmentMethod>("PICKUP");
   const [estimatedPickupAt, setEstimatedPickupAt] = useState<Date | null>(null);
-  const [selectedHistoryId, setSelectedHistoryId] = useState("");
-  const [selectedHistorySpoolId, setSelectedHistorySpoolId] = useState("");
   const [address, setAddress] = useState({ street1: "", street2: "", city: "", state: "CO", zip: "", phone: "" });
   const [shippingQuote, setShippingQuote] = useState<ShippingQuote | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<PosPaymentMethod>("UNPAID");
@@ -1025,10 +1027,6 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
   const displayPaidCents = paymentMethod === "CASH" || recordsPastStripePayment ? totalCents : paidNowCents;
   const displayBalanceCents = Math.max(0, totalCents - displayPaidCents);
   const activeStepIndex = posFlowSteps.findIndex((step) => step.key === flowStep);
-  const selectedHistory = history.find((print) => print.id === selectedHistoryId) ?? null;
-  const suggestedHistorySpool = suggestHistorySpool(selectedHistory, spools, lines, products);
-  const activeHistorySpoolId = selectedHistorySpoolId || suggestedHistorySpool?.id || "";
-  const attachingPastHistory = source === "PAST_IMPORT" && Boolean(selectedHistory);
 
   useEffect(() => {
     initialize().catch(() => undefined);
@@ -1060,12 +1058,6 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
       })
       .catch((error) => setMessage(error instanceof Error ? error.message : "Could not load products."))
       .finally(() => setProductLoading(false));
-  }, [client]);
-
-  useEffect(() => {
-    client.get<{ spools: FilamentSpool[] }>("/api/admin/filament")
-      .then((response) => setSpools(response.spools.filter((spool) => spool.active)))
-      .catch(() => undefined);
   }, [client]);
 
   useEffect(() => {
@@ -1205,21 +1197,6 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
     setFlowStep(posFlowSteps[Math.max(0, activeStepIndex - 1)]?.key ?? "customer");
   }
 
-  async function pullHistory() {
-    setHistoryLoading(true);
-    setMessage("Pulling printer history...");
-    try {
-      const response = await client.post<{ completedPrints: PrinterHistoryItem[]; message: string }>("/api/admin/printer-history", {});
-      setHistory(response.completedPrints);
-      setSelectedHistoryId((current) => current || response.completedPrints[0]?.id || "");
-      setMessage(response.message);
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Could not pull printer history.");
-    } finally {
-      setHistoryLoading(false);
-    }
-  }
-
   async function quoteShipping() {
     const firstLine = lines[0];
     if (!firstLine) return;
@@ -1250,16 +1227,6 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
       setMessage("Customer, email, and product are required.");
       return;
     }
-    if (attachingPastHistory && !activeHistorySpoolId) {
-      setMessage("Choose a filament roll for the selected printer history, or skip history attachment.");
-      setFlowStep("items");
-      return;
-    }
-    if (attachingPastHistory && (typeof selectedHistory?.gramsUsed !== "number" || selectedHistory.gramsUsed <= 0)) {
-      setMessage("Selected printer history has no material usage. Choose another row, or skip history attachment.");
-      setFlowStep("items");
-      return;
-    }
     if (recordsPastStripePayment && !paymentReference.trim()) {
       setMessage("Select a Stripe payment or enter the payment intent reference.");
       setFlowStep("payment");
@@ -1279,10 +1246,6 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
         cardLast4: cardLast4.replace(/\D/g, "").slice(0, 4) || null
       });
       setMessage(`Saved ${response.order.orderNumber}`);
-      if (source === "PAST_IMPORT" && selectedHistory) {
-        setHistory((current) => current.filter((item) => item.id !== selectedHistory.id));
-        setSelectedHistoryId("");
-      }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Order save failed.");
     } finally {
@@ -1470,8 +1433,6 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
       shippingRateCents: shippingQuote?.shippingRateCents ?? 0,
       shippoRateId: shippingQuote?.rateId ?? null,
       shippoShipmentId: shippingQuote?.shippoShipmentId ?? null,
-      pastPrinterHistory: source === "PAST_IMPORT" && selectedHistory && activeHistorySpoolId ? selectedHistory : null,
-      pastHistorySpoolId: source === "PAST_IMPORT" && selectedHistory && activeHistorySpoolId ? activeHistorySpoolId : null,
       lines: lines.map((line) => {
         const product = productFor(line, products);
         const slotCount = Math.max(1, product?.colorSlotCount ?? 1);
@@ -1563,7 +1524,7 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
         <Card>
           <View style={styles.orderTop}>
             <View style={styles.grow}>
-              <Text style={styles.cardTitle}>{source === "PAST_IMPORT" ? "Order items + printer history" : "Items + colors"}</Text>
+              <Text style={styles.cardTitle}>Items + colors</Text>
             </View>
             <AppIconBadge Icon={Boxes} small />
           </View>
@@ -1588,6 +1549,7 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
                 <Field label="Qty" value={line.quantity} onChangeText={(quantity) => updateLine(index, { quantity })} keyboardType="number-pad" grow />
                 <Field label="Unit price" value={line.unitPrice} onChangeText={(unitPrice) => updateLine(index, { unitPrice })} keyboardType="decimal-pad" grow />
               </View>
+              <ProductionEstimatePanel line={line} product={product} />
               {Array.from({ length: slotCount }, (_, slotIndex) => {
                 const allowed = product?.allowedFilaments ?? [];
                 return (
@@ -1633,58 +1595,6 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
             <Text style={styles.secondaryButtonText}>Add Item</Text>
           </Pressable>
         ) : null}
-
-          {source === "PAST_IMPORT" ? (
-            <View style={styles.actionItem}>
-              <View style={styles.orderTop}>
-                <View style={styles.grow}>
-                  <Text style={styles.cardTitle}>Printer history match</Text>
-                </View>
-                <Badge label={`${history.length} rows`} />
-              </View>
-              <Pressable disabled={historyLoading || saving} onPress={pullHistory} style={styles.secondaryButton}>
-                {historyLoading ? <ActivityIndicator color={palette.cyanDark} /> : <Text style={styles.secondaryButtonText}>Pull Printer History</Text>}
-              </Pressable>
-              {selectedHistory ? (
-                <Pressable disabled={saving} onPress={() => { setSelectedHistoryId(""); setSelectedHistorySpoolId(""); }} style={styles.secondaryButton}>
-                  <Text style={styles.secondaryButtonText}>Skip History Attachment</Text>
-                </Pressable>
-              ) : null}
-              {history.length ? (
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.historyRail}>
-                  {history.slice(0, 30).map((print) => (
-                    <Pressable key={print.id} onPress={() => { setSelectedHistoryId(print.id); setSelectedHistorySpoolId(""); }} style={[styles.historyCard, selectedHistoryId === print.id && styles.historyCardActive]}>
-                      <Text style={[styles.historyTitle, selectedHistoryId === print.id && styles.historyTitleActive]} numberOfLines={2}>{print.name}</Text>
-                      <Text style={[styles.historyMeta, selectedHistoryId === print.id && styles.historyMetaActive]}>{print.status} · {typeof print.gramsUsed === "number" ? `${Math.round(print.gramsUsed)}g` : "no grams"}</Text>
-                      <Text style={[styles.historyMeta, selectedHistoryId === print.id && styles.historyMetaActive]}>{print.completedAt ? new Date(print.completedAt).toLocaleDateString() : "date unknown"}</Text>
-                    </Pressable>
-                  ))}
-                </ScrollView>
-              ) : null}
-              <Text style={styles.label}>Filament used by this history row</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRail}>
-                {spools.map((spool) => {
-                  const active = activeHistorySpoolId === spool.id;
-                  const suggested = suggestedHistorySpool?.id === spool.id && !selectedHistorySpoolId;
-                  return (
-                    <Pressable key={spool.id} onPress={() => setSelectedHistorySpoolId(spool.id)} style={[styles.choiceChip, active && styles.choiceChipActive]}>
-                      <Text style={[styles.choiceChipText, active && styles.choiceChipTextActive]}>{spool.color} {spool.material.replace("_PLUS", "+")}{suggested ? " · auto" : ""}</Text>
-                    </Pressable>
-                  );
-                })}
-              </ScrollView>
-              {selectedHistory && activeHistorySpoolId ? (
-                <View style={styles.summaryBand}>
-                  <Text style={styles.summaryText}>Ready to attach: {selectedHistory.name}</Text>
-                  <Text style={styles.summaryText}>Filament roll: {spools.find((spool) => spool.id === activeHistorySpoolId)?.color ?? "selected"}</Text>
-                </View>
-              ) : (
-                <View style={styles.summaryBand}>
-                  <Text style={styles.summaryText}>Past order will save without printer-history attachment.</Text>
-                </View>
-              )}
-            </View>
-          ) : null}
           <FlowNav onBack={goBack} onNext={goNext} backDisabled={false} nextLabel="Fulfillment" />
         </Card>
       ) : null}
@@ -1888,8 +1798,6 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
           <InfoRow label="Total" value={money(totalCents)} />
           <InfoRow label="Paid" value={money(displayPaidCents)} />
           <InfoRow label="Balance" value={money(displayBalanceCents)} />
-          {source === "PAST_IMPORT" ? <InfoRow label="History" value={selectedHistory?.name ?? "Not attached"} /> : null}
-          {source === "PAST_IMPORT" ? <InfoRow label="Filament" value={selectedHistory ? spools.find((spool) => spool.id === activeHistorySpoolId)?.color ?? "Not selected" : "Not attached"} /> : null}
         </View>
         <Field label="Notes" value={internalNotes} onChangeText={setInternalNotes} multiline />
         <Pressable onPress={saveOrder} disabled={saving} style={[styles.primaryButton, saving && styles.disabled]}>
@@ -2998,6 +2906,22 @@ function FlowNav({
   );
 }
 
+function ProductionEstimatePanel({ line, product }: { line: LineDraft; product?: ProductOption }) {
+  if (!product) return null;
+  const estimate = estimateLineProduction(line, product);
+  return (
+    <View style={styles.summaryBand}>
+      <Text style={styles.summaryText}>Expected print time: {formatMinutes(estimate.totalMinutes)}</Text>
+      <Text style={styles.summaryText}>Build plates: {estimate.totalPlates} · {estimate.quantity} unit{estimate.quantity === 1 ? "" : "s"} · max {estimate.maxPerPlate}/plate</Text>
+      {estimate.colors.map((color) => (
+        <Text key={`${color.slot}-${color.name}`} style={styles.summaryText}>
+          {color.name}: {color.plates} plate{color.plates === 1 ? "" : "s"} · {formatMinutes(color.minutes)}
+        </Text>
+      ))}
+    </View>
+  );
+}
+
 function PickupTimeSelector({ value, onChange }: { value: Date | null; onChange: (value: Date | null) => void }) {
   const pickerValue = value ?? nextPickupDefault();
 
@@ -3312,31 +3236,38 @@ function newOrderLine(product: ProductOption, quantity = "1"): LineDraft {
   };
 }
 
-function suggestHistorySpool(print: PrinterHistoryItem | null, spools: FilamentSpool[], lines: LineDraft[], products: ProductOption[]) {
-  const active = spools.filter((spool) => spool.active);
-  if (!active.length) return null;
-  const selectedColors = new Set(lines.flatMap((line) => line.selectedColors).map(normalizeMatchToken).filter(Boolean));
-  const selectedMaterials = new Set(lines.flatMap((line) => {
-    const product = productFor(line, products);
-    return line.selectedFilamentMaterialIds.map((id) => product?.allowedFilaments?.find((item) => item.filamentMaterialId === id)?.filamentMaterial.material ?? "");
-  }).map(normalizeMatchToken).filter(Boolean));
-  const historyText = normalizeMatchToken([print?.name, print?.material, print?.gramsSource].filter(Boolean).join(" "));
-  const scored = active.map((spool) => {
-    const color = normalizeMatchToken(spool.color);
-    const material = normalizeMatchToken(spool.material);
-    let score = 0;
-    if (selectedColors.has(color)) score += 8;
-    if (selectedMaterials.has(material)) score += 5;
-    if (historyText.includes(color)) score += 4;
-    if (historyText.includes(material)) score += 2;
-    score += Math.min(2, spool.remainingGrams / 1000);
-    return { spool, score };
-  }).sort((left, right) => right.score - left.score || left.spool.color.localeCompare(right.spool.color));
-  return scored[0]?.score > 0 ? scored[0].spool : active[0];
+function estimateLineProduction(line: LineDraft, product: ProductOption) {
+  const quantity = positiveInt(line.quantity, 1);
+  const slotCount = Math.max(1, product.colorSlotCount ?? 1);
+  const maxPerPlate = Math.max(1, product.maxBatchQuantity ?? 1);
+  const platesPerColor = Math.max(1, Math.ceil(quantity / maxPerPlate));
+  const colors = Array.from({ length: slotCount }, (_, index) => {
+    const selectedId = line.selectedFilamentMaterialIds[index] ?? line.selectedFilamentMaterialIds[0] ?? "";
+    const filament = product.allowedFilaments?.find((item) => item.filamentMaterialId === selectedId);
+    const minutesPerUnit = Math.max(1, Math.ceil((filament?.estimatedPrintMinutesOverride ?? product.estimatedPrintMinutes ?? 0) / slotCount));
+    const color = line.selectedColors[index]?.trim() || filament?.filamentMaterial.color || `Color ${index + 1}`;
+    return {
+      slot: index + 1,
+      name: slotCount === 1 ? color : `Color ${index + 1} ${color}`,
+      minutes: minutesPerUnit * quantity,
+      plates: platesPerColor
+    };
+  });
+  return {
+    quantity,
+    maxPerPlate,
+    colors,
+    totalMinutes: colors.reduce((total, color) => total + color.minutes, 0),
+    totalPlates: colors.reduce((total, color) => total + color.plates, 0)
+  };
 }
 
-function normalizeMatchToken(value: string) {
-  return value.toLowerCase().replace(/[_+-]+/g, " ").replace(/\s+/g, " ").trim();
+function formatMinutes(minutes: number) {
+  const rounded = Math.max(0, Math.round(minutes));
+  if (rounded < 60) return `${rounded}m`;
+  const hours = Math.floor(rounded / 60);
+  const mins = rounded % 60;
+  return mins ? `${hours}h ${mins}m` : `${hours}h`;
 }
 
 function merchantAddress(application: MerchantApplication) {

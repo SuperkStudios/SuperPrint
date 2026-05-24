@@ -70,12 +70,16 @@ export async function GET() {
       id: product.id,
       name: product.name,
       priceCents: product.priceCents,
+      estimatedPrintMinutes: product.estimatedPrintMinutes,
+      estimatedGrams: product.estimatedGrams,
       colorSlotCount: product.colorSlotCount,
       defaultMaterial: product.defaultMaterial,
       status: product.status,
       maxBatchQuantity: product.maxBatchQuantity,
       allowedFilaments: product.allowedFilaments.map((item) => ({
         filamentMaterialId: item.filamentMaterialId,
+        estimatedGramsOverride: item.estimatedGramsOverride,
+        estimatedPrintMinutesOverride: item.estimatedPrintMinutesOverride,
         filamentMaterial: {
           color: item.filamentMaterial.color,
           material: item.filamentMaterial.material
