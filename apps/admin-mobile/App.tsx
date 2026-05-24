@@ -437,12 +437,12 @@ const posFlowSteps: Array<{ key: PosFlowStep; label: string; icon: LucideIcon }>
   { key: "customer", label: "Customer", icon: IdCard },
   { key: "items", label: "Items", icon: Boxes },
   { key: "fulfillment", label: "Fulfill", icon: PackageCheck },
-  { key: "payment", label: "Pay", icon: CircleDollarSign },
+  { key: "payment", label: "Payment", icon: CircleDollarSign },
   { key: "review", label: "Review", icon: ClipboardCheck }
 ];
 
 const paymentOptions: Array<{ key: PosPaymentMethod; label: string; icon: LucideIcon }> = [
-  { key: "UNPAID", label: "Expected", icon: ReceiptText },
+  { key: "UNPAID", label: "On Delivery", icon: ReceiptText },
   { key: "CASH", label: "Cash", icon: Banknote },
   { key: "STRIPE_TERMINAL", label: "Tap", icon: SmartphoneNfc },
   { key: "STRIPE_MANUAL", label: "Manual", icon: CreditCard }
@@ -1634,7 +1634,7 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
           <Text style={styles.secondaryButtonText}>Estimate {fulfillmentMethod === "SHIP" ? "Shipping" : "Pickup"}</Text>
         </Pressable>
         <Text style={styles.cardCopy}>Total {money(totalCents)}{shippingQuote ? ` · fulfillment ${money(shippingQuote.shippingAmountCents)}` : ""}</Text>
-          <FlowNav onBack={goBack} onNext={goNext} backDisabled={false} nextLabel="Payment" />
+          <FlowNav onBack={goBack} onNext={goNext} backDisabled={false} nextLabel="Payment Plan" />
         </Card>
       ) : null}
 
@@ -1665,7 +1665,7 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
               <>
                 <View style={styles.orderTop}>
                   <View style={styles.grow}>
-                    <Text style={styles.cardTitle}>Expected payment</Text>
+                    <Text style={styles.cardTitle}>Pay on delivery</Text>
                   </View>
                   <Text style={styles.money}>{money(totalCents)}</Text>
                 </View>
@@ -1682,7 +1682,7 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
                   ))}
                 </View>
                 <Pressable onPress={markExpectedPayment} style={[styles.secondaryButton, expectedPaymentSelected && styles.primaryButton]}>
-                  <Text style={expectedPaymentSelected ? styles.primaryButtonText : styles.secondaryButtonText}>{expectedPaymentSelected ? `Expected ${formatExpectedPaymentType(expectedPaymentType)} Selected` : `Select Expected ${formatExpectedPaymentType(expectedPaymentType)}`}</Text>
+                  <Text style={expectedPaymentSelected ? styles.primaryButtonText : styles.secondaryButtonText}>{expectedPaymentSelected ? `${formatExpectedPaymentType(expectedPaymentType)} On Delivery` : `Set ${formatExpectedPaymentType(expectedPaymentType)} On Delivery`}</Text>
                 </Pressable>
               </>
             ) : null}
@@ -1801,7 +1801,7 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
         </View>
         <Field label="Notes" value={internalNotes} onChangeText={setInternalNotes} multiline />
         <Pressable onPress={saveOrder} disabled={saving} style={[styles.primaryButton, saving && styles.disabled]}>
-          {saving ? <ActivityIndicator color={palette.actionText} /> : <Text style={styles.primaryButtonText}>{paymentMethod === "UNPAID" ? "Confirm Expected Payment" : "Confirm Order"}</Text>}
+          {saving ? <ActivityIndicator color={palette.actionText} /> : <Text style={styles.primaryButtonText}>{paymentMethod === "UNPAID" ? "Create Pay-on-Delivery Order" : "Confirm Order"}</Text>}
         </Pressable>
         {message ? <Text style={styles.message}>{message}</Text> : null}
           <FlowNav onBack={goBack} onNext={goNext} backDisabled={false} nextDisabled nextLabel="Done" />
@@ -1907,6 +1907,7 @@ function PartsScreen({ client }: { client: SuperPrintClient }) {
   const [mode, setMode] = useState<"print" | "build" | "deliver">("print");
   const [loading, setLoading] = useState(false);
   const [savingKey, setSavingKey] = useState("");
+  const [deliveryPaymentRefs, setDeliveryPaymentRefs] = useState<Record<string, string>>({});
   const [message, setMessage] = useState("Sign in in Settings, then refresh action items.");
 
   async function load() {
@@ -1948,11 +1949,15 @@ function PartsScreen({ client }: { client: SuperPrintClient }) {
     }
   }
 
-  async function updateOrder(order: AdminOrder, action: "markPacking" | "markShipped" | "markDelivered") {
+  async function updateOrder(
+    order: AdminOrder,
+    action: "markPacking" | "markShipped" | "markDelivered" | "markPaidCashDelivered" | "markPaidReferenceDelivered",
+    paymentReference?: string
+  ) {
     setSavingKey(`${order.id}:${action}`);
     setMessage(`Updating ${order.orderNumber}...`);
     try {
-      await client.post("/api/admin/orders", { orderId: order.id, action });
+      await client.post("/api/admin/orders", { orderId: order.id, action, paymentReference });
       setMessage(`${order.orderNumber} updated.`);
       await load();
     } catch (error) {
@@ -1966,7 +1971,7 @@ function PartsScreen({ client }: { client: SuperPrintClient }) {
   const colorGroups = groupPlannerByColor(printRows);
   const readyOrderNumbers = new Set(planner.filter((row) => row.quantityToPrint === 0).flatMap((row) => row.orders.map((order) => order.orderNumber)));
   const readyToBuild = orders.filter((order) => readyOrderNumbers.has(order.orderNumber) || order.status === "COMPLETED").filter((order) => !["PACKING", "SHIPPED", "DELIVERED"].includes(order.shippingStatus ?? ""));
-  const deliveryOrders = orders.filter((order) => ["PACKING", "LABEL_READY", "LABEL_PRINTED", "SHIPPED", "PICKUP"].includes(order.shippingStatus ?? "") && order.shippingStatus !== "DELIVERED");
+  const deliveryOrders = orders.filter((order) => ["PACKING", "LABEL_READY", "LABEL_PRINTED", "SHIPPED"].includes(order.shippingStatus ?? "") && order.shippingStatus !== "DELIVERED");
   const toPrint = printRows.reduce((total, row) => total + row.quantityToPrint, 0);
   const plates = printRows.reduce((total, row) => total + row.suggestedPlateCount, 0);
 
@@ -2046,27 +2051,63 @@ function PartsScreen({ client }: { client: SuperPrintClient }) {
       ) : null}
 
       {mode === "deliver" ? (
-        deliveryOrders.length ? deliveryOrders.map((order) => (
-          <Card key={order.id}>
-            <View style={styles.orderTop}>
-              <View style={styles.grow}>
-                <Text style={styles.cardTitle}>{order.orderNumber}</Text>
-                <Text style={styles.cardCopy}>{order.customer?.email ?? "No customer email"} · {order.shippingStatus ?? "Ready"}</Text>
+        deliveryOrders.length ? deliveryOrders.map((order) => {
+          const balanceDue = order.balanceDueCents ?? Math.max(0, order.totalCents - (order.amountPaidCents ?? 0));
+          const needsPayment = order.paymentStatus !== "PAID" || balanceDue > 0;
+          const paymentRef = deliveryPaymentRefs[order.id] ?? "";
+          return (
+            <Card key={order.id}>
+              <View style={styles.orderTop}>
+                <View style={styles.grow}>
+                  <Text style={styles.cardTitle}>{order.orderNumber}</Text>
+                  <Text style={styles.cardCopy}>{order.customer?.email ?? "No customer email"} · {order.shippingStatus ?? "Ready"}</Text>
+                </View>
+                <Badge label={order.fulfillmentMethod ?? "FULFILL"} />
               </View>
-              <Badge label={order.fulfillmentMethod ?? "FULFILL"} />
-            </View>
-            <View style={styles.inline}>
-              {order.fulfillmentMethod === "SHIP" && order.shippingStatus !== "SHIPPED" ? (
-                <Pressable disabled={Boolean(savingKey)} onPress={() => updateOrder(order, "markShipped")} style={[styles.secondaryButton, styles.grow]}>
-                  <Text style={styles.secondaryButtonText}>Shipped</Text>
-                </Pressable>
-              ) : null}
-              <Pressable disabled={Boolean(savingKey)} onPress={() => updateOrder(order, "markDelivered")} style={[styles.primaryButton, styles.grow]}>
-                <Text style={styles.primaryButtonText}>Delivered</Text>
-              </Pressable>
-            </View>
-          </Card>
-        )) : <Card><Text style={styles.cardCopy}>{message || "No deliveries are waiting."}</Text></Card>
+              <View style={styles.badgeRow}>
+                <Badge label={order.paymentStatus} />
+                <Badge label={needsPayment ? `Due ${money(balanceDue || order.totalCents)}` : "Paid"} />
+              </View>
+              {needsPayment ? (
+                <>
+                  <Field
+                    label="Stripe / card reference"
+                    value={paymentRef}
+                    onChangeText={(value) => setDeliveryPaymentRefs((current) => ({ ...current, [order.id]: value }))}
+                    autoCapitalize="none"
+                  />
+                  <View style={styles.inline}>
+                    <Pressable
+                      disabled={Boolean(savingKey)}
+                      onPress={() => updateOrder(order, "markPaidCashDelivered", "Cash on delivery")}
+                      style={[styles.secondaryButton, styles.grow]}
+                    >
+                      <Text style={styles.secondaryButtonText}>Cash + Delivered</Text>
+                    </Pressable>
+                    <Pressable
+                      disabled={Boolean(savingKey) || !paymentRef.trim()}
+                      onPress={() => updateOrder(order, "markPaidReferenceDelivered", paymentRef.trim())}
+                      style={[styles.primaryButton, styles.grow, !paymentRef.trim() && styles.disabled]}
+                    >
+                      <Text style={styles.primaryButtonText}>Ref + Delivered</Text>
+                    </Pressable>
+                  </View>
+                </>
+              ) : (
+                <View style={styles.inline}>
+                  {order.fulfillmentMethod === "SHIP" && order.shippingStatus !== "SHIPPED" ? (
+                    <Pressable disabled={Boolean(savingKey)} onPress={() => updateOrder(order, "markShipped")} style={[styles.secondaryButton, styles.grow]}>
+                      <Text style={styles.secondaryButtonText}>Shipped</Text>
+                    </Pressable>
+                  ) : null}
+                  <Pressable disabled={Boolean(savingKey)} onPress={() => updateOrder(order, "markDelivered")} style={[styles.primaryButton, styles.grow]}>
+                    <Text style={styles.primaryButtonText}>Delivered</Text>
+                  </Pressable>
+                </View>
+              )}
+            </Card>
+          );
+        }) : <Card><Text style={styles.cardCopy}>{message || "No deliveries are waiting."}</Text></Card>
       ) : null}
 
       {mode === "print" && parts.length ? parts.slice(0, 6).map((part) => (
