@@ -19,9 +19,10 @@ export async function getPartProductionPlanner(): Promise<PlannerRow[]> {
     prisma.order.findMany({
       where: {
         status: { in: ["CHECKOUT_READY", "PAID", "QUEUED", "PRINTING"] },
+        orderSource: { not: "PAST_IMPORT" },
         OR: [
           { paymentStatus: { in: ["PAID", "PARTIAL"] } },
-          { orderSource: { in: ["IN_PERSON", "PAST_IMPORT"] } }
+          { orderSource: "IN_PERSON" }
         ]
       },
       include: {

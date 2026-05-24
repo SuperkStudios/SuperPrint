@@ -82,6 +82,7 @@ type AdminOrder = {
   amountPaidCents?: number | null;
   balanceDueCents?: number | null;
   paymentMethod?: string | null;
+  orderSource?: "IN_PERSON" | "PAST_IMPORT" | string | null;
   customer?: { name?: string | null; email: string } | null;
   product?: { name: string } | null;
 };
@@ -1970,8 +1971,9 @@ function PartsScreen({ client }: { client: SuperPrintClient }) {
   const printRows = planner.filter((row) => row.quantityToPrint > 0).sort(sortPlannerRows);
   const colorGroups = groupPlannerByColor(printRows);
   const readyOrderNumbers = new Set(planner.filter((row) => row.quantityToPrint === 0).flatMap((row) => row.orders.map((order) => order.orderNumber)));
-  const readyToBuild = orders.filter((order) => readyOrderNumbers.has(order.orderNumber) || order.status === "COMPLETED").filter((order) => !["PACKING", "SHIPPED", "DELIVERED"].includes(order.shippingStatus ?? ""));
-  const deliveryOrders = orders.filter((order) => ["PACKING", "LABEL_READY", "LABEL_PRINTED", "SHIPPED"].includes(order.shippingStatus ?? "") && order.shippingStatus !== "DELIVERED");
+  const activeOrders = orders.filter((order) => order.orderSource !== "PAST_IMPORT");
+  const readyToBuild = activeOrders.filter((order) => readyOrderNumbers.has(order.orderNumber)).filter((order) => !["PACKING", "SHIPPED", "DELIVERED"].includes(order.shippingStatus ?? ""));
+  const deliveryOrders = activeOrders.filter((order) => ["PACKING", "LABEL_READY", "LABEL_PRINTED", "SHIPPED"].includes(order.shippingStatus ?? "") && order.shippingStatus !== "DELIVERED");
   const toPrint = printRows.reduce((total, row) => total + row.quantityToPrint, 0);
   const plates = printRows.reduce((total, row) => total + row.suggestedPlateCount, 0);
 
