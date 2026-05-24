@@ -24,5 +24,17 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       rejectedAt: body.action === "reject" ? now : null
     }
   });
-  return NextResponse.json({ application });
+  return NextResponse.json({
+    application: {
+      ...application,
+      stripeRequirementsDue: Array.isArray(application.stripeRequirementsDue)
+        ? application.stripeRequirementsDue.filter((item): item is string => typeof item === "string")
+        : [],
+      submittedAt: application.submittedAt?.toISOString() ?? null,
+      approvedAt: application.approvedAt?.toISOString() ?? null,
+      rejectedAt: application.rejectedAt?.toISOString() ?? null,
+      createdAt: application.createdAt.toISOString(),
+      updatedAt: application.updatedAt.toISOString()
+    }
+  });
 }

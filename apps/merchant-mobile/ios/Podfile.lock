@@ -1,7 +1,7 @@
 PODS:
-  - EXConstants (56.0.14):
+  - EXConstants (56.0.15):
     - ExpoModulesCore
-  - Expo (56.0.3):
+  - Expo (56.0.4):
     - ExpoModulesCore
     - ExpoModulesJSI
     - hermes-engine
@@ -27,9 +27,7 @@ PODS:
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
     - Yoga
-  - ExpoAsset (56.0.13):
-    - ExpoModulesCore
-  - ExpoDocumentPicker (56.0.4):
+  - ExpoAsset (56.0.14):
     - ExpoModulesCore
   - ExpoDomWebView (56.0.5):
     - ExpoModulesCore
@@ -1891,7 +1889,6 @@ DEPENDENCIES:
   - EXConstants (from `../node_modules/expo/node_modules/expo-constants/ios`)
   - Expo (from `../node_modules/expo`)
   - ExpoAsset (from `../node_modules/expo/node_modules/expo-asset/ios`)
-  - ExpoDocumentPicker (from `../node_modules/expo-document-picker/ios`)
   - "ExpoDomWebView (from `../node_modules/expo/node_modules/@expo/dom-webview/ios`)"
   - ExpoFileSystem (from `../node_modules/expo/node_modules/expo-file-system/ios/ExpoFileSystem.podspec`)
   - ExpoFont (from `../node_modules/expo/node_modules/expo-font/ios/ExpoFont.podspec`)
@@ -1989,8 +1986,6 @@ EXTERNAL SOURCES:
     :path: "../node_modules/expo"
   ExpoAsset:
     :path: "../node_modules/expo/node_modules/expo-asset/ios"
-  ExpoDocumentPicker:
-    :path: "../node_modules/expo-document-picker/ios"
   ExpoDomWebView:
     :path: "../node_modules/expo/node_modules/@expo/dom-webview/ios"
   ExpoFileSystem:
@@ -2162,10 +2157,9 @@ EXTERNAL SOURCES:
     :path: "../node_modules/react-native/ReactCommon/yoga"
 
 SPEC CHECKSUMS:
-  EXConstants: 798681483da4a577de0151dbbb94ce39a824b26e
-  Expo: 657e9438b56d04cc89ba2c882703817acd6d4e6e
-  ExpoAsset: 873ff4f99d9855e222b832c8acedb6b16e83cb2c
-  ExpoDocumentPicker: caa9c7c1071dc31262d86a8fe48f51929d291a43
+  EXConstants: 7ad8cebfd251d7275fa2e3878ad0ad64552937e1
+  Expo: c705adbda900eb7e5d2b4d378ae82b254d9e1e05
+  ExpoAsset: 98f83c25d558707659dd6b117adcc03104dd287b
   ExpoDomWebView: 27205be8754f9992913b8a9a08e65019f2207075
   ExpoFileSystem: d730a1cb33f2c91dec01561f0d710054fda32ae9
   ExpoFont: 6fe496f2be617ed4367f159f215dcc4ba27d37d6

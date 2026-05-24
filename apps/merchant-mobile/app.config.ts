@@ -34,8 +34,7 @@ const config: ExpoConfig = {
         "locationWhenInUsePermission": "Location access is required to accept in-person payments with Tap to Pay on iPhone."
       }
     ],
-    "expo-secure-store",
-    "expo-document-picker"
+    "expo-secure-store"
   ]
 };
 

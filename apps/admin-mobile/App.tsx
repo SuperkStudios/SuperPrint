@@ -24,10 +24,11 @@ import {
 const brandLockupLight = require("./assets/superprint-compact-lockup-light.png");
 const brandLockupDark = require("./assets/superprint-compact-lockup-dark.png");
 const brandMark = require("./assets/superprint-mark.png");
+const defaultApiBaseUrl = process.env.EXPO_PUBLIC_SUPERPRINT_URL ?? "https://print.superk.studio";
 const secureSessionKey = "superprint.admin.sessionCookie";
 const secureEmailKey = "superprint.admin.email";
 
-type ScreenKey = "dashboard" | "pos" | "orders" | "queue" | "parts" | "filament" | "products" | "customers" | "reports" | "settings";
+type ScreenKey = "dashboard" | "pos" | "orders" | "queue" | "parts" | "filament" | "merchants" | "products" | "customers" | "reports" | "settings";
 
 type AdminSettings = {
   apiBaseUrl: string;
@@ -171,6 +172,39 @@ type FilamentSpool = {
 
 type FilamentMaterial = "PLA" | "PLA_PLUS" | "PETG" | "ABS" | "TPU" | "NYLON" | "RESIN";
 
+type MerchantApplication = {
+  id: string;
+  user: { email: string; name: string | null };
+  status: string;
+  businessName: string;
+  legalBusinessName: string | null;
+  businessType: string;
+  siteUrl: string;
+  ownerName: string;
+  ownerEmail: string;
+  phone: string;
+  street1: string;
+  street2: string | null;
+  city: string;
+  state: string;
+  zip: string;
+  country: string;
+  taxIdType: string;
+  taxIdLast4: string;
+  stripeConnectStatus: string;
+  stripeAccountId: string | null;
+  stripeTerminalLocationId: string | null;
+  stripeChargesEnabled: boolean;
+  stripePayoutsEnabled: boolean;
+  stripeDetailsSubmitted: boolean;
+  stripeRequirementsDue: string[];
+  reviewNotes: string | null;
+  submittedAt: string | null;
+  approvedAt: string | null;
+  rejectedAt: string | null;
+  updatedAt: string;
+};
+
 const filamentMaterials: FilamentMaterial[] = ["PLA", "PLA_PLUS", "PETG", "ABS", "TPU", "NYLON", "RESIN"];
 const defaultPrimaryColor = "#00e5ff";
 
@@ -302,6 +336,7 @@ const navItems: Array<{ key: ScreenKey; title: string; detail: string }> = [
   { key: "queue", title: "Queue", detail: "Build plate work" },
   { key: "parts", title: "Action Items", detail: "Print, build, deliver" },
   { key: "filament", title: "Filament", detail: "Add rolls and stock" },
+  { key: "merchants", title: "Merchants", detail: "Review and approve" },
   { key: "products", title: "Products", detail: "Catalog and slots" },
   { key: "customers", title: "Customers", detail: "Names, email, Stripe" },
   { key: "reports", title: "Reports", detail: "Cash and deposits" },
@@ -315,7 +350,7 @@ export default function App() {
   const [authMessage, setAuthMessage] = useState("");
   const [sessionInfo, setSessionInfo] = useState<MobileSessionInfo | null>(null);
   const [settings, setSettings] = useState<AdminSettings>({
-    apiBaseUrl: "https://print.superk.studio",
+    apiBaseUrl: defaultApiBaseUrl,
     adminCookie: "",
     adminEmail: "",
     adminPassword: "",
@@ -625,6 +660,7 @@ function AppShell({
         {screen === "queue" && <QueueScreen client={client} />}
         {screen === "parts" && <PartsScreen client={client} />}
         {screen === "filament" && <FilamentScreen client={client} />}
+        {screen === "merchants" && <MerchantsScreen client={client} />}
         {screen === "products" && <ProductsScreen client={client} />}
         {screen === "customers" && <CustomersScreen client={client} />}
         {screen === "reports" && <ReportsScreen client={client} />}
@@ -1727,6 +1763,115 @@ function FilamentScreen({ client }: { client: SuperPrintClient }) {
   );
 }
 
+function MerchantsScreen({ client }: { client: SuperPrintClient }) {
+  const [applications, setApplications] = useState<MerchantApplication[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [savingId, setSavingId] = useState("");
+  const [notesById, setNotesById] = useState<Record<string, string>>({});
+  const [message, setMessage] = useState("Refresh merchant applications from the local Docker backend.");
+
+  async function load() {
+    setLoading(true);
+    try {
+      const response = await client.get<{ applications: MerchantApplication[] }>("/api/admin/merchants");
+      setApplications(response.applications);
+      setNotesById(Object.fromEntries(response.applications.map((application) => [application.id, application.reviewNotes ?? ""])));
+      setMessage(response.applications.length ? "" : "No merchant applications yet.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not load merchant applications.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function review(application: MerchantApplication, action: "approve" | "reject" | "needs_review") {
+    setSavingId(application.id);
+    setMessage(action === "approve" ? "Approving merchant..." : action === "reject" ? "Rejecting merchant..." : "Marking merchant for review...");
+    try {
+      await client.post<{ application: MerchantApplication }>(`/api/admin/merchants/${application.id}`, {
+        action,
+        reviewNotes: notesById[application.id] ?? ""
+      });
+      await load();
+      setMessage(action === "approve" ? "Merchant approved." : action === "reject" ? "Merchant rejected." : "Merchant marked needs review.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not update merchant application.");
+    } finally {
+      setSavingId("");
+    }
+  }
+
+  useEffect(() => {
+    load().catch(() => undefined);
+  }, [client]);
+
+  return (
+    <ScrollView style={styles.screen} contentContainerStyle={styles.screenBody}>
+      <ScreenHeader title="Merchants" detail="View application data, Stripe Connect state, KYC requirements, and approve Tap to Pay access." />
+      <LoadButton title="Refresh Merchants" loading={loading} onPress={load} />
+      {applications.length ? applications.map((application) => {
+        const stripeReady = application.stripeConnectStatus === "ENABLED" && application.stripeChargesEnabled && application.stripePayoutsEnabled && application.stripeDetailsSubmitted;
+        const saved = savingId === application.id;
+        const approved = application.status === "APPROVED";
+        return (
+          <Card key={application.id}>
+            <View style={styles.orderTop}>
+              <View style={styles.grow}>
+                <Text style={styles.cardTitle}>{application.businessName}</Text>
+                <Text style={styles.cardCopy}>{application.legalBusinessName || application.businessName}</Text>
+              </View>
+              <Badge label={application.status.replace(/_/g, " ")} />
+            </View>
+            <View style={styles.badgeRow}>
+              <Badge label={`Connect ${application.stripeConnectStatus.replace(/_/g, " ")}`} />
+              <Badge label={application.stripeDetailsSubmitted ? "KYC submitted" : "KYC due"} />
+              <Badge label={application.stripeChargesEnabled ? "Charges on" : "Charges off"} />
+              <Badge label={application.stripePayoutsEnabled ? "Payouts on" : "Payouts off"} />
+            </View>
+            <View style={styles.readOnlyPanel}>
+              <InfoRow label="Owner" value={`${application.ownerName} · ${application.ownerEmail}`} />
+              <InfoRow label="Login" value={`${application.user.name ?? "Merchant"} · ${application.user.email}`} />
+              <InfoRow label="Phone" value={application.phone || "Not provided"} />
+              <InfoRow label="Address" value={merchantAddress(application)} />
+              <InfoRow label="Business type" value={application.businessType.replace(/_/g, " ")} />
+              <InfoRow label="Website" value={application.siteUrl || "Not provided"} />
+              <InfoRow label="Tax" value={`${application.taxIdType} ending ${application.taxIdLast4 || "----"}`} />
+              <InfoRow label="Stripe acct" value={application.stripeAccountId ?? "Not started"} />
+              <InfoRow label="Terminal" value={application.stripeTerminalLocationId ?? "Not created"} />
+              <InfoRow label="Submitted" value={merchantDate(application.submittedAt)} />
+              <InfoRow label="Updated" value={merchantDate(application.updatedAt)} />
+            </View>
+            <View style={styles.summaryBand}>
+              <Text style={styles.summaryText}>Stripe requirements</Text>
+              <Text style={styles.cardCopy}>
+                {application.stripeRequirementsDue.length
+                  ? application.stripeRequirementsDue.map(formatStripeRequirement).join(", ")
+                  : "No outstanding Stripe requirements."}
+              </Text>
+            </View>
+            <Field label="Review notes" value={notesById[application.id] ?? ""} onChangeText={(reviewNotes) => setNotesById((current) => ({ ...current, [application.id]: reviewNotes }))} multiline />
+            {!stripeReady ? <Text style={styles.message}>Approve unlocks after Stripe Connect is enabled with KYC details submitted, charges enabled, and payouts enabled.</Text> : null}
+            {application.approvedAt ? <Text style={styles.cardCopy}>Approved {merchantDate(application.approvedAt)}</Text> : null}
+            {application.rejectedAt ? <Text style={styles.cardCopy}>Rejected {merchantDate(application.rejectedAt)}</Text> : null}
+            <View style={styles.inline}>
+              <Pressable disabled={saved || !stripeReady || approved} onPress={() => review(application, "approve")} style={[styles.primaryButton, styles.grow, (saved || !stripeReady || approved) && styles.disabled]}>
+                {saved ? <ActivityIndicator color={palette.actionText} /> : <Text style={styles.primaryButtonText}>{approved ? "Approved" : "Approve"}</Text>}
+              </Pressable>
+              <Pressable disabled={saved} onPress={() => review(application, "needs_review")} style={[styles.secondaryButton, styles.grow, saved && styles.disabled]}>
+                <Text style={styles.secondaryButtonText}>Needs Review</Text>
+              </Pressable>
+            </View>
+            <Pressable disabled={saved} onPress={() => review(application, "reject")} style={[styles.dangerButton, saved && styles.disabled]}>
+              <Text style={styles.dangerButtonText}>Reject</Text>
+            </Pressable>
+          </Card>
+        );
+      }) : <Card><Text style={styles.cardCopy}>{message}</Text></Card>}
+      {message ? <Text style={styles.message}>{message}</Text> : null}
+    </ScrollView>
+  );
+}
+
 function ProductsScreen({ client }: { client: SuperPrintClient }) {
   const [products, setProducts] = useState<ProductOption[]>([]);
   const [loading, setLoading] = useState(false);
@@ -2243,6 +2388,23 @@ function newOrderLine(product: ProductOption, quantity = "1"): LineDraft {
     selectedFilamentMaterialIds,
     selectedColors
   };
+}
+
+function merchantAddress(application: MerchantApplication) {
+  const cityStateZip = [application.city, [application.state, application.zip].filter(Boolean).join(" ")].filter(Boolean).join(", ");
+  return [
+    [application.street1, application.street2].filter(Boolean).join(" "),
+    cityStateZip,
+    application.country
+  ].filter(Boolean).join(", ");
+}
+
+function merchantDate(value: string | null) {
+  return value ? new Date(value).toLocaleString() : "Not set";
+}
+
+function formatStripeRequirement(value: string) {
+  return value.replace(/[._]/g, " ").replace(/\s+/g, " ").trim();
 }
 
 function money(centsValue: number) {

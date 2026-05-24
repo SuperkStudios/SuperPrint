@@ -9,7 +9,11 @@ const schema = z.object({
   mode: z.enum(["signIn", "signUp"]),
   email: z.string().trim().email(),
   password: z.string().min(8),
-  name: z.string().trim().min(1).optional()
+  name: z.preprocess((value) => {
+    if (typeof value !== "string") return value;
+    const trimmed = value.trim();
+    return trimmed ? trimmed : undefined;
+  }, z.string().min(1).optional())
 });
 
 export async function POST(request: Request) {
@@ -20,7 +24,7 @@ export async function POST(request: Request) {
     const body = schema.parse(await request.json());
     const email = body.email.toLowerCase();
     const user = body.mode === "signUp" ? await createUser(email, body.password, body.name) : await verifyUser(email, body.password);
-    if (!user.emailVerified && process.env.NODE_ENV === "production") {
+    if (!user.emailVerified && process.env.NODE_ENV === "production" && process.env.MERCHANT_MOBILE_ALLOW_UNVERIFIED_EMAIL !== "true") {
       return NextResponse.json({ error: "Verify your email before using the merchant app." }, { status: 403 });
     }
 
@@ -52,7 +56,7 @@ async function createUser(email: string, password: string, name?: string) {
     data: {
       email,
       name: name || email.split("@")[0] || "Merchant",
-      emailVerified: process.env.NODE_ENV !== "production",
+      emailVerified: process.env.NODE_ENV !== "production" || process.env.MERCHANT_MOBILE_ALLOW_UNVERIFIED_EMAIL === "true",
       passwordHash,
       accounts: {
         create: {

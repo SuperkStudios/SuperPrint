@@ -19,8 +19,10 @@ services:
       APPLE_PRIVATE_KEY: ${APPLE_PRIVATE_KEY:-}
       APPLE_CLIENT_SECRET: ${APPLE_CLIENT_SECRET:-}
       APPLE_APP_BUNDLE_IDENTIFIER: studio.superk.superprint.admin
+      MERCHANT_MOBILE_ALLOW_UNVERIFIED_EMAIL: "true"
       STRIPE_SECRET_KEY: ""
       STRIPE_WEBHOOK_SECRET: ""
+      SUPERPRINT_FIELD_ENCRYPTION_KEY: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
       MEDIA_TOKEN_SECRET: dev-media-secret-change-me
       REDIS_URL: redis://redis:6379
       HOST_SLICER_ESTIMATE_URL: http://host.docker.internal:4317/estimate

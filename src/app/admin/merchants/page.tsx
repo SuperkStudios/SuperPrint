@@ -10,8 +10,7 @@ export default async function AdminMerchantsPage() {
   await requireAdminPage("orders");
   const applications = await prisma.merchantApplication.findMany({
     include: {
-      user: { select: { email: true, name: true } },
-      documents: { orderBy: { uploadedAt: "desc" } }
+      user: { select: { email: true, name: true } }
     },
     orderBy: { updatedAt: "desc" }
   });
@@ -21,7 +20,7 @@ export default async function AdminMerchantsPage() {
       <div>
         <h2 className="text-2xl font-semibold tracking-tight">Merchant applications</h2>
         <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-          Review submitted merchant onboarding, Stripe Connect state, and private document checklist before enabling Tap to Pay access.
+          Review submitted merchant onboarding and Stripe Connect/KYC state before enabling Tap to Pay access.
         </p>
       </div>
       <div className="grid gap-4">
@@ -36,7 +35,7 @@ export default async function AdminMerchantsPage() {
                 <div className="flex flex-wrap gap-2">
                   <Badge>{application.status.replace(/_/g, " ")}</Badge>
                   <Badge className="bg-background">Connect {application.stripeConnectStatus.replace(/_/g, " ")}</Badge>
-                  <Badge className="bg-background">{application.documents.length} docs</Badge>
+                  <Badge className="bg-background">{application.stripeDetailsSubmitted ? "Details submitted" : "Details due"}</Badge>
                 </div>
               </div>
             </CardHeader>
@@ -51,18 +50,12 @@ export default async function AdminMerchantsPage() {
                 <Info label="Address" value={`${application.street1}${application.street2 ? ` ${application.street2}` : ""}, ${application.city}, ${application.state} ${application.zip}`} />
               </div>
               <div className="grid gap-2 text-sm">
-                <span className="font-medium">Documents</span>
-                {application.documents.length ? (
-                  <div className="flex flex-wrap gap-2">
-                    {application.documents.map((document) => (
-                      <a key={document.id} href={`/api/admin/merchants/documents/${document.id}`}>
-                        <Badge className="bg-background hover:bg-muted">{document.type.replace(/_/g, " ")} · {document.fileName}</Badge>
-                      </a>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-muted-foreground">No documents uploaded yet.</p>
-                )}
+                <span className="font-medium">Stripe KYC requirements</span>
+                <p className="text-muted-foreground">
+                  {Array.isArray(application.stripeRequirementsDue) && application.stripeRequirementsDue.length
+                    ? application.stripeRequirementsDue.map((item) => String(item).replace(/[._]/g, " ")).join(", ")
+                    : "Stripe has no outstanding requirements for this application."}
+                </p>
               </div>
               <AdminMerchantReviewActions id={application.id} />
             </CardContent>

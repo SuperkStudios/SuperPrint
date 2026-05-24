@@ -13,7 +13,6 @@
   "dependencies": {
     "@stripe/stripe-terminal-react-native": "^0.0.1-beta.30",
     "expo": "~56.0.4",
-    "expo-document-picker": "^56.0.4",
     "expo-secure-store": "~56.0.4",
     "expo-status-bar": "~56.0.4",
     "react": "^19.2.6",
