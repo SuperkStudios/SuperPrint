@@ -23,6 +23,19 @@ const addressSchema = z.object({
   email: z.string().optional()
 });
 
+const printerHistorySchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  status: z.string(),
+  gramsUsed: z.number().positive().optional(),
+  completedAt: z.string().optional(),
+  gramsSource: z.string().optional(),
+  printedLayers: z.number().optional(),
+  totalLayers: z.number().optional(),
+  printTimeSeconds: z.number().optional(),
+  material: z.string().optional()
+});
+
 const schema = z.object({
   customerName: z.string().trim().min(1),
   customerEmail: z.string().trim().email(),
@@ -45,7 +58,9 @@ const schema = z.object({
   shippingAmountCents: z.number().int().nonnegative().optional(),
   shippingRateCents: z.number().int().nonnegative().optional(),
   shippoRateId: z.string().optional().nullable(),
-  shippoShipmentId: z.string().optional().nullable()
+  shippoShipmentId: z.string().optional().nullable(),
+  pastPrinterHistory: printerHistorySchema.optional().nullable(),
+  pastHistorySpoolId: z.string().optional().nullable()
 });
 
 export async function POST(request: Request) {

@@ -1,12 +1,12 @@
 import type { NextConfig } from "next";
 
-const isProduction = process.env.NODE_ENV === "production";
+const enableHttpsHeaders = process.env.SUPERPRINT_ENABLE_HTTPS_HEADERS === "true";
 const contentSecurityPolicy = [
   "default-src 'self'",
   "base-uri 'self'",
   "object-src 'none'",
   "frame-ancestors 'none'",
-  `script-src 'self' 'unsafe-inline'${isProduction ? "" : " 'unsafe-eval'"} https://js.stripe.com`,
+  `script-src 'self' 'unsafe-inline'${process.env.NODE_ENV === "production" ? "" : " 'unsafe-eval'"} https://js.stripe.com`,
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data:",
@@ -15,7 +15,7 @@ const contentSecurityPolicy = [
   "frame-src https://js.stripe.com https://hooks.stripe.com https://*.stripe.com",
   "worker-src 'self' blob:",
   "form-action 'self'",
-  ...(isProduction ? ["upgrade-insecure-requests"] : [])
+  ...(enableHttpsHeaders ? ["upgrade-insecure-requests"] : [])
 ].join("; ");
 
 const nextConfig: NextConfig = {
@@ -30,7 +30,7 @@ const nextConfig: NextConfig = {
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), payment=(self)" },
-          { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" },
+          ...(enableHttpsHeaders ? [{ key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" }] : []),
           { key: "Content-Security-Policy", value: contentSecurityPolicy }
         ]
       }

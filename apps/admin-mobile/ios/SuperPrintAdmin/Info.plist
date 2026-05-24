@@ -42,6 +42,8 @@
     <true/>
     <key>NFCReaderUsageDescription</key>
     <string>NFC is used for Tap to Pay on supported iPhones.</string>
+    <key>NSFaceIDUsageDescription</key>
+    <string>Face ID protects access to the SuperPrint admin console.</string>
     <key>NSAppTransportSecurity</key>
     <dict>
       <key>NSAllowsArbitraryLoads</key>

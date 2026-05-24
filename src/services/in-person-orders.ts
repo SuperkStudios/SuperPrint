@@ -36,6 +36,21 @@ export type CreateInPersonOrderInput = {
   shippingRateCents?: number;
   shippoRateId?: string | null;
   shippoShipmentId?: string | null;
+  pastPrinterHistory?: PastPrinterHistoryInput | null;
+  pastHistorySpoolId?: string | null;
+};
+
+type PastPrinterHistoryInput = {
+  id: string;
+  name: string;
+  status: string;
+  gramsUsed?: number;
+  completedAt?: string;
+  gramsSource?: string;
+  printedLayers?: number;
+  totalLayers?: number;
+  printTimeSeconds?: number;
+  material?: string;
 };
 
 export type TerminalOrderInput = CreateInPersonOrderInput & {
@@ -168,6 +183,15 @@ export async function createInPersonOrder(input: CreateInPersonOrderInput, actor
       return tx.order.update({ where: { id: created.id }, data: { status: "QUEUED" }, include: { customer: true, items: { include: { product: true } }, printJobs: true } });
     }
 
+    if (input.source === "PAST_IMPORT" && input.pastPrinterHistory && input.pastHistorySpoolId) {
+      await attachPastHistoryToOrder(tx, {
+        orderId: created.id,
+        print: input.pastPrinterHistory,
+        spoolId: input.pastHistorySpoolId
+      });
+      return tx.order.update({ where: { id: created.id }, data: { status: orderStatusForHistory(input.pastPrinterHistory.status) }, include: { customer: true, items: { include: { product: true } }, printJobs: true } });
+    }
+
     return created;
   });
 
@@ -190,6 +214,79 @@ export async function createInPersonOrder(input: CreateInPersonOrderInput, actor
   });
 
   return order;
+}
+
+async function attachPastHistoryToOrder(tx: Prisma.TransactionClient, input: { orderId: string; print: PastPrinterHistoryInput; spoolId: string }) {
+  if (!hasUsableHistoryGrams(input.print)) throw new Error("Printer history did not include material usage for this print.");
+  const spool = await tx.filamentSpool.findUniqueOrThrow({ where: { id: input.spoolId } });
+  const assigned = readHistoryAssignments(spool.assignedPrinterHistory);
+  const alreadyAssigned = assigned.some((item) => item.id === input.print.id);
+  if (!alreadyAssigned) {
+    await tx.filamentSpool.update({
+      where: { id: input.spoolId },
+      data: {
+        remainingGrams: { decrement: Math.round(input.print.gramsUsed) },
+        assignedPrinterHistory: [...assigned, compactHistoryPrint(input.print)]
+      }
+    });
+  }
+  await tx.printJob.create({
+    data: {
+      orderId: input.orderId,
+      filamentId: input.spoolId,
+      status: printJobStatusForHistory(input.print.status),
+      etaMinutes: 0,
+      completedAt: input.print.completedAt ? new Date(input.print.completedAt) : new Date(),
+      failureReason: input.print.status === "FAILED" ? "Imported failed printer-history entry" : undefined,
+      consumedFilamentGrams: Math.round(input.print.gramsUsed),
+      progressPercent: progressPercentForHistory(input.print),
+      currentLayer: input.print.printedLayers,
+      elapsedSeconds: input.print.printTimeSeconds,
+      remainingSeconds: input.print.status === "COMPLETED" ? 0 : undefined
+    }
+  });
+}
+
+function hasUsableHistoryGrams(print: PastPrinterHistoryInput): print is PastPrinterHistoryInput & { gramsUsed: number } {
+  return typeof print.gramsUsed === "number" && Number.isFinite(print.gramsUsed) && print.gramsUsed > 0;
+}
+
+function printJobStatusForHistory(status: string) {
+  if (status === "FAILED") return "FAILED";
+  if (status === "STOPPED") return "STOPPED";
+  return "COMPLETED";
+}
+
+function orderStatusForHistory(status: string) {
+  if (status === "FAILED") return "FAILED";
+  if (status === "STOPPED") return "STOPPED";
+  return "COMPLETED";
+}
+
+function progressPercentForHistory(print: PastPrinterHistoryInput) {
+  if (print.status === "COMPLETED") return 100;
+  if (typeof print.printedLayers === "number" && typeof print.totalLayers === "number" && print.totalLayers > 0) {
+    return Math.min(100, Math.max(0, Math.round((print.printedLayers / print.totalLayers) * 100)));
+  }
+  return undefined;
+}
+
+function readHistoryAssignments(value: unknown): Array<{ id: string; name: string; gramsUsed: number; completedAt?: string; status?: string }> {
+  return Array.isArray(value) ? value.filter((item): item is { id: string; name: string; gramsUsed: number; completedAt?: string; status?: string } => Boolean(item && typeof item === "object" && "id" in item)) : [];
+}
+
+function compactHistoryPrint(print: PastPrinterHistoryInput) {
+  return {
+    id: print.id,
+    name: print.name,
+    gramsUsed: print.gramsUsed ? Math.round(print.gramsUsed) : undefined,
+    completedAt: print.completedAt,
+    status: print.status,
+    gramsSource: print.gramsSource,
+    printedLayers: print.printedLayers,
+    totalLayers: print.totalLayers,
+    material: print.material
+  };
 }
 
 export async function createManualCardOrderPayment(input: ManualCardOrderInput, actorId?: string) {

@@ -26,6 +26,7 @@
         "com.apple.developer.proximity-reader.payment.acceptance": true
       },
       "infoPlist": {
+        "NSFaceIDUsageDescription": "Face ID protects access to the SuperPrint admin console.",
         "NSLocationWhenInUseUsageDescription": "Location access is required for Stripe Terminal readers and Tap to Pay.",
         "NSBluetoothAlwaysUsageDescription": "Bluetooth is used to connect to supported Stripe readers.",
         "NSBluetoothPeripheralUsageDescription": "Bluetooth is used to connect to supported Stripe readers.",
@@ -46,6 +47,12 @@
     },
     "plugins": [
       "expo-apple-authentication",
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Face ID protects access to the SuperPrint admin console."
+        }
+      ],
       [
         "@stripe/stripe-react-native",
         {

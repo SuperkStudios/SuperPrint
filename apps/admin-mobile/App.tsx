@@ -1,9 +1,37 @@
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useMemo, useState } from "react";
 import * as AppleAuthentication from "expo-apple-authentication";
+import * as LocalAuthentication from "expo-local-authentication";
 import * as SecureStore from "expo-secure-store";
 import { StripeProvider, useStripe } from "@stripe/stripe-react-native";
 import { StripeTerminalProvider, useStripeTerminal } from "@stripe/stripe-terminal-react-native";
+import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
+import {
+  BadgeCheck,
+  Banknote,
+  Boxes,
+  ChartColumn,
+  CircleDollarSign,
+  ClipboardCheck,
+  ClipboardList,
+  CreditCard,
+  Factory,
+  History,
+  IdCard,
+  Layers,
+  Package,
+  PackageCheck,
+  Plus,
+  Printer,
+  ReceiptText,
+  ScanFace,
+  ShoppingCart,
+  SmartphoneNfc,
+  Settings,
+  Store,
+  Users,
+  type LucideIcon
+} from "lucide-react-native";
 import {
   ActivityIndicator,
   Image,
@@ -23,10 +51,10 @@ import {
 
 const brandLockupLight = require("./assets/superprint-compact-lockup-light.png");
 const brandLockupDark = require("./assets/superprint-compact-lockup-dark.png");
-const brandMark = require("./assets/superprint-mark.png");
 const defaultApiBaseUrl = process.env.EXPO_PUBLIC_SUPERPRINT_URL ?? "https://print.superk.studio";
 const secureSessionKey = "superprint.admin.sessionCookie";
 const secureEmailKey = "superprint.admin.email";
+const secureSessionMetaKey = "superprint.admin.sessionMeta";
 
 type ScreenKey = "dashboard" | "pos" | "orders" | "queue" | "parts" | "filament" | "merchants" | "products" | "customers" | "reports" | "settings";
 
@@ -98,12 +126,28 @@ type MobileSessionInfo = {
   };
 };
 
+type StoredSessionMeta = {
+  email: string;
+  savedAt: string;
+  lastValidatedAt: string;
+};
+
+type LocalAuthState = {
+  unlocked: boolean;
+  supported: boolean;
+  enrolled: boolean;
+  label: string;
+  message: string;
+};
+
 type PlatformTheme = {
   brandName: string;
   primaryColor: string;
 };
 
 type FulfillmentMethod = "PICKUP" | "SHIP";
+type PosPaymentMethod = "UNPAID" | "CASH" | "STRIPE_TERMINAL" | "STRIPE_MANUAL";
+type ExpectedPaymentType = "CARD" | "CASH";
 
 type ShippingQuote = {
   method: FulfillmentMethod;
@@ -343,12 +387,55 @@ const navItems: Array<{ key: ScreenKey; title: string; detail: string }> = [
   { key: "settings", title: "Settings", detail: "API and device" }
 ];
 
+const navIcons: Record<ScreenKey, LucideIcon> = {
+  dashboard: Factory,
+  pos: ShoppingCart,
+  orders: ClipboardList,
+  queue: Printer,
+  parts: PackageCheck,
+  filament: Layers,
+  merchants: Store,
+  products: Package,
+  customers: Users,
+  reports: ChartColumn,
+  settings: Settings
+};
+
+type PosFlowStep = "customer" | "items" | "fulfillment" | "payment" | "review";
+const posFlowSteps: Array<{ key: PosFlowStep; label: string; icon: LucideIcon }> = [
+  { key: "customer", label: "Customer", icon: IdCard },
+  { key: "items", label: "Items", icon: Boxes },
+  { key: "fulfillment", label: "Fulfill", icon: PackageCheck },
+  { key: "payment", label: "Pay", icon: CircleDollarSign },
+  { key: "review", label: "Review", icon: ClipboardCheck }
+];
+
+const paymentOptions: Array<{ key: PosPaymentMethod; label: string; icon: LucideIcon }> = [
+  { key: "UNPAID", label: "Expected", icon: ReceiptText },
+  { key: "CASH", label: "Cash", icon: Banknote },
+  { key: "STRIPE_TERMINAL", label: "Tap", icon: SmartphoneNfc },
+  { key: "STRIPE_MANUAL", label: "Manual", icon: CreditCard }
+];
+
+const expectedPaymentOptions: Array<{ key: ExpectedPaymentType; label: string; icon: LucideIcon }> = [
+  { key: "CARD", label: "Card", icon: CreditCard },
+  { key: "CASH", label: "Cash", icon: Banknote }
+];
+
 export default function App() {
   const [screen, setScreen] = useState<ScreenKey>("dashboard");
   const systemScheme = useColorScheme();
   const [authLoading, setAuthLoading] = useState(true);
   const [authMessage, setAuthMessage] = useState("");
   const [sessionInfo, setSessionInfo] = useState<MobileSessionInfo | null>(null);
+  const [sessionMeta, setSessionMeta] = useState<StoredSessionMeta | null>(null);
+  const [localAuth, setLocalAuth] = useState<LocalAuthState>({
+    unlocked: false,
+    supported: false,
+    enrolled: false,
+    label: "Face ID",
+    message: ""
+  });
   const [settings, setSettings] = useState<AdminSettings>({
     apiBaseUrl: defaultApiBaseUrl,
     adminCookie: "",
@@ -410,6 +497,8 @@ export default function App() {
             adminCookie: cookie,
             adminEmail: email ?? session.user?.email ?? current.adminEmail
           }));
+          const meta = await saveSessionMeta(session.user?.email ?? email ?? nextSettings.adminEmail);
+          setSessionMeta(meta);
           setSessionInfo(session);
         }
       } catch {
@@ -451,6 +540,8 @@ export default function App() {
     if (!session.signedIn || !session.user?.adminAllowed) throw new Error("Signed in, but this account is not allowed to use SuperPrint admin.");
     await SecureStore.setItemAsync(secureSessionKey, cookie, { keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY });
     await SecureStore.setItemAsync(secureEmailKey, session.user.email, { keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY });
+    const meta = await saveSessionMeta(session.user.email);
+    setSessionMeta(meta);
     setSettings((current) => ({
       ...current,
       adminCookie: cookie,
@@ -458,6 +549,7 @@ export default function App() {
       adminPassword: ""
     }));
     setSessionInfo(session);
+    setLocalAuth((current) => ({ ...current, unlocked: true, message: "" }));
     setAuthMessage("");
     setScreen("dashboard");
     return session;
@@ -467,10 +559,25 @@ export default function App() {
     await clearStoredSession();
     setSettings((current) => ({ ...current, adminCookie: "", adminPassword: "" }));
     setSessionInfo({ signedIn: false });
+    setSessionMeta(null);
+    setLocalAuth((current) => ({ ...current, unlocked: false, message: "" }));
     setScreen("settings");
   }
 
   const signedIn = Boolean(sessionInfo?.signedIn && sessionInfo.user?.adminAllowed && settings.adminCookie);
+  const locked = signedIn && !localAuth.unlocked;
+
+  async function unlockAdmin() {
+    const result = await runLocalAdminUnlock();
+    setLocalAuth((current) => ({
+      ...current,
+      supported: result.supported,
+      enrolled: result.enrolled,
+      label: result.label,
+      unlocked: result.success,
+      message: result.message
+    }));
+  }
 
   if (authLoading) {
     return <LoadingShell activeAppearance={activeAppearance} message="Loading secure session..." />;
@@ -479,8 +586,17 @@ export default function App() {
   return (
     <StripeProvider publishableKey={settings.publishableKey}>
       <StripeTerminalProvider tokenProvider={tokenProvider}>
-        {signedIn ? (
-          <AppShell screen={screen} setScreen={setScreen} settings={settings} setSettings={setSettings} client={client} activeAppearance={activeAppearance} sessionInfo={sessionInfo} onSignOut={signOut} />
+        {locked ? (
+          <BiometricLockScreen
+            activeAppearance={activeAppearance}
+            sessionInfo={sessionInfo}
+            sessionMeta={sessionMeta}
+            localAuth={localAuth}
+            onUnlock={unlockAdmin}
+            onSignOut={signOut}
+          />
+        ) : signedIn ? (
+          <AppShell screen={screen} setScreen={setScreen} settings={settings} setSettings={setSettings} client={client} activeAppearance={activeAppearance} sessionInfo={sessionInfo} sessionMeta={sessionMeta} onSignOut={signOut} />
         ) : (
           <AuthScreen settings={settings} setSettings={setSettings} activeAppearance={activeAppearance} authMessage={authMessage} finishSignIn={finishSignIn} />
         )}
@@ -492,8 +608,83 @@ export default function App() {
 async function clearStoredSession() {
   await Promise.all([
     SecureStore.deleteItemAsync(secureSessionKey),
-    SecureStore.deleteItemAsync(secureEmailKey)
+    SecureStore.deleteItemAsync(secureEmailKey),
+    SecureStore.deleteItemAsync(secureSessionMetaKey)
   ]);
+}
+
+async function saveSessionMeta(email: string): Promise<StoredSessionMeta> {
+  const existing = await readStoredSessionMeta();
+  const now = new Date().toISOString();
+  const meta = {
+    email,
+    savedAt: existing?.savedAt ?? now,
+    lastValidatedAt: now
+  };
+  await SecureStore.setItemAsync(secureSessionMetaKey, JSON.stringify(meta), { keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY });
+  return meta;
+}
+
+async function readStoredSessionMeta(): Promise<StoredSessionMeta | null> {
+  const raw = await SecureStore.getItemAsync(secureSessionMetaKey);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as Partial<StoredSessionMeta>;
+    if (!parsed.email || !parsed.savedAt || !parsed.lastValidatedAt) return null;
+    return {
+      email: parsed.email,
+      savedAt: parsed.savedAt,
+      lastValidatedAt: parsed.lastValidatedAt
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function runLocalAdminUnlock() {
+  const [supported, enrolled, types] = await Promise.all([
+    LocalAuthentication.hasHardwareAsync(),
+    LocalAuthentication.isEnrolledAsync(),
+    LocalAuthentication.supportedAuthenticationTypesAsync().catch(() => [])
+  ]);
+  const label = localAuthLabel(types);
+  if (!supported) {
+    return { success: true, supported, enrolled, label, message: "No biometric hardware was found, so the saved admin session was unlocked on this device." };
+  }
+  if (!enrolled) {
+    return { success: false, supported, enrolled, label, message: "Set up Face ID or a device passcode before opening the saved admin session." };
+  }
+  const result = await LocalAuthentication.authenticateAsync({
+    promptMessage: "Unlock SuperPrint Admin",
+    fallbackLabel: "Use Passcode",
+    cancelLabel: "Cancel",
+    disableDeviceFallback: false,
+    biometricsSecurityLevel: "strong"
+  });
+  if (result.success) {
+    return { success: true, supported, enrolled, label, message: "" };
+  }
+  return {
+    success: false,
+    supported,
+    enrolled,
+    label,
+    message: authErrorMessage(result.error)
+  };
+}
+
+function localAuthLabel(types: LocalAuthentication.AuthenticationType[]) {
+  if (types.includes(LocalAuthentication.AuthenticationType.FACIAL_RECOGNITION)) return "Face ID";
+  if (types.includes(LocalAuthentication.AuthenticationType.FINGERPRINT)) return "Touch ID";
+  return "Device passcode";
+}
+
+function authErrorMessage(error?: string) {
+  if (error === "user_cancel" || error === "system_cancel" || error === "app_cancel") return "Admin unlock was canceled.";
+  if (error === "lockout") return "Too many attempts. Use your device passcode or try again in a moment.";
+  if (error === "not_enrolled") return "Set up Face ID or a device passcode before opening the saved admin session.";
+  if (error === "passcode_not_set") return "Set a device passcode before opening the saved admin session.";
+  return "Could not unlock the admin session.";
 }
 
 function LoadingShell({ activeAppearance, message }: { activeAppearance: ActiveAppearance; message: string }) {
@@ -504,6 +695,66 @@ function LoadingShell({ activeAppearance, message }: { activeAppearance: ActiveA
         <Image source={activeAppearance === "dark" ? brandLockupDark : brandLockupLight} style={styles.loginLogo} resizeMode="contain" />
         <ActivityIndicator color={palette.cyan} />
         <Text style={styles.cardCopy}>{message}</Text>
+      </View>
+    </SafeAreaView>
+  );
+}
+
+function BiometricLockScreen({
+  activeAppearance,
+  sessionInfo,
+  sessionMeta,
+  localAuth,
+  onUnlock,
+  onSignOut
+}: {
+  activeAppearance: ActiveAppearance;
+  sessionInfo: MobileSessionInfo | null;
+  sessionMeta: StoredSessionMeta | null;
+  localAuth: LocalAuthState;
+  onUnlock: () => Promise<void>;
+  onSignOut: () => Promise<void>;
+}) {
+  const [unlocking, setUnlocking] = useState(false);
+
+  useEffect(() => {
+    void unlock();
+  }, []);
+
+  async function unlock() {
+    setUnlocking(true);
+    try {
+      await onUnlock();
+    } finally {
+      setUnlocking(false);
+    }
+  }
+
+  return (
+    <SafeAreaView style={styles.safe}>
+      <StatusBar style={activeAppearance === "dark" ? "light" : "dark"} />
+      <View style={[styles.screenBody, styles.centerPane]}>
+        <Image source={activeAppearance === "dark" ? brandLockupDark : brandLockupLight} style={styles.loginLogo} resizeMode="contain" />
+        <View style={styles.lockBadge}>
+          <ScanFace size={34} color={palette.cyan} strokeWidth={2.5} />
+        </View>
+        <Text style={styles.kicker}>Secure Session</Text>
+        <Text style={styles.h1}>Unlock Admin</Text>
+        <Text style={styles.copy}>
+          {sessionInfo?.user?.email ?? sessionMeta?.email ?? "Your saved admin session"} is saved securely. Use {localAuth.label} or device passcode to continue.
+        </Text>
+        <View style={styles.readOnlyPanel}>
+          <InfoRow label="Saved session" value={sessionMeta?.email ?? sessionInfo?.user?.email ?? "Admin"} />
+          <InfoRow label="Last checked" value={sessionMeta?.lastValidatedAt ? new Date(sessionMeta.lastValidatedAt).toLocaleString() : "Just now"} />
+          <InfoRow label="Device security" value={localAuth.supported ? (localAuth.enrolled ? localAuth.label : "Not enrolled") : "No biometric hardware"} />
+        </View>
+        <Pressable onPress={unlock} disabled={unlocking} style={[styles.primaryButton, unlocking && styles.disabled]}>
+          {unlocking ? <ActivityIndicator color={palette.actionText} /> : <Text style={styles.primaryButtonText}>Unlock with {localAuth.label}</Text>}
+        </Pressable>
+        <Pressable onPress={onSignOut} style={styles.secondaryButton}>
+          <Text style={styles.secondaryButtonText}>Use Different Account</Text>
+        </Pressable>
+        {localAuth.message ? <Text style={styles.message}>{localAuth.message}</Text> : null}
       </View>
     </SafeAreaView>
   );
@@ -588,7 +839,7 @@ function AuthScreen({
               <Pressable onPress={() => setSettings({ ...settings, apiBaseUrl: "https://print.superk.studio" })} style={[styles.secondaryButton, styles.grow]}>
                 <Text style={styles.secondaryButtonText}>Use Production</Text>
               </Pressable>
-              <Pressable onPress={() => setSettings({ ...settings, apiBaseUrl: "http://localhost:3000" })} style={[styles.secondaryButton, styles.grow]}>
+              <Pressable onPress={() => setSettings({ ...settings, apiBaseUrl: "http://192.168.10.104:3000" })} style={[styles.secondaryButton, styles.grow]}>
                 <Text style={styles.secondaryButtonText}>Use Localhost</Text>
               </Pressable>
             </View>
@@ -616,6 +867,7 @@ function AppShell({
   client,
   activeAppearance,
   sessionInfo,
+  sessionMeta,
   onSignOut
 }: {
   screen: ScreenKey;
@@ -625,6 +877,7 @@ function AppShell({
   client: SuperPrintClient;
   activeAppearance: ActiveAppearance;
   sessionInfo: MobileSessionInfo | null;
+  sessionMeta: StoredSessionMeta | null;
   onSignOut: () => Promise<void>;
 }) {
   return (
@@ -656,7 +909,7 @@ function AppShell({
         {screen === "dashboard" && <DashboardScreen onOpen={setScreen} />}
         {screen === "pos" && <POSScreen client={client} settings={settings} setSettings={setSettings} />}
         {screen === "orders" && <OrdersScreen client={client} />}
-        {screen === "settings" && <SettingsScreen settings={settings} setSettings={setSettings} sessionInfo={sessionInfo} onSignOut={onSignOut} />}
+        {screen === "settings" && <SettingsScreen settings={settings} setSettings={setSettings} sessionInfo={sessionInfo} sessionMeta={sessionMeta} onSignOut={onSignOut} />}
         {screen === "queue" && <QueueScreen client={client} />}
         {screen === "parts" && <PartsScreen client={client} />}
         {screen === "filament" && <FilamentScreen client={client} />}
@@ -677,15 +930,16 @@ function DashboardScreen({ onOpen }: { onOpen: (screen: ScreenKey) => void }) {
       <Text style={styles.copy}>A native SuperPrint admin app for the counter, the shop floor, and the end-of-day money check.</Text>
 
       <View style={styles.grid}>
-        {navItems.map((item) => (
-          <Pressable key={item.key} onPress={() => onOpen(item.key)} style={styles.gridCard}>
-            <View style={styles.gridIconBadge}>
-              <Image source={brandMark} style={styles.gridIcon} resizeMode="contain" />
-            </View>
-            <Text style={styles.gridTitle}>{item.title}</Text>
-            <Text style={styles.gridDetail}>{item.detail}</Text>
-          </Pressable>
-        ))}
+        {navItems.map((item) => {
+          const Icon = navIcons[item.key];
+          return (
+            <Pressable key={item.key} onPress={() => onOpen(item.key)} style={styles.gridCard}>
+              <DashboardIconBadge Icon={Icon} />
+              <Text style={styles.gridTitle}>{item.title}</Text>
+              <Text style={styles.gridDetail}>{item.detail}</Text>
+            </Pressable>
+          );
+        })}
       </View>
     </ScrollView>
   );
@@ -710,20 +964,29 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
   });
   const [products, setProducts] = useState<ProductOption[]>([]);
   const [customers, setCustomers] = useState<AdminCustomer[]>([]);
+  const [spools, setSpools] = useState<FilamentSpool[]>([]);
+  const [history, setHistory] = useState<PrinterHistoryItem[]>([]);
   const [productLoading, setProductLoading] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [customerName, setCustomerName] = useState("");
   const [customerEmail, setCustomerEmail] = useState("");
   const [customerQuery, setCustomerQuery] = useState("");
   const [lines, setLines] = useState<LineDraft[]>([]);
+  const [flowStep, setFlowStep] = useState<PosFlowStep>("customer");
   const [fulfillmentMethod, setFulfillmentMethod] = useState<FulfillmentMethod>("PICKUP");
-  const [estimatedPickupAt, setEstimatedPickupAt] = useState("");
+  const [estimatedPickupAt, setEstimatedPickupAt] = useState<Date | null>(null);
+  const [selectedHistoryId, setSelectedHistoryId] = useState("");
+  const [selectedHistorySpoolId, setSelectedHistorySpoolId] = useState("");
   const [address, setAddress] = useState({ street1: "", street2: "", city: "", state: "CO", zip: "", phone: "" });
   const [shippingQuote, setShippingQuote] = useState<ShippingQuote | null>(null);
-  const [paymentMethod, setPaymentMethod] = useState("UNPAID");
+  const [paymentMethod, setPaymentMethod] = useState<PosPaymentMethod>("UNPAID");
   const [paidNow, setPaidNow] = useState("0.00");
+  const [expectedPaymentSelected, setExpectedPaymentSelected] = useState(false);
+  const [expectedPaymentType, setExpectedPaymentType] = useState<ExpectedPaymentType>("CARD");
   const [paymentReference, setPaymentReference] = useState("");
   const [cardBrand, setCardBrand] = useState("");
   const [cardLast4, setCardLast4] = useState("");
+  const [manualTransactionId, setManualTransactionId] = useState("");
   const [internalNotes, setInternalNotes] = useState("");
   const [orderDate, setOrderDate] = useState("");
   const [source, setSource] = useState<"IN_PERSON" | "PAST_IMPORT">("IN_PERSON");
@@ -731,10 +994,33 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const totalCents = lines.reduce((total, line) => total + cents(line.unitPrice) * positiveInt(line.quantity, 1), 0) + (shippingQuote?.shippingAmountCents ?? 0);
+  const paidNowCents = cents(paidNow);
+  const displayPaidCents = paymentMethod === "CASH" ? totalCents : paidNowCents;
+  const displayBalanceCents = Math.max(0, totalCents - displayPaidCents);
+  const activeStepIndex = posFlowSteps.findIndex((step) => step.key === flowStep);
+  const selectedHistory = history.find((print) => print.id === selectedHistoryId) ?? null;
+  const suggestedHistorySpool = suggestHistorySpool(selectedHistory, spools, lines, products);
+  const activeHistorySpoolId = selectedHistorySpoolId || suggestedHistorySpool?.id || "";
 
   useEffect(() => {
     initialize().catch(() => undefined);
   }, [initialize]);
+
+  useEffect(() => {
+    if (settings.publishableKey) return;
+    client.get<{ publishableKey: string | null; terminalLocationId: string | null; configured: boolean; mode: string }>("/api/admin/pos/terminal/config")
+      .then((config) => {
+        if (!config.publishableKey && !config.terminalLocationId) return;
+        setSettings({
+          ...settings,
+          publishableKey: config.publishableKey ?? settings.publishableKey,
+          terminalLocationId: config.terminalLocationId ?? settings.terminalLocationId,
+          stripeConfigured: config.configured,
+          stripeMode: config.mode
+        });
+      })
+      .catch(() => undefined);
+  }, [client, settings.publishableKey, setSettings]);
 
   useEffect(() => {
     setProductLoading(true);
@@ -746,6 +1032,12 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
       })
       .catch((error) => setMessage(error instanceof Error ? error.message : "Could not load products."))
       .finally(() => setProductLoading(false));
+  }, [client]);
+
+  useEffect(() => {
+    client.get<{ spools: FilamentSpool[] }>("/api/admin/filament")
+      .then((response) => setSpools(response.spools.filter((spool) => spool.active)))
+      .catch(() => undefined);
   }, [client]);
 
   useEffect(() => {
@@ -775,6 +1067,98 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
     setCustomerEmail(customer.email);
     setCustomerQuery(`${customer.name} ${customer.email}`);
     setCustomers([]);
+  }
+
+  function selectOrderSource(nextSource: "IN_PERSON" | "PAST_IMPORT") {
+    setSource(nextSource);
+    setQueueNow(false);
+    if (nextSource === "PAST_IMPORT") {
+      setFulfillmentMethod("PICKUP");
+      selectPaymentMethod("UNPAID");
+      setPaidNow("0.00");
+    }
+  }
+
+  function selectPaymentMethod(method: PosPaymentMethod) {
+    setPaymentMethod(method);
+    setMessage("");
+    if (method === "UNPAID") {
+      setPaidNow("0.00");
+      setCardBrand("");
+      setCardLast4("");
+      setPaymentReference(expectedPaymentSelected ? `Expected ${expectedPaymentType.toLowerCase()} ${money(totalCents)}` : "");
+      return;
+    }
+    if (method === "CASH") {
+      setPaidNow((totalCents / 100).toFixed(2));
+      setExpectedPaymentSelected(false);
+      setCardBrand("");
+      setCardLast4("");
+      setPaymentReference("Cash");
+      return;
+    }
+    if (method === "STRIPE_TERMINAL") {
+      setPaidNow("0.00");
+      setExpectedPaymentSelected(false);
+      setPaymentReference("");
+      setCardBrand("");
+      setCardLast4("");
+      return;
+    }
+    setPaidNow("0.00");
+    setExpectedPaymentSelected(false);
+    setPaymentReference(manualTransactionId.trim());
+  }
+
+  function markExpectedPayment() {
+    setExpectedPaymentSelected(true);
+    setPaidNow("0.00");
+    setPaymentReference(`Expected ${expectedPaymentType.toLowerCase()} ${money(totalCents)}`);
+  }
+
+  function selectExpectedPaymentType(type: ExpectedPaymentType) {
+    setExpectedPaymentType(type);
+    if (expectedPaymentSelected) {
+      setPaymentReference(`Expected ${type.toLowerCase()} ${money(totalCents)}`);
+    }
+  }
+
+  function markManualTransactionComplete() {
+    const transactionId = manualTransactionId.trim();
+    if (!transactionId) {
+      setMessage("Enter the Stripe transaction id first.");
+      return;
+    }
+    setPaymentReference(transactionId);
+    setPaidNow((totalCents / 100).toFixed(2));
+    setMessage(`Manual transaction ${transactionId} is ready to confirm.`);
+  }
+
+  function goToStep(step: PosFlowStep) {
+    setFlowStep(step);
+  }
+
+  function goNext() {
+    setFlowStep(posFlowSteps[Math.min(posFlowSteps.length - 1, activeStepIndex + 1)]?.key ?? "review");
+  }
+
+  function goBack() {
+    setFlowStep(posFlowSteps[Math.max(0, activeStepIndex - 1)]?.key ?? "customer");
+  }
+
+  async function pullHistory() {
+    setHistoryLoading(true);
+    setMessage("Pulling printer history...");
+    try {
+      const response = await client.post<{ completedPrints: PrinterHistoryItem[]; message: string }>("/api/admin/printer-history", {});
+      setHistory(response.completedPrints);
+      setSelectedHistoryId((current) => current || response.completedPrints[0]?.id || "");
+      setMessage(response.message);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not pull printer history.");
+    } finally {
+      setHistoryLoading(false);
+    }
   }
 
   async function quoteShipping() {
@@ -807,10 +1191,15 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
       setMessage("Customer, email, and product are required.");
       return;
     }
+    if (source === "PAST_IMPORT" && (!selectedHistory || !activeHistorySpoolId)) {
+      setMessage("Choose printer history and a filament roll before saving a past order.");
+      setFlowStep("items");
+      return;
+    }
     setSaving(true);
     setMessage("Saving order...");
     try {
-      const paidCents = cents(paidNow);
+      const paidCents = paymentMethod === "CASH" ? totalCents : cents(paidNow);
       const response = await client.post<{ order: { orderNumber: string } }>("/api/admin/pos", {
         ...buildOrderPayload(),
         paymentMethod,
@@ -821,6 +1210,10 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
         cardLast4: cardLast4.replace(/\D/g, "").slice(0, 4) || null
       });
       setMessage(`Saved ${response.order.orderNumber}`);
+      if (source === "PAST_IMPORT" && selectedHistory) {
+        setHistory((current) => current.filter((item) => item.id !== selectedHistory.id));
+        setSelectedHistoryId("");
+      }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Order save failed.");
     } finally {
@@ -830,8 +1223,22 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
 
   async function chargeManualCard() {
     setSaving(true);
-    setMessage("Creating Stripe manual card payment...");
+    setMessage("Loading Stripe card payment...");
     try {
+      if (!settings.publishableKey) {
+        const config = await client.get<{ publishableKey: string | null; terminalLocationId: string | null; configured: boolean; mode: string }>("/api/admin/pos/terminal/config");
+        if (!config.publishableKey || !config.configured) throw new Error("Stripe card payments are not configured yet.");
+        setSettings({
+          ...settings,
+          publishableKey: config.publishableKey,
+          terminalLocationId: config.terminalLocationId ?? settings.terminalLocationId,
+          stripeConfigured: config.configured,
+          stripeMode: config.mode
+        });
+        setMessage("Stripe card payments are loaded. Tap Charge Card again.");
+        return;
+      }
+      setMessage("Creating Stripe manual card payment...");
       const started = await client.post<{ order: { id: string; orderNumber: string; stripePaymentIntentId?: string | null }; clientSecret: string; publishableKey: string | null }>("/api/admin/pos/manual/payment-intent", buildOrderPayload());
       if (started.publishableKey && started.publishableKey !== settings.publishableKey) {
         setSettings({ ...settings, publishableKey: started.publishableKey, stripeConfigured: true });
@@ -974,14 +1381,18 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
   }
 
   function buildOrderPayload() {
+    const paymentNotes = [
+      expectedPaymentSelected && paymentMethod === "UNPAID" ? `Expected ${expectedPaymentType.toLowerCase()} payment: ${money(totalCents)}` : null,
+      manualTransactionId.trim() && paymentMethod === "STRIPE_MANUAL" ? `Manual transaction id: ${manualTransactionId.trim()}` : null
+    ].filter(Boolean);
     return {
       customerName,
       customerEmail,
-      internalNotes: [internalNotes.trim(), "Created in SuperPrint Admin iOS"].filter(Boolean).join("\n"),
+      internalNotes: [internalNotes.trim(), ...paymentNotes, "Created in SuperPrint Admin iOS"].filter(Boolean).join("\n"),
       orderDate: orderDate || null,
       source,
       queueNow,
-      estimatedPickupAt: estimatedPickupAt || null,
+      estimatedPickupAt: estimatedPickupAt ? estimatedPickupAt.toISOString() : null,
       fulfillment: {
         method: fulfillmentMethod,
         address: fulfillmentAddress()
@@ -990,6 +1401,8 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
       shippingRateCents: shippingQuote?.shippingRateCents ?? 0,
       shippoRateId: shippingQuote?.rateId ?? null,
       shippoShipmentId: shippingQuote?.shippoShipmentId ?? null,
+      pastPrinterHistory: source === "PAST_IMPORT" ? selectedHistory : null,
+      pastHistorySpoolId: source === "PAST_IMPORT" ? activeHistorySpoolId || null : null,
       lines: lines.map((line) => {
         const product = productFor(line, products);
         const slotCount = Math.max(1, product?.colorSlotCount ?? 1);
@@ -1025,8 +1438,41 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.screenBody}>
-      <ScreenHeader title="Take Order" detail="Counter order entry for new and past SuperPrint orders." />
-      <Card>
+      <ScreenHeader title="Take Order" detail="" />
+
+      <View style={styles.flowHero}>
+        <View style={styles.modeGrid}>
+          <Pressable onPress={() => selectOrderSource("IN_PERSON")} style={[styles.modeCard, source === "IN_PERSON" && styles.modeCardActive]}>
+            <AppIconBadge Icon={Plus} small />
+            <Text style={[styles.modeTitle, source === "IN_PERSON" && styles.modeTitleActive]}>New order</Text>
+          </Pressable>
+          <Pressable onPress={() => selectOrderSource("PAST_IMPORT")} style={[styles.modeCard, source === "PAST_IMPORT" && styles.modeCardActive]}>
+            <AppIconBadge Icon={History} small />
+            <Text style={[styles.modeTitle, source === "PAST_IMPORT" && styles.modeTitleActive]}>Past print</Text>
+          </Pressable>
+        </View>
+      </View>
+
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.stepRail}>
+        {posFlowSteps.map((step, index) => {
+          const StepIcon = step.icon;
+          return (
+            <Pressable key={step.key} onPress={() => goToStep(step.key)} style={[styles.stepPill, flowStep === step.key && styles.stepPillActive]}>
+              <StepIcon size={16} color={flowStep === step.key ? palette.actionText : palette.cyanDark} strokeWidth={2.5} />
+              <Text style={[styles.stepLabel, flowStep === step.key && styles.stepLabelActive]}>{index + 1}. {step.label}</Text>
+            </Pressable>
+          );
+        })}
+      </ScrollView>
+
+      {flowStep === "customer" ? (
+        <Card>
+          <View style={styles.orderTop}>
+            <View style={styles.grow}>
+              <Text style={styles.cardTitle}>Customer</Text>
+            </View>
+            <AppIconBadge Icon={IdCard} small />
+          </View>
         <Field label="Find Stripe customer" value={customerQuery} onChangeText={setCustomerQuery} autoCapitalize="none" />
         {customers.length ? (
           <View style={styles.choiceList}>
@@ -1040,6 +1486,18 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
         ) : null}
         <Field label="Customer name" value={customerName} onChangeText={setCustomerName} />
         <Field label="Email" value={customerEmail} onChangeText={setCustomerEmail} keyboardType="email-address" autoCapitalize="none" />
+          <FlowNav onBack={goBack} onNext={goNext} backDisabled={activeStepIndex === 0} nextLabel="Choose Items" />
+        </Card>
+      ) : null}
+
+      {flowStep === "items" ? (
+        <Card>
+          <View style={styles.orderTop}>
+            <View style={styles.grow}>
+              <Text style={styles.cardTitle}>{source === "PAST_IMPORT" ? "Order items + printer history" : "Items + colors"}</Text>
+            </View>
+            <AppIconBadge Icon={Boxes} small />
+          </View>
         {productLoading ? <ActivityIndicator color={palette.cyanDark} /> : null}
         {lines.map((line, index) => {
           const product = productFor(line, products);
@@ -1106,6 +1564,61 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
             <Text style={styles.secondaryButtonText}>Add Item</Text>
           </Pressable>
         ) : null}
+
+          {source === "PAST_IMPORT" ? (
+            <View style={styles.actionItem}>
+              <View style={styles.orderTop}>
+                <View style={styles.grow}>
+                  <Text style={styles.cardTitle}>Printer history match</Text>
+                </View>
+                <Badge label={`${history.length} rows`} />
+              </View>
+              <Pressable disabled={historyLoading || saving} onPress={pullHistory} style={styles.secondaryButton}>
+                {historyLoading ? <ActivityIndicator color={palette.cyanDark} /> : <Text style={styles.secondaryButtonText}>Pull Printer History</Text>}
+              </Pressable>
+              {history.length ? (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.historyRail}>
+                  {history.slice(0, 30).map((print) => (
+                    <Pressable key={print.id} onPress={() => { setSelectedHistoryId(print.id); setSelectedHistorySpoolId(""); }} style={[styles.historyCard, selectedHistoryId === print.id && styles.historyCardActive]}>
+                      <Text style={[styles.historyTitle, selectedHistoryId === print.id && styles.historyTitleActive]} numberOfLines={2}>{print.name}</Text>
+                      <Text style={[styles.historyMeta, selectedHistoryId === print.id && styles.historyMetaActive]}>{print.status} · {typeof print.gramsUsed === "number" ? `${Math.round(print.gramsUsed)}g` : "no grams"}</Text>
+                      <Text style={[styles.historyMeta, selectedHistoryId === print.id && styles.historyMetaActive]}>{print.completedAt ? new Date(print.completedAt).toLocaleDateString() : "date unknown"}</Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              ) : null}
+              <Text style={styles.label}>Filament used by this history row</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRail}>
+                {spools.map((spool) => {
+                  const active = activeHistorySpoolId === spool.id;
+                  const suggested = suggestedHistorySpool?.id === spool.id && !selectedHistorySpoolId;
+                  return (
+                    <Pressable key={spool.id} onPress={() => setSelectedHistorySpoolId(spool.id)} style={[styles.choiceChip, active && styles.choiceChipActive]}>
+                      <Text style={[styles.choiceChipText, active && styles.choiceChipTextActive]}>{spool.color} {spool.material.replace("_PLUS", "+")}{suggested ? " · auto" : ""}</Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+              {selectedHistory && activeHistorySpoolId ? (
+                <View style={styles.summaryBand}>
+                  <Text style={styles.summaryText}>Ready to attach: {selectedHistory.name}</Text>
+                  <Text style={styles.summaryText}>Filament roll: {spools.find((spool) => spool.id === activeHistorySpoolId)?.color ?? "selected"}</Text>
+                </View>
+              ) : null}
+            </View>
+          ) : null}
+          <FlowNav onBack={goBack} onNext={goNext} backDisabled={false} nextLabel="Fulfillment" />
+        </Card>
+      ) : null}
+
+      {flowStep === "fulfillment" ? (
+        <Card>
+          <View style={styles.orderTop}>
+            <View style={styles.grow}>
+              <Text style={styles.cardTitle}>Fulfillment</Text>
+            </View>
+            <AppIconBadge Icon={PackageCheck} small />
+          </View>
         <View style={styles.segment}>
           {(["PICKUP", "SHIP"] as const).map((method) => (
             <Pressable key={method} onPress={() => { setFulfillmentMethod(method); setShippingQuote(null); }} style={[styles.segmentItem, fulfillmentMethod === method && styles.segmentItemActive]}>
@@ -1114,7 +1627,10 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
           ))}
         </View>
         {fulfillmentMethod === "PICKUP" ? (
-          <Field label="Estimated pickup time" value={estimatedPickupAt} onChangeText={setEstimatedPickupAt} />
+          <PickupTimeSelector
+            value={estimatedPickupAt}
+            onChange={setEstimatedPickupAt}
+          />
         ) : (
           <View style={styles.field}>
             <Field label="Street" value={address.street1} onChangeText={(street1) => setAddress({ ...address, street1 })} />
@@ -1130,52 +1646,158 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
           <Text style={styles.secondaryButtonText}>Estimate {fulfillmentMethod === "SHIP" ? "Shipping" : "Pickup"}</Text>
         </Pressable>
         <Text style={styles.cardCopy}>Total {money(totalCents)}{shippingQuote ? ` · fulfillment ${money(shippingQuote.shippingAmountCents)}` : ""}</Text>
-        <View style={styles.segment}>
-          {["UNPAID", "CASH", "STRIPE_TERMINAL", "STRIPE_MANUAL"].map((method) => (
-            <Pressable key={method} onPress={() => setPaymentMethod(method)} style={[styles.segmentItem, paymentMethod === method && styles.segmentItemActive]}>
-              <Text style={[styles.segmentText, paymentMethod === method && styles.segmentTextActive]}>{method === "STRIPE_TERMINAL" ? "Tap to Pay" : method.replace("STRIPE_", "")}</Text>
-            </Pressable>
-          ))}
-        </View>
-        <Field label="Paid now" value={paidNow} onChangeText={setPaidNow} keyboardType="decimal-pad" />
-        <View style={styles.inline}>
-          <Field label="Reference" value={paymentReference} onChangeText={setPaymentReference} grow />
-          <Field label="Last 4" value={cardLast4} onChangeText={(value) => setCardLast4(value.replace(/\D/g, "").slice(0, 4))} keyboardType="number-pad" grow />
-        </View>
-        <View style={styles.inline}>
-          <Field label="Card brand" value={cardBrand} onChangeText={setCardBrand} grow />
-          <Field label="Order date" value={orderDate} onChangeText={setOrderDate} grow />
-        </View>
-        <View style={styles.segment}>
-          {([
-            ["IN_PERSON", "New"],
-            ["PAST_IMPORT", "Past"]
-          ] as const).map(([value, label]) => (
-            <Pressable key={value} onPress={() => setSource(value)} style={[styles.segmentItem, source === value && styles.segmentItemActive]}>
-              <Text style={[styles.segmentText, source === value && styles.segmentTextActive]}>{label}</Text>
-            </Pressable>
-          ))}
-        </View>
-        <View style={styles.switchRow}>
-          <Text style={styles.label}>Queue paid items now</Text>
-          <Switch value={queueNow} onValueChange={setQueueNow} />
+          <FlowNav onBack={goBack} onNext={goNext} backDisabled={false} nextLabel="Payment" />
+        </Card>
+      ) : null}
+
+      {flowStep === "payment" ? (
+        <Card>
+          <View style={styles.orderTop}>
+            <View style={styles.grow}>
+              <Text style={styles.cardTitle}>Payment</Text>
+            </View>
+            <AppIconBadge Icon={CircleDollarSign} small />
+          </View>
+
+          <View style={styles.paymentGrid}>
+            {paymentOptions.map((option) => (
+              <Pressable
+                key={option.key}
+                onPress={() => selectPaymentMethod(option.key)}
+                style={[styles.paymentTile, paymentMethod === option.key && styles.paymentTileActive]}
+              >
+                <PaymentIconBadge Icon={option.icon} active={paymentMethod === option.key} small />
+                <Text style={[styles.paymentTileTitle, paymentMethod === option.key && styles.paymentTileTitleActive]}>{option.label}</Text>
+              </Pressable>
+            ))}
+          </View>
+
+          <View style={styles.paymentPanel}>
+            {paymentMethod === "UNPAID" ? (
+              <>
+                <View style={styles.orderTop}>
+                  <View style={styles.grow}>
+                    <Text style={styles.cardTitle}>Expected payment</Text>
+                  </View>
+                  <Text style={styles.money}>{money(totalCents)}</Text>
+                </View>
+                <View style={styles.iconChoiceRow}>
+                  {expectedPaymentOptions.map((option) => (
+                    <Pressable
+                      key={option.key}
+                      onPress={() => selectExpectedPaymentType(option.key)}
+                      style={[styles.iconChoice, expectedPaymentType === option.key && styles.iconChoiceActive]}
+                    >
+                      <PaymentIconBadge Icon={option.icon} active={expectedPaymentType === option.key} small />
+                      <Text style={[styles.iconChoiceText, expectedPaymentType === option.key && styles.iconChoiceTextActive]}>{option.label}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+                <Pressable onPress={markExpectedPayment} style={[styles.secondaryButton, expectedPaymentSelected && styles.primaryButton]}>
+                  <Text style={expectedPaymentSelected ? styles.primaryButtonText : styles.secondaryButtonText}>{expectedPaymentSelected ? `Expected ${formatExpectedPaymentType(expectedPaymentType)} Selected` : `Select Expected ${formatExpectedPaymentType(expectedPaymentType)}`}</Text>
+                </Pressable>
+              </>
+            ) : null}
+
+            {paymentMethod === "CASH" ? (
+              <>
+                <View style={styles.orderTop}>
+                  <View style={styles.grow}>
+                    <Text style={styles.cardTitle}>Cash sale</Text>
+                  </View>
+                  <Text style={styles.money}>{money(totalCents)}</Text>
+                </View>
+              </>
+            ) : null}
+
+            {paymentMethod === "STRIPE_TERMINAL" ? (
+              <>
+                <View style={styles.orderTop}>
+                  <View style={styles.grow}>
+                    <Text style={styles.cardTitle}>Tap to Pay</Text>
+                  </View>
+                  <Text style={styles.money}>{money(totalCents)}</Text>
+                </View>
+                <Pressable onPress={chargeTapToPay} disabled={saving} style={[styles.primaryButton, saving && styles.disabled]}>
+                  {saving ? <ActivityIndicator color={palette.actionText} /> : <Text style={styles.primaryButtonText}>Tap to Pay {money(totalCents)}</Text>}
+                </Pressable>
+              </>
+            ) : null}
+
+            {paymentMethod === "STRIPE_MANUAL" ? (
+              <>
+                <View style={styles.orderTop}>
+                  <View style={styles.grow}>
+                    <Text style={styles.cardTitle}>Manual card</Text>
+                  </View>
+                  <Text style={styles.money}>{money(totalCents)}</Text>
+                </View>
+                <Pressable onPress={chargeManualCard} disabled={saving} style={[styles.primaryButton, saving && styles.disabled]}>
+                  {saving ? <ActivityIndicator color={palette.actionText} /> : <Text style={styles.primaryButtonText}>Charge Card Securely</Text>}
+                </Pressable>
+                <Field label="Transaction id" value={manualTransactionId} onChangeText={(value) => { setManualTransactionId(value); setPaymentReference(value); }} autoCapitalize="none" />
+                <View style={styles.inline}>
+                  <Field label="Card brand" value={cardBrand} onChangeText={setCardBrand} grow />
+                  <Field label="Last 4" value={cardLast4} onChangeText={(value) => setCardLast4(value.replace(/\D/g, "").slice(0, 4))} keyboardType="number-pad" grow />
+                </View>
+                <Pressable onPress={markManualTransactionComplete} disabled={saving} style={styles.secondaryButton}>
+                  <Text style={styles.secondaryButtonText}>Complete With Transaction ID</Text>
+                </Pressable>
+              </>
+            ) : null}
+          </View>
+
+          <View style={styles.paymentSummary}>
+            <InfoRow label="Total" value={money(totalCents)} />
+            <InfoRow label="Paid on confirm" value={money(displayPaidCents)} />
+            <InfoRow label="Balance after confirm" value={money(displayBalanceCents)} />
+          </View>
+          <View style={styles.inline}>
+            {paymentMethod === "UNPAID" || source === "PAST_IMPORT" ? (
+              <Field label="Reference" value={paymentReference} onChangeText={setPaymentReference} grow />
+            ) : null}
+            <Field label="Order date" value={orderDate} onChangeText={setOrderDate} grow />
+          </View>
+          {paymentMethod === "UNPAID" ? null : (
+            <View style={styles.switchRow}>
+              <Text style={styles.label}>Queue paid items now</Text>
+              <Switch value={queueNow} onValueChange={setQueueNow} />
+            </View>
+          )}
+          {message ? <Text style={styles.message}>{message}</Text> : null}
+          <FlowNav onBack={goBack} onNext={goNext} backDisabled={false} nextLabel="Review" />
+        </Card>
+      ) : null}
+
+      {flowStep === "review" ? (
+        <Card>
+          <View style={styles.orderTop}>
+            <View style={styles.grow}>
+              <Text style={styles.cardTitle}>Review + create</Text>
+            </View>
+            <AppIconBadge Icon={BadgeCheck} small />
+          </View>
+        <View style={styles.readOnlyPanel}>
+          <InfoRow label="Mode" value={source === "PAST_IMPORT" ? "Past print import" : "New counter order"} />
+          <InfoRow label="Customer" value={customerName || "Missing"} />
+          <InfoRow label="Email" value={customerEmail || "Missing"} />
+          <InfoRow label="Items" value={`${lines.length} line(s)`} />
+          <InfoRow label="Fulfillment" value={fulfillmentMethod} />
+          <InfoRow label="Payment" value={paymentMethod === "STRIPE_TERMINAL" ? "Tap to Pay" : paymentMethod.replace("STRIPE_", "")} />
+          <InfoRow label="Total" value={money(totalCents)} />
+          <InfoRow label="Paid" value={money(displayPaidCents)} />
+          <InfoRow label="Balance" value={money(displayBalanceCents)} />
+          {source === "PAST_IMPORT" ? <InfoRow label="History" value={selectedHistory?.name ?? "Not selected"} /> : null}
+          {source === "PAST_IMPORT" ? <InfoRow label="Filament" value={spools.find((spool) => spool.id === activeHistorySpoolId)?.color ?? "Not selected"} /> : null}
         </View>
         <Field label="Notes" value={internalNotes} onChangeText={setInternalNotes} multiline />
         <Pressable onPress={saveOrder} disabled={saving} style={[styles.primaryButton, saving && styles.disabled]}>
-          {saving ? <ActivityIndicator color={palette.actionText} /> : <Text style={styles.primaryButtonText}>{paymentMethod === "UNPAID" ? "Save Without Payment" : "Save Order"}</Text>}
+          {saving ? <ActivityIndicator color={palette.actionText} /> : <Text style={styles.primaryButtonText}>{paymentMethod === "UNPAID" ? "Confirm Expected Payment" : "Confirm Order"}</Text>}
         </Pressable>
-        {paymentMethod === "STRIPE_MANUAL" ? (
-          <Pressable onPress={chargeManualCard} disabled={saving} style={[styles.primaryButton, saving && styles.disabled]}>
-            <Text style={styles.primaryButtonText}>Enter Card Securely</Text>
-          </Pressable>
-        ) : null}
-        {paymentMethod === "STRIPE_TERMINAL" ? (
-          <Pressable onPress={chargeTapToPay} disabled={saving} style={[styles.primaryButton, saving && styles.disabled]}>
-            {saving ? <ActivityIndicator color={palette.actionText} /> : <Text style={styles.primaryButtonText}>Tap to Pay on iPhone</Text>}
-          </Pressable>
-        ) : null}
         {message ? <Text style={styles.message}>{message}</Text> : null}
-      </Card>
+          <FlowNav onBack={goBack} onNext={goNext} backDisabled={false} nextDisabled nextLabel="Done" />
+        </Card>
+      ) : null}
     </ScrollView>
   );
 }
@@ -2013,11 +2635,13 @@ function SettingsScreen({
   settings,
   setSettings,
   sessionInfo,
+  sessionMeta,
   onSignOut
 }: {
   settings: AdminSettings;
   setSettings: (settings: AdminSettings) => void;
   sessionInfo: MobileSessionInfo | null;
+  sessionMeta: StoredSessionMeta | null;
   onSignOut: () => Promise<void>;
 }) {
   const client = useMemo(() => new SuperPrintClient(settings), [settings]);
@@ -2053,15 +2677,16 @@ function SettingsScreen({
           ["Auth", sessionInfo?.user?.email ?? "Signed in"],
           ["Payments", settings.stripeConfigured ? `Stripe ${settings.stripeMode || "ready"}` : "Needs platform config"],
           ["Terminal", settings.terminalLocationId || "No location"]
-        ].map(([title, detail]) => (
-          <View key={title} style={styles.gridCard}>
-            <View style={styles.gridIconBadge}>
-              <Image source={brandMark} style={styles.gridIcon} resizeMode="contain" />
+        ].map(([title, detail]) => {
+          const Icon = title === "Backend" ? Factory : title === "Auth" ? ScanFace : title === "Payments" ? CreditCard : SmartphoneNfc;
+          return (
+            <View key={title} style={styles.gridCard}>
+              <DashboardIconBadge Icon={Icon} />
+              <Text style={styles.gridTitle}>{title}</Text>
+              <Text style={styles.gridDetail}>{detail}</Text>
             </View>
-            <Text style={styles.gridTitle}>{title}</Text>
-            <Text style={styles.gridDetail}>{detail}</Text>
-          </View>
-        ))}
+          );
+        })}
       </View>
       <Card>
         <Text style={styles.cardTitle}>Appearance</Text>
@@ -2078,7 +2703,9 @@ function SettingsScreen({
         <View style={styles.readOnlyPanel}>
           <InfoRow label="Signed in as" value={(sessionInfo?.user?.email ?? settings.adminEmail) || "Admin"} />
           <InfoRow label="Role" value={sessionInfo?.user?.role ?? "Admin"} />
-          <InfoRow label="Session storage" value="iOS secure storage" />
+          <InfoRow label="Session storage" value="SecureStore, this device only" />
+          <InfoRow label="App unlock" value="Face ID / device passcode" />
+          <InfoRow label="Session checked" value={sessionMeta?.lastValidatedAt ? new Date(sessionMeta.lastValidatedAt).toLocaleString() : "Current launch"} />
           <InfoRow label="Backend" value={settings.apiBaseUrl} />
         </View>
         <Pressable onPress={onSignOut} style={styles.secondaryButton}>
@@ -2119,7 +2746,7 @@ function ScreenHeader({ title, detail }: { title: string; detail: string }) {
   return (
     <View>
       <Text style={styles.h1}>{title}</Text>
-      <Text style={styles.copy}>{detail}</Text>
+      {detail ? <Text style={styles.copy}>{detail}</Text> : null}
     </View>
   );
 }
@@ -2135,6 +2762,89 @@ function Metric({ label, value }: { label: string; value: string }) {
 
 function Card({ children }: { children: React.ReactNode }) {
   return <View style={styles.card}>{children}</View>;
+}
+
+function AppIconBadge({ Icon, small = false }: { Icon: LucideIcon; small?: boolean }) {
+  return (
+    <View style={[styles.iconBadge, small && styles.iconBadgeSmall]}>
+      <Icon size={small ? 20 : 28} color={palette.cyan} strokeWidth={2.5} />
+    </View>
+  );
+}
+
+function DashboardIconBadge({ Icon }: { Icon: LucideIcon }) {
+  return (
+    <View style={styles.gridIconBadge}>
+      <Icon size={24} color={palette.cyan} strokeWidth={2.5} />
+    </View>
+  );
+}
+
+function PaymentIconBadge({ Icon, active = false, small = false }: { Icon: LucideIcon; active?: boolean; small?: boolean }) {
+  return (
+    <View style={[styles.iconBadge, small && styles.iconBadgeSmall, active && styles.iconBadgeActive]}>
+      <Icon size={small ? 20 : 26} color={active ? palette.actionText : palette.cyan} strokeWidth={2.5} />
+    </View>
+  );
+}
+
+function FlowNav({
+  onBack,
+  onNext,
+  backDisabled,
+  nextDisabled,
+  nextLabel
+}: {
+  onBack: () => void;
+  onNext: () => void;
+  backDisabled?: boolean;
+  nextDisabled?: boolean;
+  nextLabel: string;
+}) {
+  return (
+    <View style={styles.inline}>
+      <Pressable disabled={backDisabled} onPress={onBack} style={[styles.secondaryButton, styles.grow, backDisabled && styles.disabled]}>
+        <Text style={styles.secondaryButtonText}>Back</Text>
+      </Pressable>
+      <Pressable disabled={nextDisabled} onPress={onNext} style={[styles.primaryButton, styles.grow, nextDisabled && styles.disabled]}>
+        <Text style={styles.primaryButtonText}>{nextLabel}</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+function PickupTimeSelector({ value, onChange }: { value: Date | null; onChange: (value: Date | null) => void }) {
+  const pickerValue = value ?? nextPickupDefault();
+
+  function handleChange(event: DateTimePickerEvent, selected?: Date) {
+    if (event.type === "dismissed") return;
+    if (selected) onChange(copyTimeToToday(selected));
+  }
+
+  return (
+    <View style={styles.field}>
+      <View style={styles.switchRow}>
+        <View>
+          <Text style={styles.label}>Estimated pickup time</Text>
+          <Text style={styles.cardCopy}>{value ? formatPickupTime(value) : "No pickup time selected"}</Text>
+        </View>
+        {value ? (
+          <Pressable onPress={() => onChange(null)} style={styles.smallButton}>
+            <Text style={styles.smallButtonText}>Clear</Text>
+          </Pressable>
+        ) : null}
+      </View>
+      <View style={styles.timePickerShell}>
+        <DateTimePicker
+          value={pickerValue}
+          mode="time"
+          display={Platform.OS === "ios" ? "compact" : "default"}
+          minuteInterval={5}
+          onChange={handleChange}
+        />
+      </View>
+    </View>
+  );
 }
 
 function Field(props: {
@@ -2400,6 +3110,33 @@ function newOrderLine(product: ProductOption, quantity = "1"): LineDraft {
   };
 }
 
+function suggestHistorySpool(print: PrinterHistoryItem | null, spools: FilamentSpool[], lines: LineDraft[], products: ProductOption[]) {
+  const active = spools.filter((spool) => spool.active);
+  if (!active.length) return null;
+  const selectedColors = new Set(lines.flatMap((line) => line.selectedColors).map(normalizeMatchToken).filter(Boolean));
+  const selectedMaterials = new Set(lines.flatMap((line) => {
+    const product = productFor(line, products);
+    return line.selectedFilamentMaterialIds.map((id) => product?.allowedFilaments?.find((item) => item.filamentMaterialId === id)?.filamentMaterial.material ?? "");
+  }).map(normalizeMatchToken).filter(Boolean));
+  const historyText = normalizeMatchToken([print?.name, print?.material, print?.gramsSource].filter(Boolean).join(" "));
+  const scored = active.map((spool) => {
+    const color = normalizeMatchToken(spool.color);
+    const material = normalizeMatchToken(spool.material);
+    let score = 0;
+    if (selectedColors.has(color)) score += 8;
+    if (selectedMaterials.has(material)) score += 5;
+    if (historyText.includes(color)) score += 4;
+    if (historyText.includes(material)) score += 2;
+    score += Math.min(2, spool.remainingGrams / 1000);
+    return { spool, score };
+  }).sort((left, right) => right.score - left.score || left.spool.color.localeCompare(right.spool.color));
+  return scored[0]?.score > 0 ? scored[0].spool : active[0];
+}
+
+function normalizeMatchToken(value: string) {
+  return value.toLowerCase().replace(/[_+-]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
 function merchantAddress(application: MerchantApplication) {
   const cityStateZip = [application.city, [application.state, application.zip].filter(Boolean).join(" ")].filter(Boolean).join(", ");
   return [
@@ -2419,6 +3156,26 @@ function formatStripeRequirement(value: string) {
 
 function money(centsValue: number) {
   return (centsValue / 100).toLocaleString("en-US", { style: "currency", currency: "USD" });
+}
+
+function formatExpectedPaymentType(type: ExpectedPaymentType) {
+  return type === "CARD" ? "Card" : "Cash";
+}
+
+function nextPickupDefault() {
+  const next = new Date();
+  next.setMinutes(Math.ceil(next.getMinutes() / 5) * 5, 0, 0);
+  return next;
+}
+
+function copyTimeToToday(value: Date) {
+  const next = new Date();
+  next.setHours(value.getHours(), value.getMinutes(), 0, 0);
+  return next;
+}
+
+function formatPickupTime(value: Date) {
+  return value.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
 }
 
 function normalizeSetCookie(value: string) {
@@ -2463,9 +3220,23 @@ function createStyles(palette: ThemePalette) {
   content: { flex: 1 },
   screen: { flex: 1 },
   screenBody: { padding: 18, paddingBottom: 56, gap: 16 },
+  flowHero: { borderRadius: 8, backgroundColor: palette.card, borderWidth: 1, borderColor: palette.line, padding: 16, gap: 14 },
+  modeGrid: { flexDirection: "row", gap: 10 },
+  modeCard: { flex: 1, minHeight: 118, borderRadius: 8, borderWidth: 1, borderColor: palette.line, backgroundColor: palette.field, padding: 12, gap: 8 },
+  modeCardActive: { backgroundColor: palette.actionBg, borderColor: palette.actionBg },
+  modeTitle: { color: palette.ink, fontSize: 15, fontWeight: "900" },
+  modeTitleActive: { color: palette.actionText },
+  modeCopy: { color: palette.slate, fontSize: 12, lineHeight: 17, fontWeight: "700" },
+  modeCopyActive: { color: palette.actionText },
+  stepRail: { gap: 8, paddingVertical: 2 },
+  stepPill: { minHeight: 42, flexDirection: "row", alignItems: "center", gap: 8, borderRadius: 8, borderWidth: 1, borderColor: palette.line, backgroundColor: palette.card, paddingHorizontal: 10 },
+  stepPillActive: { backgroundColor: palette.actionBg, borderColor: palette.actionBg },
+  stepLabel: { color: palette.slate, fontSize: 12, fontWeight: "900" },
+  stepLabelActive: { color: palette.actionText },
   centerPane: { flex: 1, alignItems: "center", justifyContent: "center" },
   loginBody: { justifyContent: "center", minHeight: "100%" },
   loginLogo: { width: 176, height: 56 },
+  lockBadge: { width: 72, height: 72, borderRadius: 8, backgroundColor: palette.markBg, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: palette.line },
   kicker: { color: palette.cyanDark, fontSize: 12, fontWeight: "900", textTransform: "uppercase", letterSpacing: 1 },
   h1: { color: palette.ink, fontSize: 34, fontWeight: "900" },
   copy: { color: palette.slate, fontSize: 15, lineHeight: 22 },
@@ -2476,7 +3247,9 @@ function createStyles(palette: ThemePalette) {
   grid: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
   gridCard: { width: "47.8%", minHeight: 126, backgroundColor: palette.card, borderWidth: 1, borderColor: palette.line, borderRadius: 8, padding: 14, overflow: "hidden" },
   gridIconBadge: { width: 38, height: 38, borderRadius: 8, backgroundColor: palette.markBg, alignItems: "center", justifyContent: "center", marginBottom: 14 },
-  gridIcon: { width: 30, height: 30 },
+  iconBadge: { width: 54, height: 54, borderRadius: 8, backgroundColor: palette.markBg, alignItems: "center", justifyContent: "center" },
+  iconBadgeSmall: { width: 36, height: 36 },
+  iconBadgeActive: { backgroundColor: "rgba(255,255,255,0.16)", borderWidth: 1, borderColor: "rgba(255,255,255,0.28)" },
   gridTitle: { color: palette.ink, fontSize: 17, fontWeight: "900" },
   gridDetail: { color: palette.slate, fontSize: 12, lineHeight: 17, marginTop: 8 },
   card: { backgroundColor: palette.card, borderWidth: 1, borderColor: palette.line, borderRadius: 8, padding: 16, gap: 12 },
@@ -2487,6 +3260,7 @@ function createStyles(palette: ThemePalette) {
   label: { color: palette.ink, fontSize: 12, fontWeight: "800" },
   input: { minHeight: 44, borderWidth: 1, borderColor: palette.line, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, color: palette.ink, backgroundColor: palette.field },
   multilineInput: { minHeight: 90, textAlignVertical: "top" },
+  timePickerShell: { minHeight: 48, borderWidth: 1, borderColor: palette.line, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 6, alignItems: "flex-start", justifyContent: "center", backgroundColor: palette.field },
   readOnlyPanel: { borderWidth: 1, borderColor: palette.line, borderRadius: 8, backgroundColor: palette.field, overflow: "hidden" },
   infoRow: { minHeight: 48, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: palette.line },
   infoLabel: { color: palette.muted, fontSize: 12, fontWeight: "800" },
@@ -2500,6 +3274,13 @@ function createStyles(palette: ThemePalette) {
   productChipTitleActive: { color: palette.actionText },
   productChipMeta: { color: palette.muted, fontSize: 11, fontWeight: "800" },
   productChipMetaActive: { color: palette.actionText },
+  historyRail: { gap: 8, paddingVertical: 2 },
+  historyCard: { width: 210, minHeight: 96, borderWidth: 1, borderColor: palette.line, borderRadius: 8, padding: 12, justifyContent: "space-between", backgroundColor: palette.field },
+  historyCardActive: { backgroundColor: palette.actionBg, borderColor: palette.actionBg },
+  historyTitle: { color: palette.ink, fontSize: 13, fontWeight: "900" },
+  historyTitleActive: { color: palette.actionText },
+  historyMeta: { color: palette.muted, fontSize: 11, fontWeight: "800" },
+  historyMetaActive: { color: palette.actionText },
   chipRail: { gap: 8, paddingVertical: 2 },
   choiceChip: { minHeight: 38, minWidth: 72, borderWidth: 1, borderColor: palette.line, borderRadius: 8, alignItems: "center", justifyContent: "center", paddingHorizontal: 12, backgroundColor: palette.field },
   choiceChipActive: { backgroundColor: palette.actionBg, borderColor: palette.actionBg },
@@ -2510,6 +3291,22 @@ function createStyles(palette: ThemePalette) {
   segmentItemActive: { backgroundColor: palette.cyan },
   segmentText: { color: palette.slate, fontSize: 12, fontWeight: "900" },
   segmentTextActive: { color: palette.actionText },
+  paymentGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
+  paymentTile: { width: "47.8%", minHeight: 82, borderRadius: 8, borderWidth: 1, borderColor: palette.line, backgroundColor: palette.field, padding: 12, gap: 8, alignItems: "center", justifyContent: "center" },
+  paymentTileActive: { backgroundColor: palette.actionBg, borderColor: palette.actionBg },
+  paymentTileTitle: { color: palette.ink, fontSize: 14, fontWeight: "900" },
+  paymentTileTitleActive: { color: palette.actionText },
+  paymentTileCopy: { color: palette.slate, fontSize: 11, lineHeight: 16, fontWeight: "700" },
+  paymentTileCopyActive: { color: palette.actionText },
+  paymentPanel: { borderWidth: 1, borderColor: palette.line, borderRadius: 8, backgroundColor: palette.field, padding: 12, gap: 12 },
+  paymentSummary: { borderWidth: 1, borderColor: palette.line, borderRadius: 8, backgroundColor: palette.card, overflow: "hidden" },
+  iconChoiceRow: { flexDirection: "row", gap: 10 },
+  iconChoice: { flex: 1, minHeight: 72, borderRadius: 8, borderWidth: 1, borderColor: palette.line, backgroundColor: palette.card, padding: 10, alignItems: "center", justifyContent: "center", gap: 8 },
+  iconChoiceActive: { backgroundColor: palette.actionBg, borderColor: palette.actionBg },
+  iconChoiceText: { color: palette.ink, fontSize: 13, fontWeight: "900" },
+  iconChoiceTextActive: { color: palette.actionText },
+  successBand: { borderRadius: 8, borderWidth: 1, borderColor: palette.secondaryBorder, backgroundColor: palette.secondaryBg, padding: 12 },
+  successText: { color: palette.cyanDark, fontSize: 13, fontWeight: "900" },
   summaryBand: { borderWidth: 1, borderColor: palette.line, borderRadius: 8, backgroundColor: palette.secondaryBg, padding: 12, gap: 6 },
   summaryText: { color: palette.slate, fontSize: 12, fontWeight: "800" },
   switchRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
