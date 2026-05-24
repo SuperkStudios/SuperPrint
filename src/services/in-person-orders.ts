@@ -210,7 +210,7 @@ export async function createInPersonOrder(input: CreateInPersonOrderInput, actor
   });
 
   await syncOrderCustomerToStripe(order.id, {
-    required: paymentMethod.startsWith("STRIPE")
+    required: paymentMethod.startsWith("STRIPE") && input.source !== "PAST_IMPORT"
   });
 
   return order;

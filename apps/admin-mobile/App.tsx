@@ -160,6 +160,17 @@ type ShippingQuote = {
   estimatedDays: number | null;
 };
 
+type StripePaymentChoice = {
+  id: string;
+  amountCents: number;
+  status: string;
+  created: string;
+  receiptEmail?: string | null;
+  description?: string | null;
+  cardBrand?: string | null;
+  cardLast4?: string | null;
+};
+
 type AppearanceMode = "system" | "light" | "dark";
 type ActiveAppearance = "light" | "dark";
 
@@ -981,6 +992,8 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
   const [history, setHistory] = useState<PrinterHistoryItem[]>([]);
   const [productLoading, setProductLoading] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [stripePayments, setStripePayments] = useState<StripePaymentChoice[]>([]);
+  const [stripePaymentLoading, setStripePaymentLoading] = useState(false);
   const [customerName, setCustomerName] = useState("");
   const [customerEmail, setCustomerEmail] = useState("");
   const [customerQuery, setCustomerQuery] = useState("");
@@ -1008,7 +1021,8 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
   const [message, setMessage] = useState("");
   const totalCents = lines.reduce((total, line) => total + cents(line.unitPrice) * positiveInt(line.quantity, 1), 0) + (shippingQuote?.shippingAmountCents ?? 0);
   const paidNowCents = cents(paidNow);
-  const displayPaidCents = paymentMethod === "CASH" ? totalCents : paidNowCents;
+  const recordsPastStripePayment = source === "PAST_IMPORT" && paymentMethod === "STRIPE_MANUAL";
+  const displayPaidCents = paymentMethod === "CASH" || recordsPastStripePayment ? totalCents : paidNowCents;
   const displayBalanceCents = Math.max(0, totalCents - displayPaidCents);
   const activeStepIndex = posFlowSteps.findIndex((step) => step.key === flowStep);
   const selectedHistory = history.find((print) => print.id === selectedHistoryId) ?? null;
@@ -1086,10 +1100,13 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
   function selectOrderSource(nextSource: "IN_PERSON" | "PAST_IMPORT") {
     setSource(nextSource);
     setQueueNow(false);
+    setStripePayments([]);
     if (nextSource === "PAST_IMPORT") {
       setFulfillmentMethod("PICKUP");
-      selectPaymentMethod("UNPAID");
-      setPaidNow("0.00");
+      selectPaymentMethod("STRIPE_MANUAL");
+      setPaidNow((totalCents / 100).toFixed(2));
+      setPaymentReference("");
+      setManualTransactionId("");
     }
   }
 
@@ -1119,7 +1136,7 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
       setCardLast4("");
       return;
     }
-    setPaidNow("0.00");
+    setPaidNow(source === "PAST_IMPORT" ? (totalCents / 100).toFixed(2) : "0.00");
     setExpectedPaymentSelected(false);
     setPaymentReference(manualTransactionId.trim());
   }
@@ -1146,6 +1163,34 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
     setPaymentReference(transactionId);
     setPaidNow((totalCents / 100).toFixed(2));
     setMessage(`Manual transaction ${transactionId} is ready to confirm.`);
+  }
+
+  async function loadStripePayments() {
+    const email = customerEmail.trim();
+    if (!email) {
+      setMessage("Enter the customer email first.");
+      return;
+    }
+    setStripePaymentLoading(true);
+    setMessage("Loading paid Stripe payments...");
+    try {
+      const response = await client.get<{ payments: StripePaymentChoice[] }>(`/api/admin/pos/stripe-payments?email=${encodeURIComponent(email)}`);
+      setStripePayments(response.payments);
+      setMessage(response.payments.length ? "Select the Stripe payment to attach." : "No paid Stripe payments found for this customer.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not load Stripe payments.");
+    } finally {
+      setStripePaymentLoading(false);
+    }
+  }
+
+  function selectStripePayment(payment: StripePaymentChoice) {
+    setManualTransactionId(payment.id);
+    setPaymentReference(payment.id);
+    setPaidNow((totalCents / 100).toFixed(2));
+    setCardBrand(payment.cardBrand ?? "");
+    setCardLast4(payment.cardLast4 ?? "");
+    setMessage(`Stripe payment ${payment.id} selected.`);
   }
 
   function goToStep(step: PosFlowStep) {
@@ -1215,10 +1260,15 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
       setFlowStep("items");
       return;
     }
+    if (recordsPastStripePayment && !paymentReference.trim()) {
+      setMessage("Select a Stripe payment or enter the payment intent reference.");
+      setFlowStep("payment");
+      return;
+    }
     setSaving(true);
     setMessage("Saving order...");
     try {
-      const paidCents = paymentMethod === "CASH" ? totalCents : cents(paidNow);
+      const paidCents = paymentMethod === "CASH" || recordsPastStripePayment ? totalCents : cents(paidNow);
       const response = await client.post<{ order: { orderNumber: string } }>("/api/admin/pos", {
         ...buildOrderPayload(),
         paymentMethod,
@@ -1756,20 +1806,43 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
               <>
                 <View style={styles.orderTop}>
                   <View style={styles.grow}>
-                    <Text style={styles.cardTitle}>Manual card</Text>
+                    <Text style={styles.cardTitle}>{source === "PAST_IMPORT" ? "Recorded Stripe payment" : "Manual card"}</Text>
                   </View>
                   <Text style={styles.money}>{money(totalCents)}</Text>
                 </View>
-                <Pressable onPress={chargeManualCard} disabled={saving} style={[styles.primaryButton, saving && styles.disabled]}>
-                  {saving ? <ActivityIndicator color={palette.actionText} /> : <Text style={styles.primaryButtonText}>Charge Card Securely</Text>}
-                </Pressable>
-                <Field label="Transaction id" value={manualTransactionId} onChangeText={(value) => { setManualTransactionId(value); setPaymentReference(value); }} autoCapitalize="none" />
+                {source === "PAST_IMPORT" ? (
+                  <>
+                    <Pressable onPress={loadStripePayments} disabled={stripePaymentLoading || saving} style={[styles.secondaryButton, (stripePaymentLoading || saving) && styles.disabled]}>
+                      {stripePaymentLoading ? <ActivityIndicator color={palette.cyanDark} /> : <Text style={styles.secondaryButtonText}>Load Paid Stripe Payments</Text>}
+                    </Pressable>
+                    {stripePayments.length ? (
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.historyRail}>
+                        {stripePayments.map((payment) => {
+                          const active = paymentReference === payment.id;
+                          return (
+                            <Pressable key={payment.id} onPress={() => selectStripePayment(payment)} style={[styles.historyCard, active && styles.historyCardActive]}>
+                              <Text style={[styles.historyTitle, active && styles.historyTitleActive]} numberOfLines={2}>{payment.id}</Text>
+                              <Text style={[styles.historyMeta, active && styles.historyMetaActive]}>{money(payment.amountCents)} · {payment.status}</Text>
+                              <Text style={[styles.historyMeta, active && styles.historyMetaActive]}>{new Date(payment.created).toLocaleDateString()}</Text>
+                            </Pressable>
+                          );
+                        })}
+                      </ScrollView>
+                    ) : null}
+                    <Text style={styles.cardCopy}>Past orders are recorded as already paid. No card will be charged.</Text>
+                  </>
+                ) : (
+                  <Pressable onPress={chargeManualCard} disabled={saving} style={[styles.primaryButton, saving && styles.disabled]}>
+                    {saving ? <ActivityIndicator color={palette.actionText} /> : <Text style={styles.primaryButtonText}>Charge Card Securely</Text>}
+                  </Pressable>
+                )}
+                <Field label={source === "PAST_IMPORT" ? "Payment intent / reference" : "Transaction id"} value={manualTransactionId} onChangeText={(value) => { setManualTransactionId(value); setPaymentReference(value); }} autoCapitalize="none" />
                 <View style={styles.inline}>
                   <Field label="Card brand" value={cardBrand} onChangeText={setCardBrand} grow />
                   <Field label="Last 4" value={cardLast4} onChangeText={(value) => setCardLast4(value.replace(/\D/g, "").slice(0, 4))} keyboardType="number-pad" grow />
                 </View>
                 <Pressable onPress={markManualTransactionComplete} disabled={saving} style={styles.secondaryButton}>
-                  <Text style={styles.secondaryButtonText}>Complete With Transaction ID</Text>
+                  <Text style={styles.secondaryButtonText}>{source === "PAST_IMPORT" ? "Use Reference As Paid" : "Complete With Transaction ID"}</Text>
                 </Pressable>
               </>
             ) : null}
@@ -1781,7 +1854,7 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
             <InfoRow label="Balance after confirm" value={money(displayBalanceCents)} />
           </View>
           <View style={styles.inline}>
-            {paymentMethod === "UNPAID" || source === "PAST_IMPORT" ? (
+            {paymentMethod === "UNPAID" || (source === "PAST_IMPORT" && paymentMethod !== "STRIPE_MANUAL") ? (
               <Field label="Reference" value={paymentReference} onChangeText={setPaymentReference} grow />
             ) : null}
             <Field label="Order date" value={orderDate} onChangeText={setOrderDate} grow />
