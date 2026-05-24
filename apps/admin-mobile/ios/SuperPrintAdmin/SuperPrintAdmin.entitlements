@@ -13,7 +13,7 @@
 	</array>
 	<key>com.apple.developer.in-app-payments</key>
 	<array>
-		<string>merchant.studio.superk.print</string>
+		<string>merchant.studio.superk.superprint</string>
 	</array>
 	<key>com.apple.developer.proximity-reader.payment.acceptance</key>
 	<true/>

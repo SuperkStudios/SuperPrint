@@ -899,10 +899,11 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
       return;
     }
     setSaving(true);
+    let started: { order: { id: string; orderNumber: string; stripePaymentIntentId?: string | null }; clientSecret: string } | null = null;
     try {
       await ensureTapToPayReady();
       setMessage("Creating order and preparing Tap to Pay on iPhone...");
-      const started = await client.post<{ order: { id: string; orderNumber: string; stripePaymentIntentId?: string | null }; clientSecret: string }>("/api/admin/pos/terminal/payment-intent", {
+      started = await client.post<{ order: { id: string; orderNumber: string; stripePaymentIntentId?: string | null }; clientSecret: string }>("/api/admin/pos/terminal/payment-intent", {
         ...buildOrderPayload(),
         savePaymentMethod: true
       });
@@ -943,7 +944,16 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
       });
       setMessage(`Approved ${completed.order.orderNumber}. Digital receipt is sent to ${customerEmail}.`);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Tap to Pay payment failed.");
+      const failure = error instanceof Error ? error.message : "Tap to Pay payment failed.";
+      const paymentIntentId = started?.order.stripePaymentIntentId;
+      if (started?.order.id && paymentIntentId) {
+        await client.post<{ order: { orderNumber: string } }>("/api/admin/pos/terminal/cancel", {
+          orderId: started.order.id,
+          paymentIntentId,
+          reason: failure
+        }).catch(() => undefined);
+      }
+      setMessage(paymentIntentId ? `${failure} The unpaid checkout was canceled.` : failure);
     } finally {
       setSaving(false);
     }

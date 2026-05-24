@@ -305,6 +305,49 @@ export async function completeTerminalOrderPayment(input: { orderId: string; pay
   });
 }
 
+export async function cancelTerminalOrderPayment(input: { orderId: string; paymentIntentId: string; reason?: string | null; actorId?: string }) {
+  const stripe = await getStripe();
+  if (!stripe) throw new Error("Stripe is not configured.");
+  const intent = await stripe.paymentIntents.retrieve(input.paymentIntentId);
+  if (intent.metadata?.orderId !== input.orderId) throw new Error("PaymentIntent does not belong to this order.");
+
+  if (intent.status === "succeeded") {
+    return completeTerminalOrderPayment({
+      orderId: input.orderId,
+      paymentIntentId: input.paymentIntentId,
+      actorId: input.actorId
+    });
+  }
+
+  if (["requires_payment_method", "requires_confirmation", "requires_capture", "requires_action", "processing"].includes(intent.status)) {
+    await stripe.paymentIntents.cancel(intent.id, {
+      cancellation_reason: "abandoned"
+    });
+  }
+
+  const order = await prisma.order.findUnique({
+    where: { id: input.orderId },
+    select: { internalNotes: true }
+  });
+  const cancelNote = input.reason?.trim() ? `Tap to Pay canceled: ${input.reason.trim()}` : null;
+
+  return prisma.order.update({
+    where: { id: input.orderId },
+    data: {
+      status: "CHECKOUT_READY",
+      paymentStatus: "PENDING",
+      paymentMethod: "UNPAID",
+      paymentSource: null,
+      amountPaidCents: 0,
+      depositCents: 0,
+      balanceDueCents: intent.amount,
+      paymentReference: null,
+      stripePaymentIntentId: null,
+      internalNotes: cancelNote ? [order?.internalNotes, cancelNote].filter(Boolean).join("\n") : undefined
+    }
+  });
+}
+
 async function completeStripePosPayment(input: {
   orderId: string;
   paymentIntentId: string;
