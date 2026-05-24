@@ -1,5 +1,10 @@
 PODS:
+  - EASClient (56.0.1):
+    - ExpoModulesCore
   - EXConstants (56.0.15):
+    - ExpoModulesCore
+  - EXJSONUtils (56.0.0)
+  - EXManifests (56.0.4):
     - ExpoModulesCore
   - Expo (56.0.4):
     - ExpoModulesCore
@@ -75,6 +80,37 @@ PODS:
     - ExpoModulesJSI
   - ExpoSecureStore (56.0.4):
     - ExpoModulesCore
+  - EXStructuredHeaders (56.0.0)
+  - EXUpdates (56.0.16):
+    - EASClient
+    - EXManifests
+    - ExpoModulesCore
+    - EXStructuredHeaders
+    - EXUpdatesInterface
+    - hermes-engine
+    - RCTRequired
+    - RCTTypeSafety
+    - ReachabilitySwift
+    - React-Core
+    - React-Core-prebuilt
+    - React-debug
+    - React-Fabric
+    - React-featureflags
+    - React-graphics
+    - React-ImageManager
+    - React-jsi
+    - React-NativeModulesApple
+    - React-RCTFabric
+    - React-renderercss
+    - React-rendererdebug
+    - React-utils
+    - ReactCodegen
+    - ReactCommon/turbomodule/bridging
+    - ReactCommon/turbomodule/core
+    - ReactNativeDependencies
+    - Yoga
+  - EXUpdatesInterface (56.0.2):
+    - ExpoModulesCore
   - FBLazyVector (0.85.3)
   - hermes-engine (250829098.0.10):
     - hermes-engine/Pre-built (= 250829098.0.10)
@@ -88,6 +124,7 @@ PODS:
     - FBLazyVector (= 0.85.3)
     - RCTRequired (= 0.85.3)
     - React-Core (= 0.85.3)
+  - ReachabilitySwift (5.2.4)
   - React (0.85.3):
     - React-Core (= 0.85.3)
     - React-Core/DevSupport (= 0.85.3)
@@ -2064,7 +2101,10 @@ PODS:
   - Yoga (0.0.0)
 
 DEPENDENCIES:
+  - EASClient (from `../node_modules/expo-eas-client/ios`)
   - EXConstants (from `../node_modules/expo/node_modules/expo-constants/ios`)
+  - EXJSONUtils (from `../node_modules/expo-json-utils/ios`)
+  - EXManifests (from `../node_modules/expo-manifests/ios`)
   - Expo (from `../node_modules/expo`)
   - ExpoAppleAuthentication (from `../node_modules/expo-apple-authentication/ios`)
   - ExpoAsset (from `../node_modules/expo/node_modules/expo-asset/ios`)
@@ -2078,6 +2118,9 @@ DEPENDENCIES:
   - ExpoModulesJSI (from `../node_modules/expo-modules-jsi/apple`)
   - ExpoModulesWorklets (from `../node_modules/expo-modules-core/ExpoModulesWorklets.podspec`)
   - ExpoSecureStore (from `../node_modules/expo-secure-store/ios`)
+  - EXStructuredHeaders (from `../node_modules/expo-structured-headers/ios`)
+  - EXUpdates (from `../node_modules/expo-updates/ios`)
+  - EXUpdatesInterface (from `../node_modules/expo-updates-interface/ios`)
   - FBLazyVector (from `../node_modules/react-native/Libraries/FBLazyVector`)
   - hermes-engine (from `../node_modules/react-native/sdks/hermes-engine/hermes-engine.podspec`)
   - RCTDeprecation (from `../node_modules/react-native/ReactApple/Libraries/RCTFoundation/RCTDeprecation`)
@@ -2160,6 +2203,7 @@ DEPENDENCIES:
 
 SPEC REPOS:
   trunk:
+    - ReachabilitySwift
     - Stripe
     - StripeApplePay
     - StripeCore
@@ -2172,8 +2216,14 @@ SPEC REPOS:
     - StripeUICore
 
 EXTERNAL SOURCES:
+  EASClient:
+    :path: "../node_modules/expo-eas-client/ios"
   EXConstants:
     :path: "../node_modules/expo/node_modules/expo-constants/ios"
+  EXJSONUtils:
+    :path: "../node_modules/expo-json-utils/ios"
+  EXManifests:
+    :path: "../node_modules/expo-manifests/ios"
   Expo:
     :path: "../node_modules/expo"
   ExpoAppleAuthentication:
@@ -2200,6 +2250,12 @@ EXTERNAL SOURCES:
     :podspec: "../node_modules/expo-modules-core/ExpoModulesWorklets.podspec"
   ExpoSecureStore:
     :path: "../node_modules/expo-secure-store/ios"
+  EXStructuredHeaders:
+    :path: "../node_modules/expo-structured-headers/ios"
+  EXUpdates:
+    :path: "../node_modules/expo-updates/ios"
+  EXUpdatesInterface:
+    :path: "../node_modules/expo-updates-interface/ios"
   FBLazyVector:
     :path: "../node_modules/react-native/Libraries/FBLazyVector"
   hermes-engine:
@@ -2359,7 +2415,10 @@ EXTERNAL SOURCES:
     :path: "../node_modules/react-native/ReactCommon/yoga"
 
 SPEC CHECKSUMS:
+  EASClient: 2321f8d99fa86c710a6f68e017f3b54366baed9f
   EXConstants: 7ad8cebfd251d7275fa2e3878ad0ad64552937e1
+  EXJSONUtils: dba2755f4e24009eaf87a876b2d615ea06c16e42
+  EXManifests: 7e19be8df665a338493060a419847dae76ffcd43
   Expo: c705adbda900eb7e5d2b4d378ae82b254d9e1e05
   ExpoAppleAuthentication: 3dd8ddd3016396a8171f06af8cc5e3e008e8eaf4
   ExpoAsset: 98f83c25d558707659dd6b117adcc03104dd287b
@@ -2373,6 +2432,9 @@ SPEC CHECKSUMS:
   ExpoModulesJSI: f25a013ea9a79904bdd535e4bea0872e155cde09
   ExpoModulesWorklets: 5349d7281651a11e0a5d14f32db8bb47e32c2ff4
   ExpoSecureStore: f1bd083c1b7b8d4142013ffcc0082d377d9f49f4
+  EXStructuredHeaders: 9e89bcdd636ae2ecb59995cfba3230f5d7547c08
+  EXUpdates: 0d54ab3899de3c99de0bd315377bb57e2c61b3f0
+  EXUpdatesInterface: 25408a97d682355eb9fb37e5aa6e22caece1881f
   FBLazyVector: 24e62c765683b8d89006a88a2c8f5cf019f0074d
   hermes-engine: f4455bb0c27529aaf829195704a62e3556d3cd59
   RCTDeprecation: a4c521821fab57cbb125b36effe84d897d0dfa12
@@ -2380,6 +2442,7 @@ SPEC CHECKSUMS:
   RCTSwiftUI: 239ed2eb9e73de5a6f518810630f0c95e01c8702
   RCTSwiftUIWrapper: 966ca7f5f22ac0b2b2255fb09cffc381f5440b03
   RCTTypeSafety: 2a6403ba3492c04510e7c15bd635461646c43bb2
+  ReachabilitySwift: 32793e867593cfc1177f5d16491e3a197d2fccda
   React: e2dc35338068bbd299c66f043ae0d7f25de8499e
   React-callinvoker: 28b25d21b124c26cebaea713ba7d801b9351dc48
   React-Core: 02ed7d2ffb70437bdf2aba074a13078a7b0b9ff0
