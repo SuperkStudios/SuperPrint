@@ -82,7 +82,9 @@ describe("queue printer dispatch safety", () => {
       mode: "centauri-sdcp",
       message: "started"
     });
-    centauriAdapterMock.mockImplementation(() => ({ startPrint: startPrintMock }));
+    centauriAdapterMock.mockImplementation(function CentauriPrinterControlAdapter() {
+      return { startPrint: startPrintMock };
+    });
     const job = {
       id: "job_1",
       status: "READY_ON_NODE",
@@ -120,7 +122,9 @@ describe("queue printer dispatch safety", () => {
   it("blocks the job instead of crashing the worker when direct start fails", async () => {
     process.env.CENTAURI_DIRECT_START_ENABLED = "true";
     const startPrintMock = vi.fn().mockRejectedValue(new Error("connect ECONNREFUSED 192.168.10.125:3030"));
-    centauriAdapterMock.mockImplementation(() => ({ startPrint: startPrintMock }));
+    centauriAdapterMock.mockImplementation(function CentauriPrinterControlAdapter() {
+      return { startPrint: startPrintMock };
+    });
     const job = {
       id: "job_1",
       status: "QUEUED",
