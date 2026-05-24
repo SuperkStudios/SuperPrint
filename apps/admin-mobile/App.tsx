@@ -1001,6 +1001,7 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
   const selectedHistory = history.find((print) => print.id === selectedHistoryId) ?? null;
   const suggestedHistorySpool = suggestHistorySpool(selectedHistory, spools, lines, products);
   const activeHistorySpoolId = selectedHistorySpoolId || suggestedHistorySpool?.id || "";
+  const attachingPastHistory = source === "PAST_IMPORT" && Boolean(selectedHistory);
 
   useEffect(() => {
     initialize().catch(() => undefined);
@@ -1191,8 +1192,13 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
       setMessage("Customer, email, and product are required.");
       return;
     }
-    if (source === "PAST_IMPORT" && (!selectedHistory || !activeHistorySpoolId)) {
-      setMessage("Choose printer history and a filament roll before saving a past order.");
+    if (attachingPastHistory && !activeHistorySpoolId) {
+      setMessage("Choose a filament roll for the selected printer history, or skip history attachment.");
+      setFlowStep("items");
+      return;
+    }
+    if (attachingPastHistory && (typeof selectedHistory?.gramsUsed !== "number" || selectedHistory.gramsUsed <= 0)) {
+      setMessage("Selected printer history has no material usage. Choose another row, or skip history attachment.");
       setFlowStep("items");
       return;
     }
@@ -1401,8 +1407,8 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
       shippingRateCents: shippingQuote?.shippingRateCents ?? 0,
       shippoRateId: shippingQuote?.rateId ?? null,
       shippoShipmentId: shippingQuote?.shippoShipmentId ?? null,
-      pastPrinterHistory: source === "PAST_IMPORT" ? selectedHistory : null,
-      pastHistorySpoolId: source === "PAST_IMPORT" ? activeHistorySpoolId || null : null,
+      pastPrinterHistory: source === "PAST_IMPORT" && selectedHistory && activeHistorySpoolId ? selectedHistory : null,
+      pastHistorySpoolId: source === "PAST_IMPORT" && selectedHistory && activeHistorySpoolId ? activeHistorySpoolId : null,
       lines: lines.map((line) => {
         const product = productFor(line, products);
         const slotCount = Math.max(1, product?.colorSlotCount ?? 1);
@@ -1576,6 +1582,11 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
               <Pressable disabled={historyLoading || saving} onPress={pullHistory} style={styles.secondaryButton}>
                 {historyLoading ? <ActivityIndicator color={palette.cyanDark} /> : <Text style={styles.secondaryButtonText}>Pull Printer History</Text>}
               </Pressable>
+              {selectedHistory ? (
+                <Pressable disabled={saving} onPress={() => { setSelectedHistoryId(""); setSelectedHistorySpoolId(""); }} style={styles.secondaryButton}>
+                  <Text style={styles.secondaryButtonText}>Skip History Attachment</Text>
+                </Pressable>
+              ) : null}
               {history.length ? (
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.historyRail}>
                   {history.slice(0, 30).map((print) => (
@@ -1604,7 +1615,11 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
                   <Text style={styles.summaryText}>Ready to attach: {selectedHistory.name}</Text>
                   <Text style={styles.summaryText}>Filament roll: {spools.find((spool) => spool.id === activeHistorySpoolId)?.color ?? "selected"}</Text>
                 </View>
-              ) : null}
+              ) : (
+                <View style={styles.summaryBand}>
+                  <Text style={styles.summaryText}>Past order will save without printer-history attachment.</Text>
+                </View>
+              )}
             </View>
           ) : null}
           <FlowNav onBack={goBack} onNext={goNext} backDisabled={false} nextLabel="Fulfillment" />
@@ -1787,8 +1802,8 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
           <InfoRow label="Total" value={money(totalCents)} />
           <InfoRow label="Paid" value={money(displayPaidCents)} />
           <InfoRow label="Balance" value={money(displayBalanceCents)} />
-          {source === "PAST_IMPORT" ? <InfoRow label="History" value={selectedHistory?.name ?? "Not selected"} /> : null}
-          {source === "PAST_IMPORT" ? <InfoRow label="Filament" value={spools.find((spool) => spool.id === activeHistorySpoolId)?.color ?? "Not selected"} /> : null}
+          {source === "PAST_IMPORT" ? <InfoRow label="History" value={selectedHistory?.name ?? "Not attached"} /> : null}
+          {source === "PAST_IMPORT" ? <InfoRow label="Filament" value={selectedHistory ? spools.find((spool) => spool.id === activeHistorySpoolId)?.color ?? "Not selected" : "Not attached"} /> : null}
         </View>
         <Field label="Notes" value={internalNotes} onChangeText={setInternalNotes} multiline />
         <Pressable onPress={saveOrder} disabled={saving} style={[styles.primaryButton, saving && styles.disabled]}>

@@ -11,3 +11,5 @@ coverage
 .DS_Store
 prisma/dev.db
 /uploads
+apps/*/ios/build-derived/
+apps/*/ios/build-derived-release/
