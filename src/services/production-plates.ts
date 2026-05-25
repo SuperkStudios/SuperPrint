@@ -4,7 +4,7 @@ import { Prisma } from "@prisma/client";
 import { buildLocalStorageKey, resolveLocalStoragePath } from "@/lib/storage";
 import { prisma } from "@/lib/prisma";
 import { hasUsableSlicerEstimate, planProductionPlateOrder } from "@/domain/production-loop";
-import { getPartProductionPlanner, type PlannerRow } from "./part-planner";
+import { getPartProductionPlanner } from "./part-planner";
 import { authenticateSuperNode } from "./supernode-jobs";
 
 const activePlateStatuses = ["PLANNED", "SLICING", "READY", "NEEDS_FILAMENT", "PRINTING"] as const;
@@ -17,47 +17,46 @@ export async function rebuildProductionPlateJobs(actorId?: string) {
   });
 
   const jobs = [];
-  for (const group of groupPlannerRowsByProductPlate(planner.filter((item) => item.quantityToPrint > 0))) {
+  for (const row of planner.filter((item) => item.quantityToPrint > 0)) {
     const product = await prisma.product.findUniqueOrThrow({
-      where: { id: group.productId },
+      where: { id: row.productId },
       include: {
         parts: { orderBy: { displayOrder: "asc" } },
         allowedFilaments: { include: { filamentMaterial: true } }
       }
     });
-    const platePart = product.parts[0];
+    const platePart = product.parts.find((part) => part.id === row.partId);
     if (!platePart) continue;
-    const filament = chooseFilamentForColor(product.allowedFilaments.map((item) => item.filamentMaterial), group.color);
-    const maxPerPlate = Math.max(1, product.maxBatchQuantity);
-    const productsToPrint = Math.max(...group.rows.map((row) => Math.ceil(row.quantityToPrint / Math.max(1, row.quantityPerProductColor))));
-    const plateCount = Math.ceil(productsToPrint / maxPerPlate);
-    const inputStorageKey = product.productFileStorageKey ?? platePart.fileStorageKey;
-    const remainingOrders = group.orders.map((order) => ({ ...order }));
+    const filament = chooseFilamentForColor(product.allowedFilaments.map((item) => item.filamentMaterial), row.color);
+    const quantityPerProduct = Math.max(1, row.quantityPerProductColor);
+    const maxPerPlate = Math.max(1, product.maxBatchQuantity * quantityPerProduct);
+    const plateCount = Math.ceil(row.quantityToPrint / maxPerPlate);
+    const remainingOrders = row.orders.map((order) => ({ ...order }));
     for (let index = 0; index < plateCount; index += 1) {
-      const quantityPlanned = Math.min(maxPerPlate, productsToPrint - index * maxPerPlate);
-      const orderRefs = takeOrderRefsForPlate(remainingOrders, quantityPlanned);
-      const partManifest = group.rows.map((row) => ({
-        productPartId: row.partId,
+      const quantityPlanned = Math.min(maxPerPlate, row.quantityToPrint - index * maxPerPlate);
+      const orderRefs = takeOrderRefsForPlate(remainingOrders, Math.ceil(quantityPlanned / quantityPerProduct));
+      const partManifest = [{
+        productPartId: platePart.id,
         partName: row.partName,
         color: row.color,
-        quantityPerProduct: row.quantityPerProductColor,
-        quantityPlanned: quantityPlanned * row.quantityPerProductColor
-      }));
+        quantityPerProduct,
+        quantityPlanned
+      }];
       jobs.push(await prisma.productionPlateJob.create({
         data: {
           productPartId: platePart.id,
           filamentId: filament?.id,
-          color: group.color,
+          color: row.color,
           status: "PLANNED",
           quantityPlanned,
-          requiredQuantity: group.rows.reduce((total, row) => total + row.requiredQuantity, 0),
-          inventoryUsedQuantity: group.rows.reduce((total, row) => total + row.quantityOnHand, 0),
+          requiredQuantity: row.requiredQuantity,
+          inventoryUsedQuantity: row.quantityOnHand,
           maxPerPlate,
           plateIndex: index + 1,
           plateCount,
           orderRefs: orderRefs as unknown as Prisma.InputJsonValue,
           partManifest: partManifest as unknown as Prisma.InputJsonValue,
-          inputStorageKey
+          inputStorageKey: platePart.fileStorageKey
         }
       }));
     }
@@ -65,32 +64,6 @@ export async function rebuildProductionPlateJobs(actorId?: string) {
 
   void actorId;
   return jobs;
-}
-
-function groupPlannerRowsByProductPlate(rows: PlannerRow[]) {
-  const groups = new Map<string, {
-    productId: string;
-    productName: string;
-    color: string;
-    rows: PlannerRow[];
-    orders: Array<{ orderNumber: string; quantity: number; customerEmail: string }>;
-  }>();
-  for (const row of rows) {
-    const key = `${row.productId}:${row.color.trim().toLowerCase()}`;
-    const group = groups.get(key) ?? {
-      productId: row.productId,
-      productName: row.productName,
-      color: row.color,
-      rows: [],
-      orders: []
-    };
-    group.rows.push(row);
-    groups.set(key, group);
-  }
-  return [...groups.values()].map((group) => ({
-    ...group,
-    orders: summarizeGroupOrders(group.rows)
-  }));
 }
 
 function takeOrderRefsForPlate(orders: Array<{ orderNumber: string; quantity: number; customerEmail: string }>, plateQuantity: number) {
@@ -105,30 +78,6 @@ function takeOrderRefsForPlate(orders: Array<{ orderNumber: string; quantity: nu
     remaining -= quantity;
   }
   return refs;
-}
-
-function summarizeGroupOrders(rows: PlannerRow[]) {
-  const totalsByPart = rows.map((row) => {
-    const totals = new Map<string, { orderNumber: string; quantity: number; customerEmail: string }>();
-    for (const order of row.orders) {
-      const existing = totals.get(order.orderNumber);
-      if (existing) {
-        existing.quantity += order.quantity;
-      } else {
-        totals.set(order.orderNumber, { ...order });
-      }
-    }
-    return totals;
-  });
-  const orderNumbers = new Set(totalsByPart.flatMap((totals) => [...totals.keys()]));
-  return [...orderNumbers].map((orderNumber) => {
-    const matches = totalsByPart.map((totals) => totals.get(orderNumber)).filter((item): item is { orderNumber: string; quantity: number; customerEmail: string } => Boolean(item));
-    return {
-      orderNumber,
-      quantity: Math.max(...matches.map((order) => order.quantity)),
-      customerEmail: matches[0]?.customerEmail ?? ""
-    };
-  });
 }
 
 export async function getProductionPlateDashboard() {

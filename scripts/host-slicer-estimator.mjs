@@ -1,7 +1,7 @@
 import http from "node:http";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
@@ -149,12 +149,10 @@ async function slicePlateWithSlicer(input) {
   const selected = resolveSlicer();
   const tmpDir = await mkdtemp(path.join(os.tmpdir(), "superprint-slicer-"));
   try {
-    const inputPaths = [];
-    for (let index = 0; index < Math.max(1, input.quantity ?? 1); index += 1) {
-      const inputPath = path.join(tmpDir, `${randomUUID()}-${index + 1}-${input.fileName}`);
-      await writeFile(inputPath, input.buffer);
-      inputPaths.push(inputPath);
-    }
+    const quantity = Math.max(1, input.quantity ?? 1);
+    const inputPaths = isThreeMfFile(input.fileName) && quantity > 1
+      ? [await buildExpandedThreeMf({ ...input, quantity, tmpDir })]
+      : await writeRepeatedInputFiles({ ...input, quantity, tmpDir });
     const profiles = await materializeSlicerProfileSet({
       slicer: selected,
       material: input.material,
@@ -190,6 +188,74 @@ async function slicePlateWithSlicer(input) {
   } finally {
     await rm(tmpDir, { recursive: true, force: true });
   }
+}
+
+async function writeRepeatedInputFiles(input) {
+  const inputPaths = [];
+  for (let index = 0; index < input.quantity; index += 1) {
+    const inputPath = path.join(input.tmpDir, `${randomUUID()}-${index + 1}-${input.fileName}`);
+    await writeFile(inputPath, input.buffer);
+    inputPaths.push(inputPath);
+  }
+  return inputPaths;
+}
+
+async function buildExpandedThreeMf(input) {
+  const sourcePath = path.join(input.tmpDir, `${randomUUID()}-${input.fileName}`);
+  const unpackedDir = path.join(input.tmpDir, `${randomUUID()}-3mf`);
+  const outputPath = path.join(input.tmpDir, `${randomUUID()}-expanded-${input.fileName}`);
+  await writeFile(sourcePath, input.buffer);
+  await mkdir(unpackedDir, { recursive: true });
+  await run("unzip", ["-q", sourcePath, "-d", unpackedDir]);
+
+  const modelPath = path.join(unpackedDir, "3D", "3dmodel.model");
+  const model = await readFile(modelPath, "utf8");
+  const expanded = expandThreeMfBuildItems(model, input.quantity, input.fileName);
+  await writeFile(modelPath, expanded);
+  await run("zip", ["-qr", outputPath, "."], { cwd: unpackedDir });
+  return outputPath;
+}
+
+function expandThreeMfBuildItems(model, quantity, fileName) {
+  const itemMatch = model.match(/<item\b[^>]*objectid="([^"]+)"[^>]*transform="([^"]+)"[^>]*\/>/);
+  if (!itemMatch) return model;
+  const objectId = itemMatch[1];
+  const baseTransform = itemMatch[2].trim().split(/\s+/).map(Number);
+  const z = Number.isFinite(baseTransform[11]) ? baseTransform[11] : 0;
+  const positions = buildCopyPositions(quantity, fileName);
+  const items = positions.map(({ x, y }, index) => {
+    const transform = `1 0 0 0 1 0 0 0 1 ${x} ${y} ${z}`;
+    return `  <item objectid="${objectId}" p:UUID="${uuidForBuildItem(index + 1)}" transform="${transform}" printable="1"/>`;
+  }).join("\n");
+  return model.replace(/<build\b([^>]*)>[\s\S]*?<\/build>/, `<build$1>\n${items}\n </build>`);
+}
+
+function buildCopyPositions(quantity, fileName) {
+  const lower = fileName.toLowerCase();
+  if (lower.includes("connector")) {
+    const yStart = quantity <= 4 ? 96 : 53;
+    return Array.from({ length: quantity }, (_, index) => ({
+      x: index < 8 ? 42 : 82,
+      y: yStart + (index % 8) * 22
+    }));
+  }
+  const columns = quantity <= 2 ? quantity : Math.ceil(Math.sqrt(quantity));
+  const rows = Math.ceil(quantity / columns);
+  const spacing = lower.includes("gear") ? 68 : 56;
+  const startX = 128 - ((columns - 1) * spacing) / 2;
+  const startY = 128 - ((rows - 1) * spacing) / 2;
+  return Array.from({ length: quantity }, (_, index) => ({
+    x: Number((startX + (index % columns) * spacing).toFixed(3)),
+    y: Number((startY + Math.floor(index / columns) * spacing).toFixed(3))
+  }));
+}
+
+function uuidForBuildItem(index) {
+  return `000000${String(index).padStart(2, "0")}-b1ec-4553-aec9-835e5b724bb4`;
+}
+
+function isThreeMfFile(fileName) {
+  return /\.3mf$/i.test(fileName);
 }
 
 function resolveSlicer() {
@@ -248,9 +314,9 @@ async function findGcode(directory) {
   return path.join(directory, gcode);
 }
 
-function run(command, args) {
+function run(command, args, options = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"], cwd: options.cwd });
     let stderr = "";
     child.stderr.on("data", (chunk) => {
       stderr += chunk.toString();

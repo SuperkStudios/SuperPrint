@@ -440,7 +440,7 @@ function serializePlate(plate: PlateWithIncludes) {
     id: plate.id,
     status: plate.status,
     productName: plate.productPart.product.name,
-    partName: partManifest.length > 1 ? "Full product plate" : plate.productPart.name,
+    partName: plate.productPart.name,
     color: plate.color,
     quantityPlanned: plate.quantityPlanned,
     plateIndex: plate.plateIndex,
@@ -507,7 +507,7 @@ function buildPrintDetail(plate: PlateWithIncludes) {
     ? manifest.map((part) => `${part.quantityPlanned} ${part.partName}`).join(", ")
     : `${plate.quantityPlanned} ${plate.productPart.name}`;
   if (hasUsableSlicerEstimate(plate)) {
-    return `${plate.quantityPlanned} ${plate.color} product${plate.quantityPlanned === 1 ? "" : "s"} on this plate: ${partSummary}. ${plate.estimatedPrintMinutes} minutes, ${plate.estimatedGrams}g.`;
+    return `${plate.quantityPlanned} ${plate.color} part${plate.quantityPlanned === 1 ? "" : "s"} on this plate: ${partSummary}. ${plate.estimatedPrintMinutes} minutes, ${plate.estimatedGrams}g.`;
   }
   return buildSlicingRequiredDetail(plate);
 }
@@ -517,7 +517,7 @@ function buildSlicingRequiredDetail(plate: PlateWithIncludes) {
   const partSummary = manifest.length > 1
     ? manifest.map((part) => `${part.quantityPlanned} ${part.partName}`).join(", ")
     : `${plate.quantityPlanned} ${plate.productPart.name}`;
-  return `${plate.quantityPlanned} ${plate.color} product${plate.quantityPlanned === 1 ? "" : "s"} on this plate: ${partSummary}. Slice the uploaded plate in ElegooSlicer/OrcaSlicer with the ELEGOO Centauri Carbon profile, then send the generated .gcode.`;
+  return `${plate.quantityPlanned} ${plate.color} part${plate.quantityPlanned === 1 ? "" : "s"} on this plate: ${partSummary}. Slice the uploaded plate in ElegooSlicer/OrcaSlicer with the ELEGOO Centauri Carbon profile, then send the generated .gcode.`;
 }
 
 function getPlatePartManifest(plate: PlateWithIncludes) {

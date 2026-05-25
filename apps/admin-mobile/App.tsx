@@ -2080,7 +2080,7 @@ function QueueScreen({ client }: { client: SuperPrintClient }) {
             <View key={plate.id} style={styles.actionItem}>
               <View style={styles.grow}>
                 <Text style={styles.rowTitle}>{plate.color} {plate.productName}</Text>
-                <Text style={styles.cardCopy}>Plate {plate.plateIndex}/{plate.plateCount}: {plate.quantityPlanned} product{plate.quantityPlanned === 1 ? "" : "s"} · {plate.status}</Text>
+                <Text style={styles.cardCopy}>Plate {plate.plateIndex}/{plate.plateCount}: {plate.quantityPlanned} part{plate.quantityPlanned === 1 ? "" : "s"} · {plate.status}</Text>
                 {plate.partManifest?.length ? <Text style={styles.cardCopy}>{plate.partManifest.map((part) => `${part.quantityPlanned} ${part.partName}`).join(", ")}</Text> : null}
                 {plate.orderRefs.length ? <Text style={styles.cardCopy}>Orders: {plate.orderRefs.map((order) => `${order.orderNumber ?? "Order"} x${order.quantity ?? 1}`).join(", ")}</Text> : null}
               </View>
@@ -2233,7 +2233,7 @@ function PartsScreen({ client, apiBaseUrl }: { client: SuperPrintClient; apiBase
               <View style={styles.orderTop}>
                 <View style={styles.grow}>
                   <Text style={styles.cardTitle}>{nextPlate.color} {nextPlate.partName}</Text>
-                  <Text style={styles.cardCopy}>{nextPlate.productName} · plate {nextPlate.plateIndex}/{nextPlate.plateCount} · {nextPlate.quantityPlanned} product{nextPlate.quantityPlanned === 1 ? "" : "s"}</Text>
+                  <Text style={styles.cardCopy}>{nextPlate.productName} · plate {nextPlate.plateIndex}/{nextPlate.plateCount} · {nextPlate.quantityPlanned} part{nextPlate.quantityPlanned === 1 ? "" : "s"}</Text>
                 </View>
                 <Badge label={nextPlate.status} />
               </View>
