@@ -37,6 +37,21 @@ export function buildStripeShippingLineItem(input: { amountCents: number; descri
   };
 }
 
+export function buildStripeAdjustmentLineItem(input: { name: string; amountCents: number; description?: string | null }) {
+  if (input.amountCents <= 0) return null;
+  return {
+    price_data: {
+      currency: "usd",
+      product_data: {
+        name: input.name,
+        description: input.description ?? input.name
+      },
+      unit_amount: input.amountCents
+    },
+    quantity: 1
+  };
+}
+
 function buildStripeProductImages(imageUrl: string) {
   if (!/^https?:\/\//.test(imageUrl)) return {};
   return { images: [imageUrl] };

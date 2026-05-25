@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calculatePaymentProcessorFee } from "./cart";
+import { calculatePaymentProcessorFee } from "@/domain/order-totals";
 
 describe("cart checkout fees", () => {
   it("grosses up payment processor fees so the order covers Stripe-style fees", () => {

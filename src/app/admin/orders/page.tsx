@@ -16,6 +16,11 @@ export default async function AdminOrdersPage() {
   });
   const readyToPack = orders.filter((order) => order.status === "COMPLETED" && !["SHIPPED", "DELIVERED"].includes(order.shippingStatus));
   const active = orders.filter((order) => !["COMPLETED", "FAILED", "CANCELED", "STOPPED"].includes(order.status));
+  const paidOrders = orders.filter((order) => order.paymentStatus === "PAID" || order.amountPaidCents > 0);
+  const taxAccountCents = paidOrders.reduce((total, order) => total + order.taxCents, 0);
+  const cashTaxCents = paidOrders.filter((order) => order.paymentMethod === "CASH").reduce((total, order) => total + order.taxCents, 0);
+  const processingFeeCents = paidOrders.reduce((total, order) => total + order.paymentFeeCents, 0);
+  const netSalesCents = paidOrders.reduce((total, order) => total + Math.max(0, order.amountPaidCents - order.taxCents - order.paymentFeeCents), 0);
 
   return (
     <div className="grid gap-6">
@@ -23,6 +28,12 @@ export default async function AdminOrdersPage() {
         <Metric label="Ready to pack" value={readyToPack.length} />
         <Metric label="Active orders" value={active.length} />
         <Metric label="Awaiting shipment" value={orders.filter((order) => order.shippingStatus === "PACKING").length} />
+      </div>
+      <div className="grid gap-3 md:grid-cols-4">
+        <MoneyMetric label="Tax account" value={taxAccountCents} />
+        <MoneyMetric label="Cash tax collected" value={cashTaxCents} />
+        <MoneyMetric label="Card fees collected" value={processingFeeCents} />
+        <MoneyMetric label="Net after tax/fees" value={netSalesCents} />
       </div>
 
       <section className="grid gap-4">
@@ -47,6 +58,9 @@ function OrderCard({ order }: { order: {
   shippingStatus: string;
   fulfillmentMethod: string;
   totalCents: number;
+  subtotalCents: number;
+  taxCents: number;
+  paymentFeeCents: number;
   paymentStatus: string;
   paymentMethod: string;
   amountPaidCents: number;
@@ -92,6 +106,9 @@ function OrderCard({ order }: { order: {
       <CardContent className="grid gap-4 md:grid-cols-[1fr_auto]">
         <div className="grid gap-2 text-sm md:grid-cols-4">
           <span><span className="text-muted-foreground">Total</span><br />{money(order.totalCents)}</span>
+          <span><span className="text-muted-foreground">Items</span><br />{money(order.subtotalCents)}</span>
+          <span><span className="text-muted-foreground">Tax account</span><br />{money(order.taxCents)}</span>
+          <span><span className="text-muted-foreground">Card fee</span><br />{money(order.paymentFeeCents)}</span>
           <span><span className="text-muted-foreground">Paid</span><br />{money(order.amountPaidCents)} · {order.paymentMethod}</span>
           <span><span className="text-muted-foreground">Balance</span><br />{money(order.balanceDueCents)} · {order.paymentStatus}</span>
           <span><span className="text-muted-foreground">Material</span><br />{materialLabel} {order.selectedMaterial ?? latestJob?.filament?.material ?? ""}</span>
@@ -140,6 +157,17 @@ function Metric({ label, value }: { label: string; value: number }) {
     <Card>
       <CardContent className="p-5">
         <p className="text-2xl font-semibold">{value}</p>
+        <p className="text-sm text-muted-foreground">{label}</p>
+      </CardContent>
+    </Card>
+  );
+}
+
+function MoneyMetric({ label, value }: { label: string; value: number }) {
+  return (
+    <Card>
+      <CardContent className="p-5">
+        <p className="text-2xl font-semibold">{money(value)}</p>
         <p className="text-sm text-muted-foreground">{label}</p>
       </CardContent>
     </Card>

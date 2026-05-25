@@ -1,9 +1,11 @@
 import { Prisma } from "@prisma/client";
 import { nextQueuePosition } from "@/domain/checkout";
+import { calculateOrderTotals, paymentKindForMethod } from "@/domain/order-totals";
 import { getStripe } from "@/lib/stripe";
 import { prisma } from "@/lib/prisma";
 import { getOrCreateStripeCustomerId, markOrderPaidAndQueue } from "@/services/checkout";
 import { recordPlatformEvent } from "@/services/events";
+import { getPricingSettings } from "@/services/pricing";
 import type { CheckoutFulfillmentInput } from "@/services/shipping";
 
 const paidMethods = new Set(["CASH", "STRIPE_TERMINAL", "STRIPE_MANUAL", "STRIPE_LINK", "OTHER"]);
@@ -108,11 +110,22 @@ export async function createInPersonOrder(input: CreateInPersonOrderInput, actor
   const shippingAmountCents = fulfillmentMethod === "SHIP" ? Math.max(0, Math.round(input.shippingAmountCents ?? 0)) : 0;
   const shippingRateCents = fulfillmentMethod === "SHIP" ? Math.max(0, Math.round(input.shippingRateCents ?? shippingAmountCents)) : 0;
   const shippingAddress = input.fulfillment?.address;
+  const paymentMethod = input.paymentMethod || "UNPAID";
+  const pricingSettings = await getPricingSettings();
+  const totals = calculateOrderTotals({
+    subtotalCents,
+    shippingCents: shippingAmountCents,
+    taxPercentEstimate: pricingSettings.taxPercentEstimate,
+    paymentKind: paymentKindForMethod(paymentMethod),
+    paymentProcessingPercent: pricingSettings.paymentProcessingPercent,
+    paymentProcessingFixedCents: pricingSettings.paymentProcessingFixedCents
+  });
+  const totalCents = totals.totalCents;
   const amountPaidCents = Math.max(0, Math.round(input.amountPaidCents || 0));
   const depositCents = Math.max(0, Math.round(input.depositCents ?? amountPaidCents));
-  const totalCents = subtotalCents + shippingAmountCents;
   const balanceDueCents = Math.max(0, totalCents - amountPaidCents);
-  const paymentMethod = input.paymentMethod || "UNPAID";
+  const lineTaxCents = allocateCentsAcrossLines(totals.taxCents, normalizedLines.map((line) => line.subtotalCents));
+  const linePaymentFeeCents = allocateCentsAcrossLines(totals.paymentFeeCents, normalizedLines.map((line) => line.subtotalCents));
   const paymentStatus = balanceDueCents <= 0 && paidMethods.has(paymentMethod) ? "PAID" : amountPaidCents > 0 ? "PARTIAL" : "PENDING";
   const hasRequestedPrintWork = normalizedLines.some((line) => line.quantity > line.printedQuantity);
   const shouldQueuePrintWork = source !== "PAST_IMPORT" && hasRequestedPrintWork && (input.queueNow || paymentMethod === "UNPAID");
@@ -134,7 +147,9 @@ export async function createInPersonOrder(input: CreateInPersonOrderInput, actor
         orderNumber,
         customerId: customer.id,
         productId: normalizedLines[0]?.product.id,
-        subtotalCents,
+        subtotalCents: totals.subtotalCents,
+        taxCents: totals.taxCents,
+        paymentFeeCents: totals.paymentFeeCents,
         totalCents,
         paymentStatus,
         paymentMethod,
@@ -171,13 +186,15 @@ export async function createInPersonOrder(input: CreateInPersonOrderInput, actor
         shippoShipmentId: input.shippoShipmentId ?? null,
         createdAt: input.orderDate ?? undefined,
         items: {
-          create: normalizedLines.map((line) => ({
+          create: normalizedLines.map((line, index) => ({
             productId: line.product.id,
             quantity: line.quantity,
             printedQuantity: line.printedQuantity,
             unitPriceCents: line.unitPriceCents,
             subtotalCents: line.subtotalCents,
-            totalCents: line.subtotalCents,
+            taxCents: lineTaxCents[index] ?? 0,
+            paymentFeeCents: linePaymentFeeCents[index] ?? 0,
+            totalCents: line.subtotalCents + (lineTaxCents[index] ?? 0) + (linePaymentFeeCents[index] ?? 0),
             estimatedGrams: line.product.estimatedGrams * line.quantity,
             estimatedPrintMinutes: line.product.estimatedPrintMinutes * line.quantity,
             selectedMaterial: line.selectedMaterial as never,
@@ -218,6 +235,9 @@ export async function createInPersonOrder(input: CreateInPersonOrderInput, actor
       paymentMethod,
       paymentStatus,
       amountPaidCents,
+      subtotalCents: totals.subtotalCents,
+      taxCents: totals.taxCents,
+      paymentFeeCents: totals.paymentFeeCents,
       balanceDueCents
     }
   });
@@ -227,6 +247,23 @@ export async function createInPersonOrder(input: CreateInPersonOrderInput, actor
   });
 
   return order;
+}
+
+function allocateCentsAcrossLines(totalCents: number, lineSubtotals: number[]) {
+  const subtotalCents = lineSubtotals.reduce((total, subtotal) => total + subtotal, 0);
+  if (totalCents <= 0 || subtotalCents <= 0) return lineSubtotals.map(() => 0);
+  const exactShares = lineSubtotals.map((lineSubtotal, index) => ({
+    index,
+    cents: Math.floor(totalCents * (lineSubtotal / subtotalCents)),
+    remainder: (totalCents * lineSubtotal) % subtotalCents
+  }));
+  let remainingCents = totalCents - exactShares.reduce((total, share) => total + share.cents, 0);
+  for (const share of [...exactShares].sort((a, b) => b.remainder - a.remainder)) {
+    if (remainingCents <= 0) break;
+    share.cents += 1;
+    remainingCents -= 1;
+  }
+  return exactShares.sort((a, b) => a.index - b.index).map((share) => share.cents);
 }
 
 async function attachPastHistoryToOrder(tx: Prisma.TransactionClient, input: { orderId: string; print: PastPrinterHistoryInput; spoolId: string }) {

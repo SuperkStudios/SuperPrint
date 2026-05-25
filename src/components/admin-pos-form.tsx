@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { calculateOrderTotals, paymentKindForMethod } from "@/domain/order-totals";
 import { money } from "@/lib/utils";
 
 type ProductOption = {
@@ -22,6 +23,12 @@ type LineDraft = {
   printedQuantity: number;
   unitPrice: string;
   selectedFilamentMaterialIds: string[];
+};
+
+type PosPricingSettings = {
+  taxPercentEstimate?: number | null;
+  paymentProcessingPercent?: number | null;
+  paymentProcessingFixedCents?: number | null;
 };
 
 declare global {
@@ -56,7 +63,7 @@ type TerminalLike = {
   getConnectionStatus: () => string;
 };
 
-export function AdminPosForm({ products }: { products: ProductOption[] }) {
+export function AdminPosForm({ products, pricingSettings }: { products: ProductOption[]; pricingSettings: PosPricingSettings }) {
   const firstProduct = products[0];
   const [message, setMessage] = useState("");
   const [customerName, setCustomerName] = useState("");
@@ -81,9 +88,18 @@ export function AdminPosForm({ products }: { products: ProductOption[] }) {
   const [saveTerminalCard, setSaveTerminalCard] = useState(true);
   const [isMobileBrowser, setIsMobileBrowser] = useState(false);
 
-  const totalCents = useMemo(() => lines.reduce((total, line) => total + dollarsToCents(line.unitPrice) * Math.max(1, line.quantity), 0), [lines]);
+  const subtotalCents = useMemo(() => lines.reduce((total, line) => total + dollarsToCents(line.unitPrice) * Math.max(1, line.quantity), 0), [lines]);
+  const totals = useMemo(() => calculateOrderTotals({
+    subtotalCents,
+    taxPercentEstimate: pricingSettings.taxPercentEstimate,
+    paymentKind: paymentKindForMethod(paymentMethod),
+    paymentProcessingPercent: pricingSettings.paymentProcessingPercent,
+    paymentProcessingFixedCents: pricingSettings.paymentProcessingFixedCents
+  }), [paymentMethod, pricingSettings.paymentProcessingFixedCents, pricingSettings.paymentProcessingPercent, pricingSettings.taxPercentEstimate, subtotalCents]);
+  const totalCents = totals.totalCents;
   const amountPaidCents = dollarsToCents(amountPaid);
-  const balanceCents = Math.max(0, totalCents - amountPaidCents);
+  const displayPaidCents = paymentMethod === "CASH" ? totalCents : amountPaidCents;
+  const balanceCents = Math.max(0, totalCents - displayPaidCents);
 
   useEffect(() => {
     setIsMobileBrowser(/Android|iPhone|iPad|iPod/i.test(navigator.userAgent));
@@ -183,7 +199,11 @@ export function AdminPosForm({ products }: { products: ProductOption[] }) {
     const response = await fetch("/api/admin/pos", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...buildOrderPayload(), amountPaidCents, depositCents: amountPaidCents })
+      body: JSON.stringify({
+        ...buildOrderPayload(),
+        amountPaidCents: paymentMethod === "CASH" ? totalCents : amountPaidCents,
+        depositCents: paymentMethod === "CASH" ? totalCents : amountPaidCents
+      })
     });
     const body = await response.json().catch(() => null);
     setLoading(false);
@@ -410,9 +430,13 @@ export function AdminPosForm({ products }: { products: ProductOption[] }) {
           </label>
           <Field label="Notes"><textarea className="min-h-20 rounded-md border bg-background px-3 py-2 text-sm" value={internalNotes} onChange={(event) => setInternalNotes(event.target.value)} /></Field>
           <div className="grid gap-1 rounded-md bg-muted p-3 text-sm">
+            <span>Items: <strong>{money(totals.subtotalCents)}</strong></span>
+            <span>Estimated tax: <strong>{money(totals.taxCents)}</strong></span>
+            <span>Processing fee: <strong>{money(totals.paymentFeeCents)}</strong></span>
             <span>Total: <strong>{money(totalCents)}</strong></span>
-            <span>Paid: <strong>{money(amountPaidCents)}</strong></span>
+            <span>Paid: <strong>{money(displayPaidCents)}</strong></span>
             <span>Balance: <strong>{money(balanceCents)}</strong></span>
+            {paymentMethod === "CASH" ? <span>Cash tax to set aside: <strong>{money(totals.taxCents)}</strong></span> : null}
           </div>
           <Button type="submit" disabled={loading}>{paymentMethod === "STRIPE_TERMINAL" ? "Save without charging" : "Save order"}</Button>
           {message ? <p className="text-sm text-muted-foreground">{message}</p> : null}

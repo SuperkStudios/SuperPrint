@@ -1,5 +1,5 @@
 import { Prisma } from "@prisma/client";
-import { normalizePercent, stripeStandardPaymentProcessingFixedCents, stripeStandardPaymentProcessingPercent } from "@/domain/pricing";
+import { calculateOrderTotals, calculatePaymentProcessorFee } from "@/domain/order-totals";
 import { MINIMUM_POST_REWARD_SUBTOTAL_CENTS } from "@/domain/rewards";
 import { prisma } from "@/lib/prisma";
 import { getPricingSettings, calculateProductPrice } from "@/services/pricing";
@@ -171,12 +171,16 @@ export async function summarizeCart(userId: string, input: { shippingCents?: num
   }
 
   const rewardDiscountCents = Math.min(input.rewardDiscountCents ?? 0, Math.max(0, subtotalCents - MINIMUM_POST_REWARD_SUBTOTAL_CENTS));
-  const taxableSubtotalCents = Math.max(0, subtotalCents - rewardDiscountCents);
-  const taxCents = Math.round(taxableSubtotalCents * normalizePercent(settings.taxPercentEstimate));
   const shippingCents = Math.max(0, Math.round(input.shippingCents ?? 0));
-  const beforeFeeCents = taxableSubtotalCents + taxCents + shippingCents;
-  const paymentFeeCents = calculatePaymentProcessorFee(beforeFeeCents);
-  const totalCents = beforeFeeCents + paymentFeeCents;
+  const totals = calculateOrderTotals({
+    subtotalCents,
+    shippingCents,
+    rewardDiscountCents,
+    taxPercentEstimate: settings.taxPercentEstimate,
+    paymentKind: "CARD",
+    paymentProcessingPercent: settings.paymentProcessingPercent,
+    paymentProcessingFixedCents: settings.paymentProcessingFixedCents
+  });
 
   return {
     cartId: cart?.id ?? null,
@@ -184,25 +188,15 @@ export async function summarizeCart(userId: string, input: { shippingCents?: num
     itemCount: items.reduce((total, item) => total + item.quantity, 0),
     subtotalCents,
     rewardDiscountCents,
-    taxCents,
+    taxCents: totals.taxCents,
     shippingCents,
-    paymentFeeCents,
-    totalCents,
+    paymentFeeCents: totals.paymentFeeCents,
+    totalCents: totals.totalCents,
     estimatedGrams,
     estimatedPrintMinutes
   };
 }
-
-export function calculatePaymentProcessorFee(
-  baseCents: number,
-  percentValue = stripeStandardPaymentProcessingPercent,
-  fixedCents = stripeStandardPaymentProcessingFixedCents
-) {
-  if (baseCents <= 0) return 0;
-  const percent = normalizePercent(percentValue);
-  if (percent <= 0) return Math.max(0, Math.round(fixedCents));
-  return Math.max(0, Math.round((baseCents * percent + fixedCents) / Math.max(0.01, 1 - percent)));
-}
+export { calculatePaymentProcessorFee };
 
 function clampQuantity(quantity?: number | null) {
   return Math.min(20, Math.max(1, Math.round(quantity ?? 1)));

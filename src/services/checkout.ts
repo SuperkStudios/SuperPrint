@@ -1,8 +1,9 @@
-import { buildStripeCheckoutSuccessUrl, buildStripeProductLineItem, buildStripeShippingLineItem, isPaidStripeCheckoutSession, nextQueuePosition, resolveCheckoutSelection } from "@/domain/checkout";
+import { buildStripeAdjustmentLineItem, buildStripeCheckoutSuccessUrl, buildStripeProductLineItem, buildStripeShippingLineItem, isPaidStripeCheckoutSession, nextQueuePosition, resolveCheckoutSelection } from "@/domain/checkout";
+import { calculateOrderTotals } from "@/domain/order-totals";
 import { prisma } from "@/lib/prisma";
 import { getStripe, getStripeBaseUrl, getStripeSettings } from "@/lib/stripe";
 import { enqueuePrintJob } from "@/lib/queue-broker";
-import { calculateProductPrice, createPricingSnapshot } from "@/services/pricing";
+import { calculateProductPrice, createPricingSnapshot, getPricingSettings } from "@/services/pricing";
 import { applyRewardRedemptionToOrder, awardOrderPoints, finalizeRewardRedemption, getRewardsSettings } from "@/services/rewards";
 import { prepareCheckoutShipping, type CheckoutFulfillmentInput } from "@/services/shipping";
 import { clearActiveCart, summarizeCart, type CartFulfillment } from "@/services/cart";
@@ -52,8 +53,17 @@ export async function createProductCheckout(input: {
     fulfillment: input.fulfillment
   });
   const rewardsSettings = await getRewardsSettings();
+  const pricingSettings = await getPricingSettings();
   const preRewardProductCents = quote.finalCustomerPriceCents;
-  const preRewardTotalCents = preRewardProductCents + shipping.shippingAmountCents;
+  const preRewardTotals = calculateOrderTotals({
+    subtotalCents: preRewardProductCents,
+    shippingCents: shipping.shippingAmountCents,
+    taxPercentEstimate: pricingSettings.taxPercentEstimate,
+    paymentKind: "CARD",
+    paymentProcessingPercent: pricingSettings.paymentProcessingPercent,
+    paymentProcessingFixedCents: pricingSettings.paymentProcessingFixedCents
+  });
+  const preRewardTotalCents = preRewardTotals.totalCents;
 
   const order = await prisma.$transaction(async (tx) => {
     const created = await tx.order.create({
@@ -61,6 +71,9 @@ export async function createProductCheckout(input: {
         orderNumber: `SP-${Date.now().toString().slice(-6)}`,
         customerId: input.customerId,
         productId: product.id,
+        subtotalCents: preRewardTotals.subtotalCents,
+        taxCents: preRewardTotals.taxCents,
+        paymentFeeCents: preRewardTotals.paymentFeeCents,
         totalCents: preRewardTotalCents,
         status: "CHECKOUT_READY",
         paymentStatus: "PENDING",
@@ -98,10 +111,22 @@ export async function createProductCheckout(input: {
       settings: rewardsSettings
     });
     if (!reward.discountCents) return created;
+    const rewardTotals = calculateOrderTotals({
+      subtotalCents: preRewardProductCents,
+      shippingCents: shipping.shippingAmountCents - (reward.shippingDiscountCents ?? 0),
+      rewardDiscountCents: reward.productDiscountCents ?? reward.discountCents,
+      taxPercentEstimate: pricingSettings.taxPercentEstimate,
+      paymentKind: "CARD",
+      paymentProcessingPercent: pricingSettings.paymentProcessingPercent,
+      paymentProcessingFixedCents: pricingSettings.paymentProcessingFixedCents
+    });
     return tx.order.update({
       where: { id: created.id },
       data: {
-        totalCents: preRewardTotalCents - reward.discountCents,
+        subtotalCents: rewardTotals.subtotalCents,
+        taxCents: rewardTotals.taxCents,
+        paymentFeeCents: rewardTotals.paymentFeeCents,
+        totalCents: rewardTotals.totalCents,
         shippingAmountCents: shipping.shippingAmountCents - (reward.shippingDiscountCents ?? 0),
         rewardPointsRedeemed: reward.pointsRedeemed,
         rewardDiscountCents: reward.discountCents
@@ -125,7 +150,7 @@ export async function createProductCheckout(input: {
   }
   await createPricingSnapshot({
     orderId: order.id,
-    quote: { ...quote, shippingCents: shipping.shippingAmountCents, finalCustomerPriceCents: order.totalCents },
+    quote: { ...quote, taxCents: order.taxCents, paymentFeeCents: order.paymentFeeCents, shippingCents: order.shippingAmountCents, finalCustomerPriceCents: order.totalCents },
     preRewardCustomerPriceCents: preRewardTotalCents,
     rewardDiscountCents: order.rewardDiscountCents
   });
@@ -144,6 +169,8 @@ export async function createProductCheckout(input: {
       rewardPointsRedeemed: order.rewardPointsRedeemed,
       fulfillmentMethod: shipping.method,
       shippingCents: shipping.shippingAmountCents,
+      taxCents: order.taxCents,
+      paymentFeeCents: order.paymentFeeCents,
       shippingProvider: shipping.rate?.provider,
       shippingService: shipping.rate?.servicelevel?.name ?? shipping.rate?.servicelevel_name
     }
@@ -165,10 +192,21 @@ export async function createProductCheckout(input: {
     amountCents: order.shippingAmountCents,
     description: shipping.rate ? `${shipping.rate.provider ?? "Carrier"} ${shipping.rate.servicelevel?.name ?? shipping.rate.servicelevel_name ?? "shipping"}` : "Free local pickup"
   });
+  const taxLineItem = buildStripeAdjustmentLineItem({
+    name: "Estimated sales tax",
+    amountCents: order.taxCents,
+    description: "Estimated sales tax collected for this order"
+  });
+  const paymentFeeLineItem = buildStripeAdjustmentLineItem({
+    name: "Card processing fee",
+    amountCents: order.paymentFeeCents,
+    description: "Estimated payment processing fee"
+  });
+  const lineItems = [productLineItem, shippingLineItem, taxLineItem, paymentFeeLineItem].filter((item): item is NonNullable<typeof item> => Boolean(item));
   const session = await stripe.checkout.sessions.create({
     mode: "payment",
     customer_email: input.customerEmail ?? undefined,
-    line_items: shippingLineItem ? [productLineItem, shippingLineItem] : [productLineItem],
+    line_items: lineItems,
     ...(order.rewardPointsRedeemed > 0 ? { expires_at: Math.floor(Date.now() / 1000) + Math.min(1440, Math.max(30, rewardsSettings.reservationTtlMinutes)) * 60 } : {}),
     metadata: {
       orderId: order.id,
@@ -180,7 +218,9 @@ export async function createProductCheckout(input: {
       selectedColors: selectedColors.join(","),
       fulfillmentMethod: shipping.method,
       rewardPointsRedeemed: String(order.rewardPointsRedeemed),
-      rewardDiscountCents: String(order.rewardDiscountCents)
+      rewardDiscountCents: String(order.rewardDiscountCents),
+      taxCents: String(order.taxCents),
+      paymentFeeCents: String(order.paymentFeeCents)
     },
     success_url: buildStripeCheckoutSuccessUrl(baseUrl, order.id),
     cancel_url: `${baseUrl}/store?checkout=cancelled`

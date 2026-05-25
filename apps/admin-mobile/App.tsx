@@ -79,7 +79,22 @@ type AdminSettings = {
   terminalLocationId: string;
   stripeMode: string;
   stripeConfigured: boolean;
+  taxPercentEstimate: number | null;
+  paymentProcessingPercent: number;
+  paymentProcessingFixedCents: number;
   appearance: AppearanceMode;
+};
+
+type PosTerminalConfig = {
+  publishableKey: string | null;
+  terminalLocationId: string | null;
+  configured: boolean;
+  mode: string;
+  pricing?: {
+    taxPercentEstimate?: number | null;
+    paymentProcessingPercent?: number | null;
+    paymentProcessingFixedCents?: number | null;
+  };
 };
 
 type AdminOrder = {
@@ -89,6 +104,9 @@ type AdminOrder = {
   shippingStatus?: string | null;
   fulfillmentMethod?: FulfillmentMethod | null;
   paymentStatus: string;
+  subtotalCents?: number | null;
+  taxCents?: number | null;
+  paymentFeeCents?: number | null;
   totalCents: number;
   amountPaidCents?: number | null;
   balanceDueCents?: number | null;
@@ -569,6 +587,9 @@ export default function App() {
     terminalLocationId: "",
     stripeMode: "",
     stripeConfigured: false,
+    taxPercentEstimate: null,
+    paymentProcessingPercent: 0.029,
+    paymentProcessingFixedCents: 30,
     appearance: "system"
   });
   const activeAppearance: ActiveAppearance = settings.appearance === "system" ? (systemScheme === "dark" ? "dark" : "light") : settings.appearance;
@@ -1132,7 +1153,16 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
   const [queueNow, setQueueNow] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
-  const totalCents = lines.reduce((total, line) => total + cents(line.unitPrice) * positiveInt(line.quantity, 1), 0) + (shippingQuote?.shippingAmountCents ?? 0);
+  const subtotalCents = lines.reduce((total, line) => total + cents(line.unitPrice) * positiveInt(line.quantity, 1), 0);
+  const orderTotals = calculatePosOrderTotals({
+    subtotalCents,
+    shippingCents: shippingQuote?.shippingAmountCents ?? 0,
+    taxPercentEstimate: settings.taxPercentEstimate,
+    paymentMethod,
+    paymentProcessingPercent: settings.paymentProcessingPercent,
+    paymentProcessingFixedCents: settings.paymentProcessingFixedCents
+  });
+  const totalCents = orderTotals.totalCents;
   const paidNowCents = cents(paidNow);
   const recordsPastStripePayment = source === "PAST_IMPORT" && paymentMethod === "STRIPE_MANUAL";
   const displayPaidCents = paymentMethod === "CASH" || recordsPastStripePayment ? totalCents : paidNowCents;
@@ -1145,7 +1175,7 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
 
   useEffect(() => {
     if (settings.publishableKey) return;
-    client.get<{ publishableKey: string | null; terminalLocationId: string | null; configured: boolean; mode: string }>("/api/admin/pos/terminal/config")
+    client.get<PosTerminalConfig>("/api/admin/pos/terminal/config")
       .then((config) => {
         if (!config.publishableKey && !config.terminalLocationId) return;
         setSettings({
@@ -1153,7 +1183,10 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
           publishableKey: config.publishableKey ?? settings.publishableKey,
           terminalLocationId: config.terminalLocationId ?? settings.terminalLocationId,
           stripeConfigured: config.configured,
-          stripeMode: config.mode
+          stripeMode: config.mode,
+          taxPercentEstimate: config.pricing?.taxPercentEstimate ?? settings.taxPercentEstimate,
+          paymentProcessingPercent: config.pricing?.paymentProcessingPercent ?? settings.paymentProcessingPercent,
+          paymentProcessingFixedCents: config.pricing?.paymentProcessingFixedCents ?? settings.paymentProcessingFixedCents
         });
       })
       .catch(() => undefined);
@@ -1319,7 +1352,7 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
       const quote = await client.post<ShippingQuote>("/api/admin/pos/shipping/quote", {
         productId: firstLine.productId,
         quantity: positiveInt(firstLine.quantity, 1),
-        productPriceCents: Math.max(0, totalCents - (shippingQuote?.shippingAmountCents ?? 0)),
+        productPriceCents: subtotalCents,
         customerEmail,
         fulfillment: {
           method: fulfillmentMethod,
@@ -1371,14 +1404,17 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
     setMessage("Loading Stripe card payment...");
     try {
       if (!settings.publishableKey) {
-        const config = await client.get<{ publishableKey: string | null; terminalLocationId: string | null; configured: boolean; mode: string }>("/api/admin/pos/terminal/config");
+        const config = await client.get<PosTerminalConfig>("/api/admin/pos/terminal/config");
         if (!config.publishableKey || !config.configured) throw new Error("Stripe card payments are not configured yet.");
         setSettings({
           ...settings,
           publishableKey: config.publishableKey,
           terminalLocationId: config.terminalLocationId ?? settings.terminalLocationId,
           stripeConfigured: config.configured,
-          stripeMode: config.mode
+          stripeMode: config.mode,
+          taxPercentEstimate: config.pricing?.taxPercentEstimate ?? settings.taxPercentEstimate,
+          paymentProcessingPercent: config.pricing?.paymentProcessingPercent ?? settings.paymentProcessingPercent,
+          paymentProcessingFixedCents: config.pricing?.paymentProcessingFixedCents ?? settings.paymentProcessingFixedCents
         });
         setMessage("Stripe card payments are loaded. Tap Charge Card again.");
         return;
@@ -1415,14 +1451,17 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
     let terminalLocationId = settings.terminalLocationId;
     if (!terminalLocationId) {
       setMessage("Loading payment configuration...");
-      const config = await client.get<{ publishableKey: string | null; terminalLocationId: string | null; configured: boolean; mode: string }>("/api/admin/pos/terminal/config");
+      const config = await client.get<PosTerminalConfig>("/api/admin/pos/terminal/config");
       terminalLocationId = config.terminalLocationId ?? "";
       setSettings({
         ...settings,
         publishableKey: config.publishableKey ?? settings.publishableKey,
         terminalLocationId,
         stripeConfigured: config.configured,
-        stripeMode: config.mode
+        stripeMode: config.mode,
+        taxPercentEstimate: config.pricing?.taxPercentEstimate ?? settings.taxPercentEstimate,
+        paymentProcessingPercent: config.pricing?.paymentProcessingPercent ?? settings.paymentProcessingPercent,
+        paymentProcessingFixedCents: config.pricing?.paymentProcessingFixedCents ?? settings.paymentProcessingFixedCents
       });
     }
     if (!terminalLocationId) throw new Error("Add a Stripe Terminal location ID in Settings before using Tap to Pay on iPhone.");
@@ -1461,9 +1500,10 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
       });
       const display = await setReaderDisplay({
         currency: "usd",
-        tax: 0,
+        tax: orderTotals.taxCents,
         total: totalCents,
-        lineItems: lines.map((line) => {
+        lineItems: [
+          ...lines.map((line) => {
           const product = productFor(line, products);
           const quantity = positiveInt(line.quantity, 1);
           return {
@@ -1471,7 +1511,9 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
             quantity,
             amount: cents(line.unitPrice) * quantity
           };
-        })
+          }),
+          ...(orderTotals.paymentFeeCents > 0 ? [{ displayName: "Card processing fee", quantity: 1, amount: orderTotals.paymentFeeCents }] : [])
+        ]
       });
       if (display.error) setMessage(display.error.message);
 
@@ -1755,7 +1797,7 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
         <Pressable onPress={quoteShipping} disabled={saving} style={styles.secondaryButton}>
           <Text style={styles.secondaryButtonText}>Estimate {fulfillmentMethod === "SHIP" ? "Shipping" : "Pickup"}</Text>
         </Pressable>
-        <Text style={styles.cardCopy}>Total {money(totalCents)}{shippingQuote ? ` · fulfillment ${money(shippingQuote.shippingAmountCents)}` : ""}</Text>
+        <Text style={styles.cardCopy}>Total {money(totalCents)} · tax {money(orderTotals.taxCents)}{shippingQuote ? ` · fulfillment ${money(shippingQuote.shippingAmountCents)}` : ""}</Text>
           <FlowNav onBack={goBack} onNext={goNext} backDisabled={false} nextLabel="Payment Plan" />
         </Card>
       ) : null}
@@ -1881,9 +1923,13 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
           </View>
 
           <View style={styles.paymentSummary}>
+            <InfoRow label="Items" value={money(orderTotals.subtotalCents)} />
+            <InfoRow label="Estimated tax" value={money(orderTotals.taxCents)} />
+            <InfoRow label="Processing fee" value={money(orderTotals.paymentFeeCents)} />
             <InfoRow label="Total" value={money(totalCents)} />
             <InfoRow label="Paid on confirm" value={money(displayPaidCents)} />
             <InfoRow label="Balance after confirm" value={money(displayBalanceCents)} />
+            {paymentMethod === "CASH" ? <InfoRow label="Cash tax to set aside" value={money(orderTotals.taxCents)} /> : null}
           </View>
           <View style={styles.inline}>
             {paymentMethod === "UNPAID" || (source === "PAST_IMPORT" && paymentMethod !== "STRIPE_MANUAL") ? (
@@ -1917,6 +1963,9 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
           <InfoRow label="Items" value={`${lines.length} line(s)`} />
           <InfoRow label="Fulfillment" value={fulfillmentMethod} />
           <InfoRow label="Payment" value={paymentMethod === "STRIPE_TERMINAL" ? "Tap to Pay" : paymentMethod.replace("STRIPE_", "")} />
+          <InfoRow label="Items" value={money(orderTotals.subtotalCents)} />
+          <InfoRow label="Estimated tax" value={money(orderTotals.taxCents)} />
+          <InfoRow label="Processing fee" value={money(orderTotals.paymentFeeCents)} />
           <InfoRow label="Total" value={money(totalCents)} />
           <InfoRow label="Paid" value={money(displayPaidCents)} />
           <InfoRow label="Balance" value={money(displayBalanceCents)} />
@@ -1971,6 +2020,7 @@ function OrdersScreen({ client }: { client: SuperPrintClient }) {
             <Badge label={order.paymentStatus} />
             <Badge label={order.paymentMethod ?? "UNPAID"} />
           </View>
+          <Text style={styles.cardCopy}>Items {money(order.subtotalCents ?? order.totalCents)} · tax account {money(order.taxCents ?? 0)} · fees {money(order.paymentFeeCents ?? 0)}</Text>
         </Card>
       )) : (
         <Card><Text style={styles.cardCopy}>{message}</Text></Card>
@@ -2920,13 +2970,16 @@ function SettingsScreen({
     setTesting(true);
     setStatus("Loading Stripe payment settings...");
     try {
-      const config = await client.get<{ publishableKey: string | null; terminalLocationId: string | null; configured: boolean; mode: string }>("/api/admin/pos/terminal/config");
+      const config = await client.get<PosTerminalConfig>("/api/admin/pos/terminal/config");
       setSettings({
         ...settings,
         publishableKey: config.publishableKey ?? "",
         terminalLocationId: config.terminalLocationId ?? "",
         stripeMode: config.mode,
-        stripeConfigured: config.configured
+        stripeConfigured: config.configured,
+        taxPercentEstimate: config.pricing?.taxPercentEstimate ?? settings.taxPercentEstimate,
+        paymentProcessingPercent: config.pricing?.paymentProcessingPercent ?? settings.paymentProcessingPercent,
+        paymentProcessingFixedCents: config.pricing?.paymentProcessingFixedCents ?? settings.paymentProcessingFixedCents
       });
       setStatus(config.configured ? `Loaded Stripe ${config.mode} payments.` : "Stripe secret key is not configured yet in SuperPrint settings.");
     } catch (error) {
@@ -3331,6 +3384,42 @@ class SuperPrintClient {
 
 function cents(value: string) {
   return Math.max(0, Math.round((Number(value) || 0) * 100));
+}
+
+function calculatePosOrderTotals(input: {
+  subtotalCents: number;
+  shippingCents: number;
+  taxPercentEstimate: number | null;
+  paymentMethod: PosPaymentMethod;
+  paymentProcessingPercent: number;
+  paymentProcessingFixedCents: number;
+}) {
+  const subtotalCents = Math.max(0, Math.round(input.subtotalCents));
+  const shippingCents = Math.max(0, Math.round(input.shippingCents));
+  const taxCents = Math.max(0, Math.round(subtotalCents * normalizePercent(input.taxPercentEstimate)));
+  const beforeFeeCents = subtotalCents + taxCents + shippingCents;
+  const paymentFeeCents = input.paymentMethod.startsWith("STRIPE")
+    ? calculatePaymentProcessorFee(beforeFeeCents, input.paymentProcessingPercent, input.paymentProcessingFixedCents)
+    : 0;
+  return {
+    subtotalCents,
+    shippingCents,
+    taxCents,
+    paymentFeeCents,
+    totalCents: beforeFeeCents + paymentFeeCents
+  };
+}
+
+function calculatePaymentProcessorFee(baseCents: number, percentValue: number, fixedCents: number) {
+  if (baseCents <= 0) return 0;
+  const percent = normalizePercent(percentValue);
+  if (percent <= 0) return Math.max(0, Math.round(fixedCents));
+  return Math.max(0, Math.round((baseCents * percent + fixedCents) / Math.max(0.01, 1 - percent)));
+}
+
+function normalizePercent(value: number | null | undefined) {
+  if (!value || !Number.isFinite(value)) return 0;
+  return value > 1 ? value / 100 : value;
 }
 
 function positiveInt(value: string, fallback: number) {
