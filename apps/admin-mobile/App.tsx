@@ -3429,22 +3429,20 @@ function estimatePlatformPlates(line: LineDraft, product: ProductOption, quantit
     : [{ id: product.id, name: product.name, colorSlotIndex: 0, colorSlotPattern: [], quantityPerUnit: 1 }];
   const rows = new Map<string, { key: string; label: string; quantity: number; maxPerPlate: number; plates: number }>();
   for (const part of parts) {
-    const pattern = part.colorSlotPattern?.length ? part.colorSlotPattern : Array.from({ length: Math.max(1, part.quantityPerUnit) }, () => part.colorSlotIndex);
-    for (const slotIndex of pattern) {
-      const color = line.selectedColors[slotIndex]?.trim() || line.selectedColors[0]?.trim() || `Color ${slotIndex + 1}`;
-      const key = `${part.id}:${color.toLowerCase()}`;
-      const maxPerPlate = Math.max(1, (product.maxBatchQuantity ?? 1) * Math.max(1, part.quantityPerUnit));
-      const existing = rows.get(key) ?? {
-        key,
-        label: `${part.name} ${color}`,
-        quantity: 0,
-        maxPerPlate,
-        plates: 0
-      };
-      existing.quantity += quantity;
-      existing.plates = Math.ceil(existing.quantity / existing.maxPerPlate);
-      rows.set(key, existing);
-    }
+    const color = line.selectedColors[0]?.trim() || line.selectedColors.find((item) => item.trim())?.trim() || `Color 1`;
+    const key = `${part.id}:${color.toLowerCase()}`;
+    const copiesPerProduct = Math.max(1, part.quantityPerUnit);
+    const maxPerPlate = Math.max(1, (product.maxBatchQuantity ?? 1) * copiesPerProduct);
+    const existing = rows.get(key) ?? {
+      key,
+      label: `${part.name} ${color}`,
+      quantity: 0,
+      maxPerPlate,
+      plates: 0
+    };
+    existing.quantity += quantity * copiesPerProduct;
+    existing.plates = Math.ceil(existing.quantity / existing.maxPerPlate);
+    rows.set(key, existing);
   }
   return [...rows.values()];
 }

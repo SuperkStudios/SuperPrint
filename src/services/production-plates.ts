@@ -32,8 +32,10 @@ export async function rebuildProductionPlateJobs(actorId?: string) {
     const productsToPrint = Math.max(...group.rows.map((row) => Math.ceil(row.quantityToPrint / Math.max(1, row.quantityPerProductColor))));
     const plateCount = Math.ceil(productsToPrint / maxPerPlate);
     const inputStorageKey = product.previewPlateStorageKey ?? product.productFileStorageKey ?? platePart.fileStorageKey;
+    const remainingOrders = group.orders.map((order) => ({ ...order }));
     for (let index = 0; index < plateCount; index += 1) {
       const quantityPlanned = Math.min(maxPerPlate, productsToPrint - index * maxPerPlate);
+      const orderRefs = takeOrderRefsForPlate(remainingOrders, quantityPlanned);
       const partManifest = group.rows.map((row) => ({
         productPartId: row.partId,
         partName: row.partName,
@@ -53,7 +55,7 @@ export async function rebuildProductionPlateJobs(actorId?: string) {
           maxPerPlate,
           plateIndex: index + 1,
           plateCount,
-          orderRefs: group.orders as unknown as Prisma.InputJsonValue,
+          orderRefs: orderRefs as unknown as Prisma.InputJsonValue,
           partManifest: partManifest as unknown as Prisma.InputJsonValue,
           inputStorageKey
         }
@@ -83,12 +85,50 @@ function groupPlannerRowsByProductPlate(rows: PlannerRow[]) {
       orders: []
     };
     group.rows.push(row);
-    for (const order of row.orders) {
-      if (!group.orders.some((existing) => existing.orderNumber === order.orderNumber)) group.orders.push(order);
-    }
     groups.set(key, group);
   }
-  return [...groups.values()];
+  return [...groups.values()].map((group) => ({
+    ...group,
+    orders: summarizeGroupOrders(group.rows)
+  }));
+}
+
+function takeOrderRefsForPlate(orders: Array<{ orderNumber: string; quantity: number; customerEmail: string }>, plateQuantity: number) {
+  let remaining = plateQuantity;
+  const refs: Array<{ orderNumber: string; quantity: number; customerEmail: string }> = [];
+  for (const order of orders) {
+    if (remaining <= 0) break;
+    if (order.quantity <= 0) continue;
+    const quantity = Math.min(order.quantity, remaining);
+    refs.push({ orderNumber: order.orderNumber, quantity, customerEmail: order.customerEmail });
+    order.quantity -= quantity;
+    remaining -= quantity;
+  }
+  return refs;
+}
+
+function summarizeGroupOrders(rows: PlannerRow[]) {
+  const totalsByPart = rows.map((row) => {
+    const totals = new Map<string, { orderNumber: string; quantity: number; customerEmail: string }>();
+    for (const order of row.orders) {
+      const existing = totals.get(order.orderNumber);
+      if (existing) {
+        existing.quantity += order.quantity;
+      } else {
+        totals.set(order.orderNumber, { ...order });
+      }
+    }
+    return totals;
+  });
+  const orderNumbers = new Set(totalsByPart.flatMap((totals) => [...totals.keys()]));
+  return [...orderNumbers].map((orderNumber) => {
+    const matches = totalsByPart.map((totals) => totals.get(orderNumber)).filter((item): item is { orderNumber: string; quantity: number; customerEmail: string } => Boolean(item));
+    return {
+      orderNumber,
+      quantity: Math.max(...matches.map((order) => order.quantity)),
+      customerEmail: matches[0]?.customerEmail ?? ""
+    };
+  });
 }
 
 export async function getProductionPlateDashboard() {

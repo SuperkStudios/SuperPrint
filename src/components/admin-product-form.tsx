@@ -335,7 +335,7 @@ export function AdminProductForm({ product, materials = fallbackMaterials }: { p
           <p className="text-xs text-muted-foreground">Use 2 for spinner-style products where the customer picks two colors and production batches each color separately.</p>
         </div>
         <div className="grid gap-2">
-          <Label htmlFor="maxBatchQuantity">Max products per build plate</Label>
+          <Label htmlFor="maxBatchQuantity">Max finished products per build plate</Label>
           <Input
             id="maxBatchQuantity"
             name="maxBatchQuantity"
@@ -345,7 +345,7 @@ export function AdminProductForm({ product, materials = fallbackMaterials }: { p
             value={maxBatchQuantity}
             onChange={(event) => setMaxBatchQuantity(Math.min(200, Math.max(1, Math.round(Number(event.target.value) || 1))))}
           />
-          <p className="text-xs text-muted-foreground">Example: set 14 when a full spinner plate fits fourteen ordered units of one color pass.</p>
+          <p className="text-xs text-muted-foreground">Example: set 4 when the max plate prints four finished products, even if each product has multiple copies of each part.</p>
         </div>
       </div>
       <details className="rounded-md border bg-muted/20 p-4">
