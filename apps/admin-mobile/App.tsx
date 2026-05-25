@@ -256,6 +256,7 @@ type ProductionLoopState = {
     aiPlateCheck: { status?: string | null; confidence?: number | null; reason?: string | null };
     filamentConfirmedAt?: string | null;
     plateClearConfirmedAt?: string | null;
+    partManifest?: Array<{ productPartId: string; partName: string; color: string; quantityPerProduct: number; quantityPlanned: number }>;
     orderRefs: Array<{ orderNumber?: string; quantity?: number; customerEmail?: string }>;
   } | null;
   batches: Array<{ key: string; label: string; totalQuantity: number; plateCount: number; plateIds: string[] }>;
@@ -2116,7 +2117,7 @@ function PartsScreen({ client, apiBaseUrl }: { client: SuperPrintClient; apiBase
               <View style={styles.orderTop}>
                 <View style={styles.grow}>
                   <Text style={styles.cardTitle}>{nextPlate.color} {nextPlate.partName}</Text>
-                  <Text style={styles.cardCopy}>{nextPlate.productName} · plate {nextPlate.plateIndex}/{nextPlate.plateCount} · {nextPlate.quantityPlanned} part{nextPlate.quantityPlanned === 1 ? "" : "s"}</Text>
+                  <Text style={styles.cardCopy}>{nextPlate.productName} · plate {nextPlate.plateIndex}/{nextPlate.plateCount} · {nextPlate.quantityPlanned} product{nextPlate.quantityPlanned === 1 ? "" : "s"}</Text>
                 </View>
                 <Badge label={nextPlate.status} />
               </View>
@@ -2126,6 +2127,13 @@ function PartsScreen({ client, apiBaseUrl }: { client: SuperPrintClient; apiBase
                 <InfoRow label="Estimate" value={nextPlate.estimateLabel} />
                 <InfoRow label="Plate check" value={nextPlate.plateClearConfirmedAt ? "Employee confirmed clear" : "Needs human check"} />
               </View>
+              {nextPlate.partManifest?.length ? (
+                <View style={styles.readOnlyPanel}>
+                  {nextPlate.partManifest.map((part) => (
+                    <InfoRow key={`${part.productPartId}:${part.color}`} label={part.partName} value={`${part.quantityPlanned} ${part.color}`} />
+                  ))}
+                </View>
+              ) : null}
               {nextPlate.orderRefs.length ? <Text style={styles.cardCopy}>Orders: {nextPlate.orderRefs.map((order) => `${order.orderNumber ?? "Order"} x${order.quantity ?? 1}`).join(", ")}</Text> : null}
               <View style={styles.actionButtons}>
                 <Pressable disabled={Boolean(savingKey)} onPress={() => runAction("confirmPlateClear", nextPlate.id)} style={styles.secondaryButton}>

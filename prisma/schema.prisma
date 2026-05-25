@@ -688,6 +688,7 @@ model ProductionPlateJob {
   plateIndex             Int                      @default(1)
   plateCount             Int                      @default(1)
   orderRefs              Json                     @default("[]")
+  partManifest           Json                     @default("[]")
   inputStorageKey        String
   outputStorageKey       String?
   nodeLocalJobPath       String?

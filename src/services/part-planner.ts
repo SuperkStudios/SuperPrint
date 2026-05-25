@@ -1,12 +1,14 @@
 import { prisma } from "@/lib/prisma";
 
-type PlannerRow = {
+export type PlannerRow = {
   key: string;
+  productId: string;
   productName: string;
   partId: string;
   partName: string;
   color: string;
   requiredQuantity: number;
+  quantityPerProductColor: number;
   quantityOnHand: number;
   quantityToPrint: number;
   suggestedPlateQuantity: number;
@@ -51,31 +53,38 @@ export async function getPartProductionPlanner(): Promise<PlannerRow[]> {
       const selectedColors = jsonStringArray(item.selectedColors).length ? jsonStringArray(item.selectedColors) : item.selectedColor ? [item.selectedColor] : [];
       for (const part of item.product.parts) {
         const pattern = part.colorSlotPattern.length ? part.colorSlotPattern : Array.from({ length: part.quantityPerUnit }, () => part.colorSlotIndex);
+        const colorCounts = new Map<string, number>();
         for (const slotIndex of pattern) {
           const color = selectedColors[slotIndex] ?? selectedColors[0] ?? item.selectedColor ?? "Unassigned";
+          colorCounts.set(color, (colorCounts.get(color) ?? 0) + 1);
+        }
+        for (const [color, quantityPerProductColor] of colorCounts) {
           const key = `${part.id}:${color}`;
-          const quantity = Math.max(0, item.quantity - item.printedQuantity);
+          const quantity = Math.max(0, item.quantity - item.printedQuantity) * quantityPerProductColor;
           if (!quantity) continue;
           const existing = rows.get(key);
           if (existing) {
             existing.requiredQuantity += quantity;
-            existing.orders.push({ orderNumber: order.orderNumber, quantity, customerEmail: order.customer.email });
+            existing.quantityPerProductColor = Math.max(existing.quantityPerProductColor, quantityPerProductColor);
+            existing.orders.push({ orderNumber: order.orderNumber, quantity: Math.max(0, item.quantity - item.printedQuantity), customerEmail: order.customer.email });
             continue;
           }
           const quantityOnHand = inventoryByPartAndColor.get(inventoryKey(part.id, color)) ?? 0;
           rows.set(key, {
             key,
+            productId: item.product.id,
             productName: item.product.name,
             partId: part.id,
             partName: part.name,
             color,
             requiredQuantity: quantity,
+            quantityPerProductColor,
             quantityOnHand,
             quantityToPrint: 0,
-            suggestedPlateQuantity: Math.max(1, item.product.maxBatchQuantity * Math.max(1, part.quantityPerUnit)),
+            suggestedPlateQuantity: Math.max(1, item.product.maxBatchQuantity * Math.max(1, quantityPerProductColor)),
             suggestedPlateCount: 0,
             plates: [],
-            orders: [{ orderNumber: order.orderNumber, quantity, customerEmail: order.customer.email }]
+            orders: [{ orderNumber: order.orderNumber, quantity: Math.max(0, item.quantity - item.printedQuantity), customerEmail: order.customer.email }]
           });
         }
       }

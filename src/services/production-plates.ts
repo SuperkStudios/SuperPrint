@@ -4,7 +4,7 @@ import { Prisma } from "@prisma/client";
 import { buildLocalStorageKey, resolveLocalStoragePath } from "@/lib/storage";
 import { prisma } from "@/lib/prisma";
 import { hasUsableSlicerEstimate, planProductionPlateOrder } from "@/domain/production-loop";
-import { getPartProductionPlanner } from "./part-planner";
+import { getPartProductionPlanner, type PlannerRow } from "./part-planner";
 import { authenticateSuperNode } from "./supernode-jobs";
 
 const activePlateStatuses = ["PLANNED", "SLICING", "READY", "NEEDS_FILAMENT", "PRINTING"] as const;
@@ -17,30 +17,45 @@ export async function rebuildProductionPlateJobs(actorId?: string) {
   });
 
   const jobs = [];
-  for (const row of planner.filter((item) => item.quantityToPrint > 0)) {
-    const part = await prisma.productPart.findUniqueOrThrow({
-      where: { id: row.partId },
-      include: { product: { include: { allowedFilaments: { include: { filamentMaterial: true } } } } }
+  for (const group of groupPlannerRowsByProductPlate(planner.filter((item) => item.quantityToPrint > 0))) {
+    const product = await prisma.product.findUniqueOrThrow({
+      where: { id: group.productId },
+      include: {
+        parts: { orderBy: { displayOrder: "asc" } },
+        allowedFilaments: { include: { filamentMaterial: true } }
+      }
     });
-    const filament = chooseFilamentForColor(part.product.allowedFilaments.map((item) => item.filamentMaterial), row.color);
-    const maxPerPlate = Math.max(1, row.suggestedPlateQuantity);
-    const plateCount = Math.ceil(row.quantityToPrint / maxPerPlate);
+    const platePart = product.parts[0];
+    if (!platePart) continue;
+    const filament = chooseFilamentForColor(product.allowedFilaments.map((item) => item.filamentMaterial), group.color);
+    const maxPerPlate = Math.max(1, product.maxBatchQuantity);
+    const productsToPrint = Math.max(...group.rows.map((row) => Math.ceil(row.quantityToPrint / Math.max(1, row.quantityPerProductColor))));
+    const plateCount = Math.ceil(productsToPrint / maxPerPlate);
+    const inputStorageKey = product.previewPlateStorageKey ?? product.productFileStorageKey ?? platePart.fileStorageKey;
     for (let index = 0; index < plateCount; index += 1) {
-      const quantityPlanned = Math.min(maxPerPlate, row.quantityToPrint - index * maxPerPlate);
+      const quantityPlanned = Math.min(maxPerPlate, productsToPrint - index * maxPerPlate);
+      const partManifest = group.rows.map((row) => ({
+        productPartId: row.partId,
+        partName: row.partName,
+        color: row.color,
+        quantityPerProduct: row.quantityPerProductColor,
+        quantityPlanned: quantityPlanned * row.quantityPerProductColor
+      }));
       jobs.push(await prisma.productionPlateJob.create({
         data: {
-          productPartId: part.id,
+          productPartId: platePart.id,
           filamentId: filament?.id,
-          color: row.color,
+          color: group.color,
           status: "PLANNED",
           quantityPlanned,
-          requiredQuantity: row.requiredQuantity,
-          inventoryUsedQuantity: row.quantityOnHand,
+          requiredQuantity: group.rows.reduce((total, row) => total + row.requiredQuantity, 0),
+          inventoryUsedQuantity: group.rows.reduce((total, row) => total + row.quantityOnHand, 0),
           maxPerPlate,
           plateIndex: index + 1,
           plateCount,
-          orderRefs: row.orders as unknown as Prisma.InputJsonValue,
-          inputStorageKey: part.fileStorageKey
+          orderRefs: group.orders as unknown as Prisma.InputJsonValue,
+          partManifest: partManifest as unknown as Prisma.InputJsonValue,
+          inputStorageKey
         }
       }));
     }
@@ -48,6 +63,32 @@ export async function rebuildProductionPlateJobs(actorId?: string) {
 
   void actorId;
   return jobs;
+}
+
+function groupPlannerRowsByProductPlate(rows: PlannerRow[]) {
+  const groups = new Map<string, {
+    productId: string;
+    productName: string;
+    color: string;
+    rows: PlannerRow[];
+    orders: Array<{ orderNumber: string; quantity: number; customerEmail: string }>;
+  }>();
+  for (const row of rows) {
+    const key = `${row.productId}:${row.color.trim().toLowerCase()}`;
+    const group = groups.get(key) ?? {
+      productId: row.productId,
+      productName: row.productName,
+      color: row.color,
+      rows: [],
+      orders: []
+    };
+    group.rows.push(row);
+    for (const order of row.orders) {
+      if (!group.orders.some((existing) => existing.orderNumber === order.orderNumber)) group.orders.push(order);
+    }
+    groups.set(key, group);
+  }
+  return [...groups.values()];
 }
 
 export async function getProductionPlateDashboard() {
@@ -102,8 +143,8 @@ export async function readProductionPlateModel(plateJobId: string, nodeId: strin
     include: { productPart: true }
   });
   return {
-    fileName: path.basename(job.productPart.fileStorageKey),
-    file: await readFile(resolveLocalStoragePath(job.productPart.fileStorageKey))
+    fileName: path.basename(job.inputStorageKey),
+    file: await readFile(resolveLocalStoragePath(job.inputStorageKey))
   };
 }
 

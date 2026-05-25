@@ -21,7 +21,7 @@ type ProductionLoopAction =
 
 type PlateWithIncludes = Prisma.ProductionPlateJobGetPayload<{
   include: {
-    productPart: { include: { product: true } };
+    productPart: { include: { product: { include: { parts: true } } } };
     filament: true;
   };
 }>;
@@ -37,7 +37,7 @@ export async function getProductionLoopState() {
     }),
     prisma.productionPlateJob.findMany({
       where: { status: { in: [...activeStatuses] } },
-      include: { productPart: { include: { product: true } }, filament: true },
+      include: { productPart: { include: { product: { include: { parts: true } } } }, filament: true },
       orderBy: [{ createdAt: "asc" }]
     }),
     getPartProductionPlanner(),
@@ -126,7 +126,7 @@ export async function runProductionLoopAction(input: {
   if (!input.plateJobId) throw new Error("plateJobId is required.");
   const plate = await prisma.productionPlateJob.findUniqueOrThrow({
     where: { id: input.plateJobId },
-    include: { productPart: { include: { product: true } }, filament: true }
+    include: { productPart: { include: { product: { include: { parts: true } } } }, filament: true }
   });
 
   if (input.action === "confirmFilamentChanged") {
@@ -217,31 +217,35 @@ export async function runProductionLoopAction(input: {
 
   if (input.action === "markPartsInventoried") {
     const printer = await getPrinterForPlate(plate);
-    const [inventory, updated] = await prisma.$transaction([
-      prisma.productPartInventory.upsert({
+    const manifest = getPlatePartManifest(plate);
+    const inventoryWrites = manifest.map((part) => prisma.productPartInventory.upsert({
         where: {
           productPartId_color_location: {
-            productPartId: plate.productPartId,
-            color: plate.color,
+            productPartId: part.productPartId,
+            color: part.color,
             location: "Fresh prints"
           }
         },
-        update: { quantityOnHand: { increment: plate.quantityPlanned }, notes: `Inventoried from production plate ${plate.plateIndex}/${plate.plateCount}` },
+        update: { quantityOnHand: { increment: part.quantityPlanned }, notes: `Inventoried from production plate ${plate.plateIndex}/${plate.plateCount}` },
         create: {
-          productPartId: plate.productPartId,
-          color: plate.color,
-          quantityOnHand: plate.quantityPlanned,
+          productPartId: part.productPartId,
+          color: part.color,
+          quantityOnHand: part.quantityPlanned,
           location: "Fresh prints",
           notes: `Inventoried from production plate ${plate.plateIndex}/${plate.plateCount}`
         }
-      }),
+      }));
+    const results = await prisma.$transaction([
+      ...inventoryWrites,
       prisma.productionPlateJob.update({
         where: { id: plate.id },
-        data: { status: "INVENTORIED", inventoriedQuantity: plate.quantityPlanned, completedAt: new Date() }
+        data: { status: "INVENTORIED", inventoriedQuantity: manifest.reduce((total, part) => total + part.quantityPlanned, 0), completedAt: new Date() }
       })
     ]);
+    const updated = results[results.length - 1];
+    const inventory = results.slice(0, -1);
     await recordPlatformEvent({ type: "PRODUCTION_ASSEMBLY_READY", actorId: input.actorId, payload: platePayload(plate, printer.id) });
-    await recordCheckpoint({ action: input.action, actorId: input.actorId, plateJobId: plate.id, printerId: printer.id, payload: { inventoryId: inventory.id } });
+    await recordCheckpoint({ action: input.action, actorId: input.actorId, plateJobId: plate.id, printerId: printer.id, payload: { inventoryIds: inventory.map((item) => item.id) } });
     return { job: updated, inventory, state: await getProductionLoopState() };
   }
 
@@ -367,6 +371,7 @@ function summarizeBatches(jobs: PlateWithIncludes[], currentFilament?: { id: str
 
 function serializePlate(plate: PlateWithIncludes) {
   const orderRefs = Array.isArray(plate.orderRefs) ? plate.orderRefs : [];
+  const partManifest = getPlatePartManifest(plate);
   const estimateLabel = hasUsableSlicerEstimate(plate)
     ? `${plate.estimatedPrintMinutes} min · ${plate.estimatedGrams}g`
     : `Using uploaded file · product estimate ${plate.productPart.product.estimatedPrintMinutes} min · ${plate.productPart.product.estimatedGrams}g`;
@@ -374,7 +379,7 @@ function serializePlate(plate: PlateWithIncludes) {
     id: plate.id,
     status: plate.status,
     productName: plate.productPart.product.name,
-    partName: plate.productPart.name,
+    partName: partManifest.length > 1 ? "Full product plate" : plate.productPart.name,
     color: plate.color,
     quantityPlanned: plate.quantityPlanned,
     plateIndex: plate.plateIndex,
@@ -392,6 +397,7 @@ function serializePlate(plate: PlateWithIncludes) {
     },
     filamentConfirmedAt: plate.filamentConfirmedAt?.toISOString() ?? null,
     plateClearConfirmedAt: plate.plateClearConfirmedAt?.toISOString() ?? null,
+    partManifest,
     orderRefs
   };
 }
@@ -403,10 +409,38 @@ function getPlatePrintStorageKey(plate: PlateWithIncludes) {
 }
 
 function buildPrintDetail(plate: PlateWithIncludes) {
+  const manifest = getPlatePartManifest(plate);
+  const partSummary = manifest.length > 1
+    ? manifest.map((part) => `${part.quantityPlanned} ${part.partName}`).join(", ")
+    : `${plate.quantityPlanned} ${plate.productPart.name}`;
   if (hasUsableSlicerEstimate(plate)) {
-    return `${plate.quantityPlanned} ${plate.color} ${plate.productPart.name}, ${plate.estimatedPrintMinutes} minutes, ${plate.estimatedGrams}g.`;
+    return `${plate.quantityPlanned} ${plate.color} product${plate.quantityPlanned === 1 ? "" : "s"} on this plate: ${partSummary}. ${plate.estimatedPrintMinutes} minutes, ${plate.estimatedGrams}g.`;
   }
-  return `${plate.quantityPlanned} ${plate.color} ${plate.productPart.name}. Using the uploaded product file; product estimate is ${plate.productPart.product.estimatedPrintMinutes} minutes and ${plate.productPart.product.estimatedGrams}g.`;
+  return `${plate.quantityPlanned} ${plate.color} product${plate.quantityPlanned === 1 ? "" : "s"} on this plate: ${partSummary}. Using the uploaded max build plate file; product estimate is ${plate.productPart.product.estimatedPrintMinutes} minutes and ${plate.productPart.product.estimatedGrams}g.`;
+}
+
+function getPlatePartManifest(plate: PlateWithIncludes) {
+  const manifest = Array.isArray(plate.partManifest) ? plate.partManifest : [];
+  const parsed = manifest
+    .map((item) => {
+      if (!item || typeof item !== "object") return null;
+      const value = item as Record<string, unknown>;
+      const productPartId = typeof value.productPartId === "string" ? value.productPartId : "";
+      const partName = typeof value.partName === "string" ? value.partName : "Part";
+      const color = typeof value.color === "string" ? value.color : plate.color;
+      const quantityPerProduct = Math.max(1, Math.round(Number(value.quantityPerProduct ?? 1)));
+      const quantityPlanned = Math.max(1, Math.round(Number(value.quantityPlanned ?? plate.quantityPlanned * quantityPerProduct)));
+      return productPartId ? { productPartId, partName, color, quantityPerProduct, quantityPlanned } : null;
+    })
+    .filter((item): item is { productPartId: string; partName: string; color: string; quantityPerProduct: number; quantityPlanned: number } => Boolean(item));
+  if (parsed.length) return parsed;
+  return [{
+    productPartId: plate.productPartId,
+    partName: plate.productPart.name,
+    color: plate.color,
+    quantityPerProduct: 1,
+    quantityPlanned: plate.quantityPlanned
+  }];
 }
 
 async function getAssemblyReadyOrders(planner: Awaited<ReturnType<typeof getPartProductionPlanner>>) {
