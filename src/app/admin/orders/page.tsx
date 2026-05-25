@@ -1,6 +1,8 @@
+import Link from "next/link";
 import { PackageCheck, Printer, Tag, Truck } from "lucide-react";
 import { AdminActionButton } from "@/components/admin-action-button";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { requireAdminPage } from "@/lib/admin-permissions";
 import { prisma } from "@/lib/prisma";
@@ -120,6 +122,11 @@ function OrderCard({ order }: { order: {
           <span><span className="text-muted-foreground">Label</span><br />{order.labelPrintedAt ? "Printed" : order.shippingLabelUrl ? "Ready" : "Not bought"}</span>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <Button asChild variant="outline">
+            <Link href={`/orders/${order.id}/invoice`}>
+              Invoice
+            </Link>
+          </Button>
           <AdminActionButton endpoint="/api/admin/orders" payload={{ action: "markPacking", orderId: order.id }}>
             <PackageCheck className="h-4 w-4" />
             Packing
