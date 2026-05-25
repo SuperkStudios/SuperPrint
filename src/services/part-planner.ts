@@ -11,6 +11,7 @@ type PlannerRow = {
   quantityToPrint: number;
   suggestedPlateQuantity: number;
   suggestedPlateCount: number;
+  plates: Array<{ plateIndex: number; plateCount: number; quantity: number; maxPerPlate: number; isFull: boolean }>;
   orders: Array<{ orderNumber: string; quantity: number; customerEmail: string }>;
 };
 
@@ -73,6 +74,7 @@ export async function getPartProductionPlanner(): Promise<PlannerRow[]> {
             quantityToPrint: 0,
             suggestedPlateQuantity: Math.max(1, item.product.maxBatchQuantity * Math.max(1, part.quantityPerUnit)),
             suggestedPlateCount: 0,
+            plates: [],
             orders: [{ orderNumber: order.orderNumber, quantity, customerEmail: order.customer.email }]
           });
         }
@@ -83,10 +85,21 @@ export async function getPartProductionPlanner(): Promise<PlannerRow[]> {
   return [...rows.values()]
     .map((row) => {
       const quantityToPrint = Math.max(0, row.requiredQuantity - row.quantityOnHand);
+      const suggestedPlateCount = quantityToPrint ? Math.ceil(quantityToPrint / row.suggestedPlateQuantity) : 0;
       return {
         ...row,
         quantityToPrint,
-        suggestedPlateCount: quantityToPrint ? Math.ceil(quantityToPrint / row.suggestedPlateQuantity) : 0
+        suggestedPlateCount,
+        plates: Array.from({ length: suggestedPlateCount }, (_, index) => {
+          const quantity = Math.min(row.suggestedPlateQuantity, quantityToPrint - index * row.suggestedPlateQuantity);
+          return {
+            plateIndex: index + 1,
+            plateCount: suggestedPlateCount,
+            quantity,
+            maxPerPlate: row.suggestedPlateQuantity,
+            isFull: quantity >= row.suggestedPlateQuantity
+          };
+        })
       };
     })
     .sort((a, b) => b.quantityToPrint - a.quantityToPrint || a.productName.localeCompare(b.productName) || a.color.localeCompare(b.color));

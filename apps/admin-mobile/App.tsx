@@ -189,7 +189,7 @@ type AdminJob = {
   status: string;
   queuePosition?: number | null;
   etaMinutes?: number | null;
-  order?: { orderNumber: string; customer?: { email: string } | null; product?: { name: string } | null } | null;
+  order?: { orderNumber: string; customer?: { email: string } | null; product?: { id?: string | null; name: string; maxBatchQuantity?: number | null } | null } | null;
   printer?: { publicName?: string | null } | null;
   filament?: { material: string; color: string } | null;
 };
@@ -205,6 +205,7 @@ type PartPlannerRow = {
   quantityToPrint: number;
   suggestedPlateCount: number;
   suggestedPlateQuantity: number;
+  plates?: Array<{ plateIndex: number; plateCount: number; quantity: number; maxPerPlate: number; isFull: boolean }>;
   orders: Array<{ orderNumber: string; quantity: number; customerEmail: string }>;
 };
 
@@ -1889,10 +1890,32 @@ function QueueScreen({ client }: { client: SuperPrintClient }) {
     }
   }
 
+  const plateBatches = buildQueuePlateBatches(jobs.filter((job) => job.status === "QUEUED"));
+
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.screenBody}>
       <ScreenHeader title="Queue" detail="Live jobs by status, plate order, material, and customer." />
       <LoadButton title="Refresh Queue" loading={loading} onPress={load} />
+      {plateBatches.length ? (
+        <Card>
+          <View style={styles.orderTop}>
+            <View>
+              <Text style={styles.cardTitle}>Build plates</Text>
+              <Text style={styles.cardCopy}>Same product and filament stay together until a plate is full.</Text>
+            </View>
+            <Badge label={`${plateBatches.length} plate${plateBatches.length === 1 ? "" : "s"}`} />
+          </View>
+          {plateBatches.map((batch) => (
+            <View key={batch.key} style={styles.actionItem}>
+              <View style={styles.grow}>
+                <Text style={styles.rowTitle}>{batch.productName}</Text>
+                <Text style={styles.cardCopy}>{batch.filamentLabel} · Plate {batch.plateIndex}/{batch.plateCount}: {batch.count}/{batch.max} product{batch.max === 1 ? "" : "s"}{batch.isFull ? " · full" : ""}</Text>
+                <Text style={styles.cardCopy}>Queue #{batch.positions.join(", #")}</Text>
+              </View>
+            </View>
+          ))}
+        </Card>
+      ) : null}
       {jobs.length ? jobs.map((job) => (
         <Card key={job.id}>
           <View style={styles.orderTop}>
@@ -2027,6 +2050,9 @@ function PartsScreen({ client }: { client: SuperPrintClient }) {
                 <View style={styles.grow}>
                   <Text style={styles.rowTitle}>{row.productName} · {row.partName}</Text>
                   <Text style={styles.cardCopy}>Need {row.requiredQuantity}, stored {row.quantityOnHand}, print {row.quantityToPrint} · {row.suggestedPlateCount} plate{row.suggestedPlateCount === 1 ? "" : "s"}</Text>
+                  {row.plates?.length ? (
+                    <Text style={styles.cardCopy}>{row.plates.map((plate) => `Plate ${plate.plateIndex}/${plate.plateCount}: ${plate.quantity}/${plate.maxPerPlate}${plate.isFull ? " full" : ""}`).join(" · ")}</Text>
+                  ) : null}
                   <Text style={styles.cardCopy}>{row.orders.map((order) => `${order.orderNumber} x${order.quantity}`).join(", ")}</Text>
                 </View>
                 <View style={styles.actionButtons}>
@@ -3273,6 +3299,35 @@ function groupPlannerByColor(rows: PartPlannerRow[]) {
   return [...groups.values()]
     .map((group) => ({ ...group, rows: group.rows.sort(sortPlannerRows) }))
     .sort((a, b) => b.quantityToPrint - a.quantityToPrint || a.color.localeCompare(b.color));
+}
+
+function buildQueuePlateBatches(jobs: AdminJob[]) {
+  const groups = new Map<string, AdminJob[]>();
+  for (const job of jobs) {
+    const productId = job.order?.product?.id ?? job.order?.product?.name ?? "custom";
+    const filamentLabel = job.filament ? `${job.filament.color} ${job.filament.material}` : "filament pending";
+    const key = `${productId}:${filamentLabel}`;
+    groups.set(key, [...(groups.get(key) ?? []), job]);
+  }
+  return [...groups.entries()].flatMap(([key, group]) => {
+    const sorted = [...group].sort((a, b) => (a.queuePosition ?? Number.MAX_SAFE_INTEGER) - (b.queuePosition ?? Number.MAX_SAFE_INTEGER));
+    const max = Math.max(1, sorted[0]?.order?.product?.maxBatchQuantity ?? 1);
+    const plateCount = Math.ceil(sorted.length / max);
+    return Array.from({ length: plateCount }, (_, index) => {
+      const slice = sorted.slice(index * max, (index + 1) * max);
+      return {
+        key: `${key}:${index}`,
+        productName: slice[0]?.order?.product?.name ?? "Custom job",
+        filamentLabel: slice[0]?.filament ? `${slice[0].filament.color} ${slice[0].filament.material}` : "filament pending",
+        plateIndex: index + 1,
+        plateCount,
+        count: slice.length,
+        max,
+        isFull: slice.length >= max,
+        positions: slice.map((job) => job.queuePosition ?? "?")
+      };
+    });
+  });
 }
 
 function orderItemsArePrinted(order: AdminOrder) {

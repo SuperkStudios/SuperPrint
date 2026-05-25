@@ -71,9 +71,16 @@ export default async function AdminPartsPage() {
                   <span>{row.color}</span>
                   <span>{row.requiredQuantity}</span>
                   <span>{row.quantityOnHand}</span>
-                  <span>
-                    <Badge className={row.quantityToPrint ? "" : "bg-secondary"}>{row.quantityToPrint}</Badge>
-                    {row.quantityToPrint ? <span className="ml-2 text-xs text-muted-foreground">{row.suggestedPlateCount} x {row.suggestedPlateQuantity}</span> : null}
+                  <span className="grid gap-1">
+                    <span>
+                      <Badge className={row.quantityToPrint ? "" : "bg-secondary"}>{row.quantityToPrint}</Badge>
+                      {row.quantityToPrint ? <span className="ml-2 text-xs text-muted-foreground">{row.suggestedPlateCount} plate{row.suggestedPlateCount === 1 ? "" : "s"}</span> : null}
+                    </span>
+                    {row.plates.length ? (
+                      <span className="text-xs text-muted-foreground">
+                        {row.plates.map((plate) => `Plate ${plate.plateIndex}/${plate.plateCount}: ${plate.quantity}/${plate.maxPerPlate}${plate.isFull ? " full" : ""}`).join(" · ")}
+                      </span>
+                    ) : null}
                   </span>
                   <span className="truncate text-muted-foreground">{row.orders.map((order) => `${order.orderNumber} (${order.quantity})`).join(", ")}</span>
                 </div>

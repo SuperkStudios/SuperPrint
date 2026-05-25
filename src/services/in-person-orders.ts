@@ -114,7 +114,9 @@ export async function createInPersonOrder(input: CreateInPersonOrderInput, actor
   const balanceDueCents = Math.max(0, totalCents - amountPaidCents);
   const paymentMethod = input.paymentMethod || "UNPAID";
   const paymentStatus = balanceDueCents <= 0 && paidMethods.has(paymentMethod) ? "PAID" : amountPaidCents > 0 ? "PARTIAL" : "PENDING";
-  const status = paymentStatus === "PAID" ? "PAID" : "CHECKOUT_READY";
+  const hasRequestedPrintWork = normalizedLines.some((line) => line.quantity > line.printedQuantity);
+  const shouldQueuePrintWork = source !== "PAST_IMPORT" && hasRequestedPrintWork && (input.queueNow || paymentMethod === "UNPAID");
+  const status = shouldQueuePrintWork ? "QUEUED" : paymentStatus === "PAID" ? "PAID" : "CHECKOUT_READY";
 
   const order = await prisma.$transaction(async (tx) => {
     const customer = await tx.user.upsert({
@@ -189,10 +191,9 @@ export async function createInPersonOrder(input: CreateInPersonOrderInput, actor
       include: { customer: true, items: { include: { product: true } } }
     });
 
-    if (input.queueNow && paymentStatus === "PAID") {
+    if (shouldQueuePrintWork) {
       await queueOrderJobs(tx, created.id, normalizedLines);
-      const hasRemainingPrintWork = normalizedLines.some((line) => line.quantity > line.printedQuantity);
-      return tx.order.update({ where: { id: created.id }, data: { status: hasRemainingPrintWork ? "QUEUED" : "PAID" }, include: { customer: true, items: { include: { product: true } }, printJobs: true } });
+      return tx.order.update({ where: { id: created.id }, data: { status: "QUEUED" }, include: { customer: true, items: { include: { product: true } }, printJobs: true } });
     }
 
     if (input.source === "PAST_IMPORT" && input.pastPrinterHistory && input.pastHistorySpoolId) {
