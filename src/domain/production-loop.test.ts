@@ -15,7 +15,7 @@ describe("planProductionPlateOrder", () => {
     expect(plan.groups[0]).toMatchObject({ filamentId: "red", totalQuantity: 8, plateCount: 2 });
   });
 
-  it("uses the loaded filament to break ties without overriding higher demand", () => {
+  it("uses the loaded filament before higher demand when a spool is already loaded", () => {
     const tied = planProductionPlateOrder({
       currentFilamentId: "blue",
       plates: [
@@ -32,7 +32,7 @@ describe("planProductionPlateOrder", () => {
         { id: "blue-1", filamentId: "blue", material: "PLA", color: "Blue", quantityPlanned: 4, createdAt: new Date("2026-01-02") }
       ]
     });
-    expect(higherDemand.orderedPlateIds).toEqual(["red-1", "blue-1"]);
+    expect(higherDemand.orderedPlateIds).toEqual(["blue-1", "red-1"]);
   });
 });
 

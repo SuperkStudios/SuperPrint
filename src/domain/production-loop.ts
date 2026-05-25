@@ -54,15 +54,15 @@ export function planProductionPlateOrder(input: {
       : null;
 
   const orderedGroups = [...groups.values()].sort((a, b) => {
-    const quantity = b.totalQuantity - a.totalQuantity;
-    if (quantity) return quantity;
-    const plates = b.plateCount - a.plateCount;
-    if (plates) return plates;
     if (currentKey) {
       const aLoaded = a.key === currentKey ? 1 : 0;
       const bLoaded = b.key === currentKey ? 1 : 0;
       if (aLoaded !== bLoaded) return bLoaded - aLoaded;
     }
+    const quantity = b.totalQuantity - a.totalQuantity;
+    if (quantity) return quantity;
+    const plates = b.plateCount - a.plateCount;
+    if (plates) return plates;
     return a.firstCreatedAt - b.firstCreatedAt;
   });
 

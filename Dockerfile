@@ -23,7 +23,7 @@ RUN DATABASE_URL=postgresql://superprint:superprint@localhost:5432/superprint_bu
 FROM node:22-alpine AS runner
 
 RUN npm install -g npm@11.15.0
-RUN apk add --no-cache openssl postgresql-client tar curl ffmpeg
+RUN apk add --no-cache openssl postgresql-client tar curl ffmpeg zip unzip
 
 WORKDIR /app
 ENV NODE_ENV=production
