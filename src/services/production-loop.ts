@@ -1,5 +1,7 @@
 import { Prisma } from "@prisma/client";
+import path from "node:path";
 import { CentauriPrinterControlAdapter } from "@/domain/printer-control";
+import type { PublicPrinterTelemetry } from "@/domain/printer-heartbeat";
 import { filamentLabel, hasUsableSlicerEstimate, planProductionPlateOrder } from "@/domain/production-loop";
 import { prisma } from "@/lib/prisma";
 import { resolveLocalStoragePath } from "@/lib/storage";
@@ -50,14 +52,23 @@ export async function getProductionLoopState() {
     })
   ]);
 
-  const ordered = orderLoopPlates(plateJobs, printer?.currentFilament);
-  const activePrinting = ordered.find((job) => job.status === "PRINTING");
-  const nextPlate = activePrinting ?? ordered.find((job) => job.status !== "PRINTED");
-  const readyOrders = await getAssemblyReadyOrders(planner);
+  const initialOrdered = orderLoopPlates(plateJobs, printer?.currentFilament);
+  const activePrinting = initialOrdered.find((job) => job.status === "PRINTING");
   const [latestCameraFrame, telemetry] = await Promise.all([
     printer ? getRecentSuperNodeCameraFrame(printer.id) : null,
     printer ? readPrinterTelemetry(printer.id).catch(() => null) : null
   ]);
+  const completedPlate = activePrinting && telemetry && isTelemetryCompleteForPlate(activePrinting, telemetry)
+    ? await markPlatePrintedFromTelemetry(activePrinting, printer?.id ?? null)
+    : null;
+  const statePlateJobs = completedPlate
+    ? plateJobs.map((job) => job.id === completedPlate.id ? completedPlate : job)
+    : plateJobs;
+  const ordered = orderLoopPlates(statePlateJobs, printer?.currentFilament);
+  const currentPrinting = ordered.find((job) => job.status === "PRINTING");
+  const printedAwaitingInventory = ordered.find((job) => job.status === "PRINTED");
+  const nextPlate = currentPrinting ?? printedAwaitingInventory ?? ordered.find((job) => job.status !== "PRINTED");
+  const readyOrders = await getAssemblyReadyOrders(planner);
 
   return {
     printer: printer
@@ -311,7 +322,15 @@ function buildNextAction(input: {
       type: "printing",
       title: "Waiting for printing to finish",
       detail: `${input.nextPlate.productPart.product.name} ${input.nextPlate.color} is printing.`,
-      primaryButton: "Print Finished"
+      primaryButton: "Tracking Print"
+    };
+  }
+  if (input.nextPlate.status === "PRINTED") {
+    return {
+      type: "remove_finished_parts",
+      title: "Remove finished parts",
+      detail: `${input.nextPlate.productPart.product.name} ${input.nextPlate.color} is done. Clear the plate and store the printed parts.`,
+      primaryButton: "Parts Removed"
     };
   }
   const currentFilamentId = input.printer?.currentFilamentId ?? null;
@@ -443,6 +462,34 @@ function serializePlate(plate: PlateWithIncludes) {
     partManifest,
     orderRefs
   };
+}
+
+function isTelemetryCompleteForPlate(plate: PlateWithIncludes, telemetry: PublicPrinterTelemetry) {
+  if (telemetry.progressPercent !== 100 && telemetry.printStatus !== 9) return false;
+  if (!telemetry.currentFileName) return true;
+  const printStorageKey = getPlateDispatchableGcodeStorageKey(plate);
+  return Boolean(printStorageKey && path.basename(printStorageKey) === telemetry.currentFileName);
+}
+
+async function markPlatePrintedFromTelemetry(plate: PlateWithIncludes, printerId: string | null) {
+  if (plate.status !== "PRINTING") return plate;
+  const updated = await prisma.productionPlateJob.update({
+    where: { id: plate.id },
+    data: {
+      status: "PRINTED",
+      printedQuantity: plate.quantityPlanned,
+      completedAt: new Date(),
+      lastError: null
+    },
+    include: { productPart: { include: { product: { include: { parts: true } } } }, filament: true }
+  });
+  await recordPlatformEvent({ type: "PRODUCTION_PLATE_PRINT_COMPLETED", payload: platePayload(plate, printerId ?? "") });
+  await sendMobilePush({
+    title: "Print finished",
+    body: `${plate.color} ${plate.productPart.product.name} is ready to remove from the plate.`,
+    data: { plateJobId: plate.id, action: "print_finished" }
+  }).catch(() => undefined);
+  return updated;
 }
 
 function getPlateDispatchableGcodeStorageKey(plate: Pick<PlateWithIncludes, "outputStorageKey" | "inputStorageKey">) {

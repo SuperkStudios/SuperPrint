@@ -2187,13 +2187,8 @@ function PartsScreen({ client, apiBaseUrl }: { client: SuperPrintClient; apiBase
                 </Pressable>
               </View>
               {nextPlate.status === "PRINTING" ? (
-                <View style={styles.inline}>
-                  <Pressable disabled={Boolean(savingKey)} onPress={() => runAction("markPrintFinished", nextPlate.id)} style={[styles.primaryButton, styles.grow]}>
-                    <Text style={styles.primaryButtonText}>Print Finished</Text>
-                  </Pressable>
-                  <Pressable disabled={Boolean(savingKey)} onPress={() => runAction("markPartsInventoried", nextPlate.id)} style={[styles.secondaryButton, styles.grow]}>
-                    <Text style={styles.secondaryButtonText}>Parts Removed</Text>
-                  </Pressable>
+                <View style={styles.summaryBand}>
+                  <Text style={styles.summaryText}>SuperPrint is watching printer telemetry and will unlock part removal when the printer reports complete.</Text>
                 </View>
               ) : null}
               {nextPlate.status === "PRINTED" ? (
@@ -3464,7 +3459,7 @@ function resolveProductionButtonAction(type?: string) {
   if (type === "confirm_plate_clear") return "confirmPlateClear";
   if (type === "prepare_gcode") return "sendPlateToPrinter";
   if (type === "send_print") return "sendPlateToPrinter";
-  if (type === "printing") return "markPrintFinished";
+  if (type === "remove_finished_parts") return "markPartsInventoried";
   return null;
 }
 
