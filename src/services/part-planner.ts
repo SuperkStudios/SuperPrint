@@ -51,10 +51,8 @@ export async function getPartProductionPlanner(): Promise<PlannerRow[]> {
   for (const order of orders) {
     for (const item of order.items) {
       const selectedColors = jsonStringArray(item.selectedColors).length ? jsonStringArray(item.selectedColors) : item.selectedColor ? [item.selectedColor] : [];
-      const productionColors = uniqueStrings(selectedColors.length ? selectedColors : [item.selectedColor ?? "Unassigned"]);
       for (const part of item.product.parts) {
-        for (const color of productionColors) {
-          const quantityPerProductColor = Math.max(1, part.quantityPerUnit);
+        for (const { color, quantityPerProductColor } of getPartColorRequirements(part, selectedColors, item.selectedColor)) {
           const key = `${part.id}:${color}`;
           const quantity = Math.max(0, item.quantity - item.printedQuantity) * quantityPerProductColor;
           if (!quantity) continue;
@@ -128,6 +126,22 @@ function jsonStringArray(value: unknown) {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.length > 0) : [];
 }
 
-function uniqueStrings(values: Array<string | null | undefined>) {
-  return [...new Set(values.map((value) => value?.trim()).filter((value): value is string => Boolean(value)))];
+export function getPartColorRequirements(
+  part: { colorSlotIndex: number; colorSlotPattern: number[]; quantityPerUnit: number },
+  selectedColors: string[],
+  fallbackColor?: string | null
+) {
+  const quantityPerUnit = Math.max(1, part.quantityPerUnit);
+  const slots = part.colorSlotPattern.length
+    ? part.colorSlotPattern.slice(0, quantityPerUnit)
+    : Array.from({ length: quantityPerUnit }, () => part.colorSlotIndex);
+  while (slots.length < quantityPerUnit) slots.push(part.colorSlotIndex);
+
+  const counts = new Map<string, number>();
+  for (const slot of slots) {
+    const color = selectedColors[slot]?.trim() || selectedColors[0]?.trim() || fallbackColor?.trim() || "Unassigned";
+    counts.set(color, (counts.get(color) ?? 0) + 1);
+  }
+
+  return [...counts.entries()].map(([color, quantityPerProductColor]) => ({ color, quantityPerProductColor }));
 }

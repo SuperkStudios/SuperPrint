@@ -279,7 +279,16 @@ type ProductionLoopState = {
   } | null;
   plates?: ProductionPlate[];
   batches: Array<{ key: string; label: string; totalQuantity: number; plateCount: number; plateIds: string[] }>;
-  readyOrders: Array<{ id: string; orderNumber: string; productName: string; customerEmail: string; fulfillmentMethod: string; shippingStatus: string }>;
+  readyOrders: Array<{
+    id: string;
+    orderNumber: string;
+    productName: string;
+    customerEmail: string;
+    fulfillmentMethod: string;
+    shippingStatus: string;
+    items?: Array<{ id: string; lineNumber: number; productName: string; quantity: number; remainingQuantity: number; printedQuantity: number; selectedColors: string[] }>;
+    assemblyParts?: Array<{ productName: string; productPartId: string; partName: string; role: string; color: string; quantityPerProduct: number; quantityNeeded: number; quantityOnHand: number }>;
+  }>;
   maintenance: Array<{ id: string; title: string; description: string; printerName: string; dueAt: string; status: string }>;
   camera: { status: string; streamUrl: string; recentFrameAvailable: boolean; lastFrameAt: string | null } | null;
   telemetry: {
@@ -2279,6 +2288,30 @@ function PartsScreen({ client, apiBaseUrl }: { client: SuperPrintClient; apiBase
               </View>
               <Badge label={order.fulfillmentMethod ?? "FULFILL"} />
             </View>
+            {order.items?.length ? (
+              <View style={styles.readOnlyPanel}>
+                <Text style={styles.rowTitle}>Order items</Text>
+                {order.items.map((item) => (
+                  <InfoRow
+                    key={item.id}
+                    label={`${item.remainingQuantity}x ${item.productName}`}
+                    value={item.selectedColors.length ? item.selectedColors.join(" + ") : "No color set"}
+                  />
+                ))}
+              </View>
+            ) : null}
+            {order.assemblyParts?.length ? (
+              <View style={styles.readOnlyPanel}>
+                <Text style={styles.rowTitle}>Parts to pull</Text>
+                {order.assemblyParts.map((part) => (
+                  <InfoRow
+                    key={`${part.productPartId}:${part.color}`}
+                    label={`${part.quantityNeeded}x ${part.color} ${part.partName}`}
+                    value={`${part.quantityOnHand} on hand`}
+                  />
+                ))}
+              </View>
+            ) : null}
             <View style={styles.stepList}>
               <Text style={styles.stepText}>1. Pull printed parts by color.</Text>
               <Text style={styles.stepText}>2. Assemble the product and check quality.</Text>

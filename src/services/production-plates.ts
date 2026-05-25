@@ -31,7 +31,7 @@ export async function rebuildProductionPlateJobs(actorId?: string) {
     const maxPerPlate = Math.max(1, product.maxBatchQuantity);
     const productsToPrint = Math.max(...group.rows.map((row) => Math.ceil(row.quantityToPrint / Math.max(1, row.quantityPerProductColor))));
     const plateCount = Math.ceil(productsToPrint / maxPerPlate);
-    const inputStorageKey = product.previewPlateStorageKey ?? product.productFileStorageKey ?? platePart.fileStorageKey;
+    const inputStorageKey = product.productFileStorageKey ?? platePart.fileStorageKey;
     const remainingOrders = group.orders.map((order) => ({ ...order }));
     for (let index = 0; index < plateCount; index += 1) {
       const quantityPlanned = Math.min(maxPerPlate, productsToPrint - index * maxPerPlate);

@@ -8,7 +8,7 @@ import { resolveLocalStoragePath } from "@/lib/storage";
 import { getRecentSuperNodeCameraFrame } from "./supernode-camera-frames";
 import { recordPlatformEvent } from "./events";
 import { sendMobilePush } from "./mobile-push";
-import { getPartProductionPlanner } from "./part-planner";
+import { getPartColorRequirements, getPartProductionPlanner } from "./part-planner";
 import { readPrinterTelemetry } from "./printer-heartbeat";
 import { rebuildProductionPlateJobs } from "./production-plates";
 
@@ -545,25 +545,76 @@ function getPlatePartManifest(plate: PlateWithIncludes) {
 }
 
 async function getAssemblyReadyOrders(planner: Awaited<ReturnType<typeof getPartProductionPlanner>>) {
-  const readyOrderNumbers = new Set(planner.filter((row) => row.quantityToPrint === 0).flatMap((row) => row.orders.map((order) => order.orderNumber)));
-  if (!readyOrderNumbers.size) return [];
-  const orders = await prisma.order.findMany({
+  const rowsByOrder = new Map<string, typeof planner>();
+  for (const row of planner) {
+    for (const order of row.orders) {
+      rowsByOrder.set(order.orderNumber, [...(rowsByOrder.get(order.orderNumber) ?? []), row]);
+    }
+  }
+  const readyOrderNumbers = [...rowsByOrder.entries()]
+    .filter(([, rows]) => rows.length > 0 && rows.every((row) => row.quantityToPrint === 0))
+    .map(([orderNumber]) => orderNumber);
+  if (!readyOrderNumbers.length) return [];
+  const [orders, inventory] = await Promise.all([
+    prisma.order.findMany({
     where: {
-      orderNumber: { in: [...readyOrderNumbers] },
+      orderNumber: { in: readyOrderNumbers },
       orderSource: { not: "PAST_IMPORT" },
       shippingStatus: { notIn: ["PACKING", "SHIPPED", "DELIVERED"] }
     },
-    include: { customer: true, product: true },
+      include: { customer: true, product: true, items: { include: { product: { include: { parts: { orderBy: { displayOrder: "asc" } } } } } } },
     orderBy: { createdAt: "asc" }
-  });
+    }),
+    prisma.productPartInventory.findMany()
+  ]);
+  const inventoryByPartAndColor = new Map<string, number>();
+  for (const item of inventory) {
+    const key = `${item.productPartId}:${item.color.trim().toLowerCase()}`;
+    inventoryByPartAndColor.set(key, (inventoryByPartAndColor.get(key) ?? 0) + item.quantityOnHand);
+  }
   return orders.map((order) => ({
     id: order.id,
     orderNumber: order.orderNumber,
     productName: order.product?.name ?? "Order",
     customerEmail: order.customer.email,
     fulfillmentMethod: order.fulfillmentMethod,
-    shippingStatus: order.shippingStatus
+    shippingStatus: order.shippingStatus,
+    items: order.items.map((item, index) => {
+      const remainingQuantity = Math.max(0, item.quantity - item.printedQuantity);
+      const selectedColors = jsonStringArray(item.selectedColors).length ? jsonStringArray(item.selectedColors) : item.selectedColor ? [item.selectedColor] : [];
+      return {
+        id: item.id,
+        lineNumber: index + 1,
+        productName: item.product.name,
+        quantity: item.quantity,
+        remainingQuantity,
+        printedQuantity: item.printedQuantity,
+        selectedColors
+      };
+    }),
+    assemblyParts: order.items.flatMap((item) => {
+      const remainingQuantity = Math.max(0, item.quantity - item.printedQuantity);
+      if (!remainingQuantity) return [];
+      const selectedColors = jsonStringArray(item.selectedColors).length ? jsonStringArray(item.selectedColors) : item.selectedColor ? [item.selectedColor] : [];
+      return item.product.parts.flatMap((part) => getPartColorRequirements(part, selectedColors, item.selectedColor).map(({ color, quantityPerProductColor }) => {
+        const quantityNeeded = remainingQuantity * quantityPerProductColor;
+        return {
+          productName: item.product.name,
+          productPartId: part.id,
+          partName: part.name,
+          role: part.role,
+          color,
+          quantityPerProduct: quantityPerProductColor,
+          quantityNeeded,
+          quantityOnHand: inventoryByPartAndColor.get(`${part.id}:${color.trim().toLowerCase()}`) ?? 0
+        };
+      }));
+    })
   }));
+}
+
+function jsonStringArray(value: unknown) {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.length > 0) : [];
 }
 
 async function runAiBuildPlateCheck(printerId: string) {

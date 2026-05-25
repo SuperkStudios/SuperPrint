@@ -458,7 +458,7 @@ async function syncProductionPlateJobs() {
       body: JSON.stringify({
         fileName: job.fileName || `${safeFileStem(job.productName)}-${safeFileStem(job.partName)}.stl`,
         material: job.material,
-        quantity: isProjectPlateFile(job.fileName) ? 1 : job.quantity,
+        quantity: job.quantity,
         dataBase64: modelBuffer.toString("base64")
       })
     });
@@ -560,8 +560,4 @@ loop();
 
 function safeFileStem(value: string) {
   return value.trim().replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "plate";
-}
-
-function isProjectPlateFile(fileName?: string) {
-  return Boolean(fileName && /\.(?:3mf|amf)$/i.test(fileName));
 }
