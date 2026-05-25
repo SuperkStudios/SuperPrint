@@ -77,7 +77,7 @@ export function hasUsableSlicerEstimate(plate: {
   estimatedPrintMinutes?: number | null;
   estimatedGrams?: number | null;
 }) {
-  return Boolean(plate.outputStorageKey && plate.estimatedPrintMinutes && plate.estimatedGrams);
+  return Boolean(plate.outputStorageKey && /\.(?:gcode|gco|g)$/i.test(plate.outputStorageKey) && plate.estimatedPrintMinutes && plate.estimatedGrams);
 }
 
 export function filamentLabel(input: { color?: string | null; material?: string | null; name?: string | null }) {

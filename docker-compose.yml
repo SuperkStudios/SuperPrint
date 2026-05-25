@@ -127,10 +127,11 @@ services:
     environment:
       SUPERPRINT_API_URL: http://app:3000
       SUPERNODE_ID: supernode-local
-      SUPERNODE_SECRET: change-me-after-registration
-      SUPERNODE_PRINTER_ID: ""
+      SUPERNODE_SECRET: supernode-local.EXsL3Fi_1JZsD81iQPKmr8sw4C3znMJAd36nz_01lBI
+      SUPERNODE_PRINTER_ID: cmp6fgcwp0007p33cwxjsp7ja
       SUPERNODE_PRINTER_CONTROL_URL: ws://192.168.10.125:3030/websocket
       SUPERNODE_PRINTER_CAMERA_URL: http://192.168.10.125:3031/video
+      SUPERNODE_HOST_SLICER_URL: http://host.docker.internal:4317
       SUPERNODE_UPLOADS_PATH: /data/uploads
       SUPERNODE_SLICED_PATH: /data/sliced
       SUPERNODE_VIDEOS_PATH: /data/videos

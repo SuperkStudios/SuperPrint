@@ -39,6 +39,7 @@ describe("planProductionPlateOrder", () => {
 describe("hasUsableSlicerEstimate", () => {
   it("requires G-code, minutes, and grams", () => {
     expect(hasUsableSlicerEstimate({ outputStorageKey: "sliced/a.gcode", estimatedPrintMinutes: 42, estimatedGrams: 12 })).toBe(true);
+    expect(hasUsableSlicerEstimate({ outputStorageKey: "uploads/a.3mf", estimatedPrintMinutes: 42, estimatedGrams: 12 })).toBe(false);
     expect(hasUsableSlicerEstimate({ outputStorageKey: "sliced/a.gcode", estimatedPrintMinutes: 42, estimatedGrams: null })).toBe(false);
     expect(hasUsableSlicerEstimate({ outputStorageKey: null, estimatedPrintMinutes: 42, estimatedGrams: 12 })).toBe(false);
   });

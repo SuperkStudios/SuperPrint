@@ -440,7 +440,7 @@ async function syncProductionPlateJobs() {
     throw new Error(`production plate poll rejected with ${response.status}`);
   }
   const { jobs } = (await response.json()) as {
-    jobs: Array<{ id: string; modelUrl: string; productName: string; partName: string; color: string; material: string; quantity: number }>;
+    jobs: Array<{ id: string; modelUrl: string; fileName?: string; productName: string; partName: string; color: string; material: string; quantity: number }>;
   };
   await mkdir(nodeJobsDir, { recursive: true });
 
@@ -456,9 +456,9 @@ async function syncProductionPlateJobs() {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        fileName: `${safeFileStem(job.productName)}-${safeFileStem(job.partName)}.stl`,
+        fileName: job.fileName || `${safeFileStem(job.productName)}-${safeFileStem(job.partName)}.stl`,
         material: job.material,
-        quantity: job.quantity,
+        quantity: isProjectPlateFile(job.fileName) ? 1 : job.quantity,
         dataBase64: modelBuffer.toString("base64")
       })
     });
@@ -560,4 +560,8 @@ loop();
 
 function safeFileStem(value: string) {
   return value.trim().replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "plate";
+}
+
+function isProjectPlateFile(fileName?: string) {
+  return Boolean(fileName && /\.(?:3mf|amf)$/i.test(fileName));
 }

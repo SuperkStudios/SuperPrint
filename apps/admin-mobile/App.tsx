@@ -264,6 +264,18 @@ type ProductionLoopState = {
   readyOrders: Array<{ id: string; orderNumber: string; productName: string; customerEmail: string; fulfillmentMethod: string; shippingStatus: string }>;
   maintenance: Array<{ id: string; title: string; description: string; printerName: string; dueAt: string; status: string }>;
   camera: { status: string; streamUrl: string; recentFrameAvailable: boolean; lastFrameAt: string | null } | null;
+  telemetry: {
+    state: "LIVE";
+    progressPercent?: number | null;
+    currentLayer?: number | null;
+    totalLayer?: number | null;
+    nozzleTempC?: number | null;
+    nozzleTargetC?: number | null;
+    bedTempC?: number | null;
+    bedTargetC?: number | null;
+    remainingSeconds?: number | null;
+    printStatusLabel?: string | null;
+  } | null;
   counts: { plates: number; printing: number; readyToPrint: number; needsSlicing: number; readyOrders: number };
 };
 
@@ -2072,9 +2084,18 @@ function PartsScreen({ client, apiBaseUrl }: { client: SuperPrintClient; apiBase
     void load();
   }, [client]);
 
+  useEffect(() => {
+    const activeType = state?.nextAction?.type;
+    if (!activeType || !["slicing", "printing", "prepare_gcode"].includes(activeType)) return undefined;
+    const interval = setInterval(() => void load(), activeType === "printing" ? 3000 : 5000);
+    return () => clearInterval(interval);
+  }, [client, state?.nextAction?.type]);
+
   const nextPlate = state?.nextPlate ?? null;
   const nextAction = state?.nextAction ?? null;
   const primaryAction = resolveProductionButtonAction(nextAction?.type);
+  const telemetry = state?.telemetry;
+  const printPercent = Math.max(0, Math.min(100, Math.round(telemetry?.progressPercent ?? 0)));
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.screenBody}>
@@ -2137,6 +2158,21 @@ function PartsScreen({ client, apiBaseUrl }: { client: SuperPrintClient; apiBase
                 <InfoRow label="Estimate" value={nextPlate.estimateLabel} />
                 <InfoRow label="Plate check" value={nextPlate.plateClearConfirmedAt ? "Employee confirmed clear" : "Needs human check"} />
               </View>
+              {nextPlate.status === "PRINTING" ? (
+                <View style={styles.readOnlyPanel}>
+                  <View style={styles.telemetryBlock}>
+                    <View style={styles.orderTop}>
+                      <Text style={styles.rowTitle}>Printing progress</Text>
+                      <Badge label={telemetry?.printStatusLabel ?? "LIVE"} />
+                    </View>
+                    <View style={styles.progressTrack}>
+                      <View style={[styles.progressFill, { width: `${Math.max(3, printPercent)}%` }]} />
+                    </View>
+                    <Text style={styles.cardCopy}>{printPercent}% · Layer {formatLayerValue(telemetry?.currentLayer)}/{formatLayerValue(telemetry?.totalLayer)} · {formatRemainingSeconds(telemetry?.remainingSeconds)} left</Text>
+                    <Text style={styles.cardCopy}>Nozzle {formatTempPair(telemetry?.nozzleTempC, telemetry?.nozzleTargetC)} · Bed {formatTempPair(telemetry?.bedTempC, telemetry?.bedTargetC)}</Text>
+                  </View>
+                </View>
+              ) : null}
               {nextPlate.partManifest?.length ? (
                 <View style={styles.readOnlyPanel}>
                   {nextPlate.partManifest.map((part) => (
@@ -3426,9 +3462,31 @@ function resolveProductionButtonAction(type?: string) {
   if (type === "start_production") return "startProduction";
   if (type === "change_filament") return "confirmFilamentChanged";
   if (type === "confirm_plate_clear") return "confirmPlateClear";
+  if (type === "prepare_gcode") return "sendPlateToPrinter";
   if (type === "send_print") return "sendPlateToPrinter";
   if (type === "printing") return "markPrintFinished";
   return null;
+}
+
+function formatLayerValue(value?: number | null) {
+  return value == null ? "--" : String(Math.round(value));
+}
+
+function formatTempPair(current?: number | null, target?: number | null) {
+  const currentText = current == null ? "--" : `${Math.round(current)}C`;
+  const targetText = target == null ? "--" : `${Math.round(target)}C`;
+  return `${currentText}/${targetText}`;
+}
+
+function formatRemainingSeconds(seconds?: number | null) {
+  if (seconds == null) return "--";
+  const rounded = Math.max(0, Math.round(seconds));
+  if (rounded < 60) return `${rounded}s`;
+  const minutes = Math.round(rounded / 60);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return `${hours}h ${rest}m`;
 }
 
 function productFor(line: LineDraft, products: ProductOption[]) {
@@ -3698,6 +3756,7 @@ function createStyles(palette: ThemePalette) {
   spoolRow: { borderTopWidth: 1, borderTopColor: palette.line, paddingTop: 12, gap: 10 },
   progressTrack: { height: 10, borderRadius: 999, backgroundColor: palette.secondaryBg, overflow: "hidden" },
   progressFill: { height: 10, borderRadius: 999, backgroundColor: palette.cyan },
+  telemetryBlock: { padding: 12, gap: 10 },
   actionButtons: { flexDirection: "row", gap: 8 },
   compactButton: { minHeight: 38, borderRadius: 8, backgroundColor: palette.actionBg, alignItems: "center", justifyContent: "center", paddingHorizontal: 14 },
   compactButtonText: { color: palette.actionText, fontSize: 12, fontWeight: "900" },

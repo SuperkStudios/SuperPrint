@@ -7,6 +7,7 @@ import { getRecentSuperNodeCameraFrame } from "./supernode-camera-frames";
 import { recordPlatformEvent } from "./events";
 import { sendMobilePush } from "./mobile-push";
 import { getPartProductionPlanner } from "./part-planner";
+import { readPrinterTelemetry } from "./printer-heartbeat";
 import { rebuildProductionPlateJobs } from "./production-plates";
 
 type ProductionLoopAction =
@@ -53,7 +54,10 @@ export async function getProductionLoopState() {
   const activePrinting = ordered.find((job) => job.status === "PRINTING");
   const nextPlate = activePrinting ?? ordered.find((job) => job.status !== "PRINTED");
   const readyOrders = await getAssemblyReadyOrders(planner);
-  const latestCameraFrame = printer ? getRecentSuperNodeCameraFrame(printer.id) : null;
+  const [latestCameraFrame, telemetry] = await Promise.all([
+    printer ? getRecentSuperNodeCameraFrame(printer.id) : null,
+    printer ? readPrinterTelemetry(printer.id).catch(() => null) : null
+  ]);
 
   return {
     printer: printer
@@ -93,13 +97,14 @@ export async function getProductionLoopState() {
           streamUrl: `/api/printer-feed/stream?printerId=${encodeURIComponent(printer.id)}`,
           recentFrameAvailable: Boolean(latestCameraFrame),
           lastFrameAt: latestCameraFrame?.receivedAt.toISOString() ?? null
-        }
+      }
       : null,
+    telemetry,
     counts: {
       plates: ordered.length,
       printing: ordered.filter((job) => job.status === "PRINTING").length,
       readyToPrint: ordered.filter((job) => job.status === "READY").length,
-      needsSlicing: ordered.filter((job) => job.status === "SLICING").length,
+      needsSlicing: ordered.filter((job) => job.status === "SLICING" || !getPlateDispatchableGcodeStorageKey(job)).length,
       readyOrders: readyOrders.length
     }
   };
@@ -182,12 +187,23 @@ export async function runProductionLoopAction(input: {
 
   if (input.action === "sendPlateToPrinter") {
     const printer = await getPrinterForPlate(plate);
-    assertPlateCanStart(plate, printer.currentFilamentId);
+    assertPlateSafetyReady(plate, printer.currentFilamentId);
+    const printStorageKey = getPlateDispatchableGcodeStorageKey(plate);
+    if (!printStorageKey) {
+      const updated = await prisma.productionPlateJob.update({
+        where: { id: plate.id },
+        data: {
+          status: plate.status === "SLICING" ? "SLICING" : "PLANNED",
+          lastError: "Waiting for SuperNode to slice this plate with the host ElegooSlicer/OrcaSlicer service before sending G-code."
+        }
+      });
+      await recordCheckpoint({ action: input.action, actorId: input.actorId, plateJobId: plate.id, printerId: printer.id, payload: { queuedForSlicing: true } });
+      return { job: updated, state: await getProductionLoopState() };
+    }
     if (process.env.CENTAURI_DIRECT_START_ENABLED === "false") {
       throw new Error("Direct printer start is disabled. Set CENTAURI_DIRECT_START_ENABLED=true before sending from Action Items.");
     }
     const adapter = new CentauriPrinterControlAdapter({ controlApiUrl: printer.controlApiUrl });
-    const printStorageKey = getPlatePrintStorageKey(plate);
     let ack: Awaited<ReturnType<CentauriPrinterControlAdapter["startPrint"]>>;
     try {
       ack = await adapter.startPrint({
@@ -315,6 +331,22 @@ function buildNextAction(input: {
       primaryButton: "Plate Is Clear"
     };
   }
+  if (!getPlateDispatchableGcodeStorageKey(input.nextPlate)) {
+    if (input.nextPlate.status === "SLICING") {
+      return {
+        type: "slicing",
+        title: "Slicing print file",
+        detail: buildSlicingRequiredDetail(input.nextPlate),
+        primaryButton: "Slicing..."
+      };
+    }
+    return {
+      type: "prepare_gcode",
+      title: "Prepare G-code",
+      detail: buildSlicingRequiredDetail(input.nextPlate),
+      primaryButton: "Prepare G-code"
+    };
+  }
   return {
     type: "send_print",
     title: "Send next plate",
@@ -323,10 +355,9 @@ function buildNextAction(input: {
   };
 }
 
-function assertPlateCanStart(plate: PlateWithIncludes, currentFilamentId?: string | null) {
+function assertPlateSafetyReady(plate: PlateWithIncludes, currentFilamentId?: string | null) {
   if (plate.filamentId && plate.filamentId !== currentFilamentId && !plate.filamentConfirmedAt) throw new Error("Confirm the correct filament is loaded before printing.");
   if (!plate.plateClearConfirmedAt) throw new Error("Confirm the build plate is clear before printing.");
-  getPlatePrintStorageKey(plate);
 }
 
 async function getPrinterForPlate(plate: PlateWithIncludes) {
@@ -386,7 +417,7 @@ function serializePlate(plate: PlateWithIncludes) {
   const partManifest = getPlatePartManifest(plate);
   const estimateLabel = hasUsableSlicerEstimate(plate)
     ? `${plate.estimatedPrintMinutes} min · ${plate.estimatedGrams}g`
-    : `Using uploaded file · product estimate ${plate.productPart.product.estimatedPrintMinutes} min · ${plate.productPart.product.estimatedGrams}g`;
+    : "Needs sliced G-code from ElegooSlicer/OrcaSlicer";
   return {
     id: plate.id,
     status: plate.status,
@@ -414,10 +445,14 @@ function serializePlate(plate: PlateWithIncludes) {
   };
 }
 
-function getPlatePrintStorageKey(plate: PlateWithIncludes) {
-  const key = plate.outputStorageKey ?? plate.inputStorageKey;
-  if (!key) throw new Error("This plate does not have an uploaded product file or sliced print file attached.");
-  return key;
+function getPlateDispatchableGcodeStorageKey(plate: Pick<PlateWithIncludes, "outputStorageKey" | "inputStorageKey">) {
+  if (plate.outputStorageKey && isGcodeStorageKey(plate.outputStorageKey)) return plate.outputStorageKey;
+  if (plate.inputStorageKey && isGcodeStorageKey(plate.inputStorageKey)) return plate.inputStorageKey;
+  return null;
+}
+
+function isGcodeStorageKey(value: string) {
+  return /\.(?:gcode|gco|g)$/i.test(value);
 }
 
 function buildPrintDetail(plate: PlateWithIncludes) {
@@ -428,7 +463,15 @@ function buildPrintDetail(plate: PlateWithIncludes) {
   if (hasUsableSlicerEstimate(plate)) {
     return `${plate.quantityPlanned} ${plate.color} product${plate.quantityPlanned === 1 ? "" : "s"} on this plate: ${partSummary}. ${plate.estimatedPrintMinutes} minutes, ${plate.estimatedGrams}g.`;
   }
-  return `${plate.quantityPlanned} ${plate.color} product${plate.quantityPlanned === 1 ? "" : "s"} on this plate: ${partSummary}. Using the uploaded max build plate file; product estimate is ${plate.productPart.product.estimatedPrintMinutes} minutes and ${plate.productPart.product.estimatedGrams}g.`;
+  return buildSlicingRequiredDetail(plate);
+}
+
+function buildSlicingRequiredDetail(plate: PlateWithIncludes) {
+  const manifest = getPlatePartManifest(plate);
+  const partSummary = manifest.length > 1
+    ? manifest.map((part) => `${part.quantityPlanned} ${part.partName}`).join(", ")
+    : `${plate.quantityPlanned} ${plate.productPart.name}`;
+  return `${plate.quantityPlanned} ${plate.color} product${plate.quantityPlanned === 1 ? "" : "s"} on this plate: ${partSummary}. Slice the uploaded plate in ElegooSlicer/OrcaSlicer with the ELEGOO Centauri Carbon profile, then send the generated .gcode.`;
 }
 
 function getPlatePartManifest(plate: PlateWithIncludes) {

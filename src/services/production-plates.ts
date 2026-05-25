@@ -172,6 +172,7 @@ export async function listProductionPlateJobsForNode(nodeId: string, bearer: str
     material: job.filament?.material ?? job.productPart.product.defaultMaterial,
     quantity: job.quantityPlanned,
     maxPerPlate: job.maxPerPlate,
+    fileName: path.basename(job.inputStorageKey),
     modelUrl: `/api/supernode/plate-jobs/${job.id}/model?nodeId=${encodeURIComponent(nodeId)}`
   }));
 }
