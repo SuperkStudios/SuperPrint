@@ -298,19 +298,11 @@ function buildNextAction(input: {
       primaryButton: "Refresh"
     };
   }
-  if (input.nextPlate.aiPlateCheckStatus !== "clear") {
-    return {
-      type: "ai_plate_check",
-      title: "Check build plate with camera",
-      detail: input.latestCameraFrame ? "Run the camera safety check before sending the print." : "No fresh camera frame yet. Check SuperNode camera bridge.",
-      primaryButton: "Run AI Check"
-    };
-  }
   if (!input.nextPlate.plateClearConfirmedAt) {
     return {
       type: "confirm_plate_clear",
-      title: "Confirm clean build plate",
-      detail: "Look at the camera and printer. Remove finished parts, scraps, and purge material.",
+      title: "Physically check build plate",
+      detail: "Look inside the printer. Remove finished parts, scraps, and purge material, then confirm the plate is empty.",
       primaryButton: "Plate Is Clear"
     };
   }
@@ -325,7 +317,6 @@ function buildNextAction(input: {
 function assertPlateCanStart(plate: PlateWithIncludes, currentFilamentId?: string | null) {
   if (!hasUsableSlicerEstimate(plate)) throw new Error("This plate needs a real slicer estimate and G-code before printing.");
   if (plate.filamentId && plate.filamentId !== currentFilamentId && !plate.filamentConfirmedAt) throw new Error("Confirm the correct filament is loaded before printing.");
-  if (plate.aiPlateCheckStatus !== "clear") throw new Error("Run the AI build-plate check before printing.");
   if (!plate.plateClearConfirmedAt) throw new Error("Confirm the build plate is clear before printing.");
 }
 

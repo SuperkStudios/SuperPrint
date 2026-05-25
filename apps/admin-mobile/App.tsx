@@ -2063,7 +2063,6 @@ function PartsScreen({ client, apiBaseUrl }: { client: SuperPrintClient; apiBase
 
   const nextPlate = state?.nextPlate ?? null;
   const nextAction = state?.nextAction ?? null;
-  const cameraUrl = state?.camera?.streamUrl ? `${apiBaseUrl.replace(/\/$/, "")}${state.camera.streamUrl}` : null;
   const primaryAction = resolveProductionButtonAction(nextAction?.type);
 
   return (
@@ -2100,7 +2099,7 @@ function PartsScreen({ client, apiBaseUrl }: { client: SuperPrintClient; apiBase
             </View>
             <View style={styles.stepList}>
               <Text style={styles.stepText}>1. Print the biggest color batch first.</Text>
-              <Text style={styles.stepText}>2. Confirm filament, camera safety, and clean plate.</Text>
+              <Text style={styles.stepText}>2. Load filament, physically check the plate, and clean it.</Text>
               <Text style={styles.stepText}>3. Send the plate, wait for finish, then inventory parts.</Text>
             </View>
             <Pressable
@@ -2125,16 +2124,12 @@ function PartsScreen({ client, apiBaseUrl }: { client: SuperPrintClient; apiBase
                 <InfoRow label="Filament needed" value={nextPlate.filament?.name ?? `${nextPlate.color} ${nextPlate.material}`} />
                 <InfoRow label="Currently loaded" value={state?.printer?.currentFilament?.name ?? "Unknown"} />
                 <InfoRow label="Estimate" value={nextPlate.estimateLabel} />
-                <InfoRow label="AI plate check" value={nextPlate.aiPlateCheck.status ? `${nextPlate.aiPlateCheck.status}${nextPlate.aiPlateCheck.confidence ? ` ${nextPlate.aiPlateCheck.confidence}%` : ""}` : "Not checked"} />
+                <InfoRow label="Plate check" value={nextPlate.plateClearConfirmedAt ? "Employee confirmed clear" : "Needs human check"} />
               </View>
-              {nextPlate.aiPlateCheck.reason ? <Text style={styles.cardCopy}>{nextPlate.aiPlateCheck.reason}</Text> : null}
               {nextPlate.orderRefs.length ? <Text style={styles.cardCopy}>Orders: {nextPlate.orderRefs.map((order) => `${order.orderNumber ?? "Order"} x${order.quantity ?? 1}`).join(", ")}</Text> : null}
               <View style={styles.actionButtons}>
-                <Pressable disabled={Boolean(savingKey)} onPress={() => runAction("runAiPlateCheck", nextPlate.id)} style={styles.secondaryButton}>
-                  <Text style={styles.secondaryButtonText}>AI Check</Text>
-                </Pressable>
                 <Pressable disabled={Boolean(savingKey)} onPress={() => runAction("confirmPlateClear", nextPlate.id)} style={styles.secondaryButton}>
-                  <Text style={styles.secondaryButtonText}>Plate Clear</Text>
+                  <Text style={styles.secondaryButtonText}>I Checked Plate</Text>
                 </Pressable>
               </View>
               {nextPlate.status === "PRINTING" ? (
@@ -2152,19 +2147,6 @@ function PartsScreen({ client, apiBaseUrl }: { client: SuperPrintClient; apiBase
                   <Text style={styles.primaryButtonText}>Removed Parts / Add To Inventory</Text>
                 </Pressable>
               ) : null}
-            </Card>
-          ) : null}
-
-          {cameraUrl ? (
-            <Card>
-              <View style={styles.orderTop}>
-                <View>
-                  <Text style={styles.cardTitle}>Build plate camera</Text>
-                  <Text style={styles.cardCopy}>{state?.camera?.recentFrameAvailable ? "Fresh SuperNode frame available." : "Waiting for a fresh SuperNode frame."}</Text>
-                </View>
-                <Badge label={state?.camera?.status ?? "Camera"} />
-              </View>
-              <Image source={{ uri: cameraUrl }} style={styles.cameraPreview} resizeMode="cover" />
             </Card>
           ) : null}
 
@@ -3394,7 +3376,6 @@ function orderItemsArePrinted(order: AdminOrder) {
 function resolveProductionButtonAction(type?: string) {
   if (type === "start_production") return "startProduction";
   if (type === "change_filament") return "confirmFilamentChanged";
-  if (type === "ai_plate_check") return "runAiPlateCheck";
   if (type === "confirm_plate_clear") return "confirmPlateClear";
   if (type === "send_print") return "sendPlateToPrinter";
   if (type === "printing") return "markPrintFinished";
@@ -3664,7 +3645,6 @@ function createStyles(palette: ThemePalette) {
   spoolRow: { borderTopWidth: 1, borderTopColor: palette.line, paddingTop: 12, gap: 10 },
   progressTrack: { height: 10, borderRadius: 999, backgroundColor: palette.secondaryBg, overflow: "hidden" },
   progressFill: { height: 10, borderRadius: 999, backgroundColor: palette.cyan },
-  cameraPreview: { width: "100%", height: 210, borderRadius: 8, backgroundColor: palette.field },
   actionButtons: { flexDirection: "row", gap: 8 },
   compactButton: { minHeight: 38, borderRadius: 8, backgroundColor: palette.actionBg, alignItems: "center", justifyContent: "center", paddingHorizontal: 14 },
   compactButtonText: { color: palette.actionText, fontSize: 12, fontWeight: "900" },
