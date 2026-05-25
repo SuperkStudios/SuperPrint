@@ -264,16 +264,12 @@ export class CentauriPrinterControlAdapter implements PrinterControlAdapter {
       filename: uploadFilename,
       file
     });
-    const fileList = await sendCentauriCommand({
+    const fileList = await waitForCentauriUploadedFile({
       controlApiUrl: this.input.controlApiUrl,
-      request: buildCentauriRequest({ cmd: 258, data: { Url: "/local/" }, mainboardId }),
-      cmd: 258,
+      filename: printerFilename,
+      mainboardId,
       timeoutMs: this.input.timeoutMs ?? 10000
     });
-    const listAck = getCentauriResponseAck(fileList, 258);
-    if (listAck !== 0) {
-      throw new Error(`Centauri file list failed with ACK ${listAck ?? "missing"}`);
-    }
     if (!findCentauriFile(fileList, printerFilename)) {
       throw new Error(`Centauri uploaded file was not found on printer storage: ${printerFilename}`);
     }
@@ -302,6 +298,31 @@ export class CentauriPrinterControlAdapter implements PrinterControlAdapter {
       message: `Uploaded and started ${printerFilename} on Centauri printer.`
     };
   }
+}
+
+async function waitForCentauriUploadedFile(input: {
+  controlApiUrl: string;
+  filename: string;
+  mainboardId: string;
+  timeoutMs: number;
+}) {
+  let lastFileList: unknown = null;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const fileList = await sendCentauriCommand({
+      controlApiUrl: input.controlApiUrl,
+      request: buildCentauriRequest({ cmd: 258, data: { Url: "/local/" }, mainboardId: input.mainboardId }),
+      cmd: 258,
+      timeoutMs: input.timeoutMs
+    });
+    const listAck = getCentauriResponseAck(fileList, 258);
+    if (listAck !== 0) {
+      throw new Error(`Centauri file list failed with ACK ${listAck ?? "missing"}`);
+    }
+    if (findCentauriFile(fileList, input.filename)) return fileList;
+    lastFileList = fileList;
+    await delay(750);
+  }
+  return lastFileList;
 }
 
 function assertCentauriPrinterIdle(input: { controlApiUrl: string; mainboardId?: string; timeoutMs: number }) {
@@ -413,6 +434,10 @@ async function uploadCentauriGcodeChunks(url: string, filename: string, file: Bu
       throw new Error(`chunk offset ${offset} failed with HTTP ${upload.status}${body ? `: ${body}` : ""}`);
     }
   }
+}
+
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function parseCentauriMessage(text: string) {

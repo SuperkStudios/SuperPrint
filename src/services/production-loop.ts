@@ -1,5 +1,5 @@
 import { Prisma } from "@prisma/client";
-import { CentauriPrinterControlAdapter, ManualNoopPrinterControlAdapter } from "@/domain/printer-control";
+import { CentauriPrinterControlAdapter } from "@/domain/printer-control";
 import { filamentLabel, hasUsableSlicerEstimate, planProductionPlateOrder } from "@/domain/production-loop";
 import { prisma } from "@/lib/prisma";
 import { resolveLocalStoragePath } from "@/lib/storage";
@@ -183,14 +183,25 @@ export async function runProductionLoopAction(input: {
   if (input.action === "sendPlateToPrinter") {
     const printer = await getPrinterForPlate(plate);
     assertPlateCanStart(plate, printer.currentFilamentId);
-    const adapter = process.env.CENTAURI_DIRECT_START_ENABLED === "true"
-      ? new CentauriPrinterControlAdapter({ controlApiUrl: printer.controlApiUrl })
-      : new ManualNoopPrinterControlAdapter();
+    if (process.env.CENTAURI_DIRECT_START_ENABLED === "false") {
+      throw new Error("Direct printer start is disabled. Set CENTAURI_DIRECT_START_ENABLED=true before sending from Action Items.");
+    }
+    const adapter = new CentauriPrinterControlAdapter({ controlApiUrl: printer.controlApiUrl });
     const printStorageKey = getPlatePrintStorageKey(plate);
-    const ack = await adapter.startPrint({
-      printJobId: plate.id,
-      gcodeLocalPath: resolveLocalStoragePath(printStorageKey)
-    });
+    let ack: Awaited<ReturnType<CentauriPrinterControlAdapter["startPrint"]>>;
+    try {
+      ack = await adapter.startPrint({
+        printJobId: plate.id,
+        gcodeLocalPath: resolveLocalStoragePath(printStorageKey)
+      });
+    } catch (error) {
+      const message = `Printer send failed: ${error instanceof Error ? error.message : String(error)}`;
+      await prisma.productionPlateJob.update({
+        where: { id: plate.id },
+        data: { status: plate.status === "PRINTING" ? "READY" : plate.status, startedAt: null, lastError: message }
+      });
+      throw new Error(message);
+    }
     const updated = await prisma.productionPlateJob.update({
       where: { id: plate.id },
       data: { status: "PRINTING", startedAt: new Date(), lastError: null }

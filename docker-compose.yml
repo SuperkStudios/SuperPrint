@@ -28,6 +28,7 @@ services:
       HOST_SLICER_ESTIMATE_URL: http://host.docker.internal:4317/estimate
       PRINTER_ALERT_WEBHOOK_TOKEN: dev-printer-alert-token-change-me
       SUPERNODE_REGISTRATION_TOKEN: dev-supernode-registration-token
+      CENTAURI_DIRECT_START_ENABLED: "true"
       SUPERPRINT_DATA_ROOT: /data
       PUBLIC_FACTORY_STREAM_URL: https://demo.superprint.local/live/factory
     volumes:
