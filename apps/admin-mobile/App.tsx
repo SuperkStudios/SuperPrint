@@ -3469,14 +3469,10 @@ function estimatePlatformPlates(line: LineDraft, product: ProductOption, quantit
     ? product.parts
     : [{ id: product.id, name: product.name, colorSlotIndex: 0, colorSlotPattern: [], quantityPerUnit: 1 }];
   const rows = new Map<string, { key: string; label: string; quantity: number; maxPerPlate: number; plates: number }>();
+  const productionColors = uniqueStrings(line.selectedColors.length ? line.selectedColors : [`Color 1`]);
   for (const part of parts) {
-    const pattern = part.colorSlotPattern?.length ? part.colorSlotPattern : Array.from({ length: Math.max(1, part.quantityPerUnit) }, () => part.colorSlotIndex);
-    const colorCounts = new Map<string, number>();
-    for (const slotIndex of pattern) {
-      const color = line.selectedColors[slotIndex]?.trim() || line.selectedColors[0]?.trim() || `Color ${slotIndex + 1}`;
-      colorCounts.set(color, (colorCounts.get(color) ?? 0) + 1);
-    }
-    for (const [color, copiesPerProduct] of colorCounts) {
+    for (const color of productionColors) {
+      const copiesPerProduct = Math.max(1, part.quantityPerUnit);
       const key = `${part.id}:${color.toLowerCase()}`;
       const maxPerPlate = Math.max(1, (product.maxBatchQuantity ?? 1) * copiesPerProduct);
       const existing = rows.get(key) ?? {
@@ -3492,6 +3488,10 @@ function estimatePlatformPlates(line: LineDraft, product: ProductOption, quantit
     }
   }
   return [...rows.values()];
+}
+
+function uniqueStrings(values: Array<string | null | undefined>) {
+  return [...new Set(values.map((value) => value?.trim()).filter((value): value is string => Boolean(value)))];
 }
 
 function formatMinutes(minutes: number) {

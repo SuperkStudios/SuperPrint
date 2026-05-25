@@ -51,14 +51,10 @@ export async function getPartProductionPlanner(): Promise<PlannerRow[]> {
   for (const order of orders) {
     for (const item of order.items) {
       const selectedColors = jsonStringArray(item.selectedColors).length ? jsonStringArray(item.selectedColors) : item.selectedColor ? [item.selectedColor] : [];
+      const productionColors = uniqueStrings(selectedColors.length ? selectedColors : [item.selectedColor ?? "Unassigned"]);
       for (const part of item.product.parts) {
-        const pattern = part.colorSlotPattern.length ? part.colorSlotPattern : Array.from({ length: part.quantityPerUnit }, () => part.colorSlotIndex);
-        const colorCounts = new Map<string, number>();
-        for (const slotIndex of pattern) {
-          const color = selectedColors[slotIndex] ?? selectedColors[0] ?? item.selectedColor ?? "Unassigned";
-          colorCounts.set(color, (colorCounts.get(color) ?? 0) + 1);
-        }
-        for (const [color, quantityPerProductColor] of colorCounts) {
+        for (const color of productionColors) {
+          const quantityPerProductColor = Math.max(1, part.quantityPerUnit);
           const key = `${part.id}:${color}`;
           const quantity = Math.max(0, item.quantity - item.printedQuantity) * quantityPerProductColor;
           if (!quantity) continue;
@@ -130,4 +126,8 @@ function inventoryKey(partId: string, color: string) {
 
 function jsonStringArray(value: unknown) {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.length > 0) : [];
+}
+
+function uniqueStrings(values: Array<string | null | undefined>) {
+  return [...new Set(values.map((value) => value?.trim()).filter((value): value is string => Boolean(value)))];
 }
