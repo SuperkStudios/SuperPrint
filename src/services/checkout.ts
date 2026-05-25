@@ -435,6 +435,39 @@ export async function createCartPaymentIntent(input: {
   };
 }
 
+export async function previewCartCheckoutSummary(input: {
+  customerId: string;
+  customerEmail?: string | null;
+  fulfillment: CartFulfillment;
+}) {
+  const preShippingSummary = await summarizeCart(input.customerId);
+  if (!preShippingSummary.items.length) throw new Error("Your cart is empty.");
+  const aggregate = aggregateCartForShipping(preShippingSummary.items);
+  const shipping = await prepareCheckoutShipping({
+    product: aggregate,
+    productPriceCents: preShippingSummary.subtotalCents,
+    quantity: 1,
+    customerEmail: input.customerEmail,
+    fulfillment: input.fulfillment as CheckoutFulfillmentInput
+  });
+  const summary = await summarizeCart(input.customerId, {
+    shippingCents: shipping.shippingAmountCents
+  });
+
+  return {
+    summary,
+    shipping: {
+      method: shipping.method,
+      shippingAmountCents: shipping.shippingAmountCents,
+      shippingRateCents: shipping.shippingRateCents,
+      provider: shipping.rate?.provider ?? null,
+      service: shipping.rate?.servicelevel?.name ?? shipping.rate?.servicelevel_name ?? null,
+      estimatedDays: shipping.rate?.estimated_days ?? null,
+      freeShippingApplied: shipping.shippingRateCents > 0 && shipping.shippingAmountCents === 0
+    }
+  };
+}
+
 export async function reconcilePaidStripeCheckoutSession(input: { sessionId?: string | null; orderId?: string | null; actorId?: string }) {
   if (!input.sessionId || !input.orderId) return null;
   const stripe = await getStripe();

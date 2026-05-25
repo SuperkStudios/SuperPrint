@@ -36,6 +36,16 @@ type CheckoutSummary = {
   totalCents: number;
 };
 
+type ShippingQuote = {
+  method: "SHIP" | "PICKUP";
+  shippingAmountCents: number;
+  shippingRateCents: number;
+  provider?: string | null;
+  service?: string | null;
+  estimatedDays?: number | null;
+  freeShippingApplied?: boolean;
+};
+
 type StripeThemeMode = "light" | "dark";
 
 type Address = {
@@ -64,6 +74,9 @@ export function CheckoutForm({
     SHIP: null,
     PICKUP: initialSummary
   });
+  const [shippingQuote, setShippingQuote] = useState<ShippingQuote | null>(null);
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const [summaryMessage, setSummaryMessage] = useState("");
   const [address, setAddress] = useState<Address>({
     name: savedAddress.name ?? "",
     street1: savedAddress.street1 ?? "",
@@ -102,6 +115,8 @@ export function CheckoutForm({
   function selectFulfillmentMethod(method: "SHIP" | "PICKUP") {
     setFulfillmentMethod(method);
     setSummary(summariesByFulfillment[method] ?? initialSummary);
+    setShippingQuote(null);
+    setSummaryMessage("");
     resetPreparedPayment();
   }
 
@@ -183,6 +198,51 @@ export function CheckoutForm({
     };
   }, [address.city, address.country, address.email, address.name, address.phone, address.state, address.street1, address.street2, address.zip, clientSecret, publishableKey, stripeReady, stripeThemeMode]);
 
+  useEffect(() => {
+    if (clientSecret) return;
+    if (!addressReady) {
+      setSummary(summariesByFulfillment[fulfillmentMethod] ?? initialSummary);
+      setShippingQuote(null);
+      setSummaryMessage(fulfillmentMethod === "SHIP" ? "Enter a complete shipping address to calculate shipping, tax, fees, and the final total." : "Add a pickup name to calculate the final total.");
+      return;
+    }
+
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      setSummaryLoading(true);
+      setSummaryMessage("");
+      const fulfillmentAddress = fulfillmentMethod === "PICKUP"
+        ? { ...address, street1: address.street1 || "Local pickup", city: "Fort Collins", state: "CO", zip: address.zip || "80521" }
+        : address;
+      try {
+        const response = await fetch("/api/checkout/summary", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ fulfillment: { method: fulfillmentMethod, address: fulfillmentAddress } }),
+          signal: controller.signal
+        });
+        const body = await response.json().catch(() => null);
+        if (!response.ok) {
+          setShippingQuote(null);
+          setSummaryMessage(body?.error ?? "Could not update checkout total.");
+          return;
+        }
+        setSummary(body.summary);
+        setShippingQuote(body.shipping);
+        setSummariesByFulfillment((current) => ({ ...current, [fulfillmentMethod]: body.summary }));
+      } catch (error) {
+        if (!controller.signal.aborted) setSummaryMessage("Could not update checkout total.");
+      } finally {
+        if (!controller.signal.aborted) setSummaryLoading(false);
+      }
+    }, 450);
+
+    return () => {
+      controller.abort();
+      window.clearTimeout(timer);
+    };
+  }, [address, addressReady, clientSecret, fulfillmentMethod, initialSummary]);
+
   async function startPayment() {
     setLoading(true);
     setMessage("");
@@ -205,6 +265,7 @@ export function CheckoutForm({
       return;
     }
     setSummary(body.summary);
+    setShippingQuote(body.shipping ?? shippingQuote);
     setSummariesByFulfillment((current) => ({ ...current, [fulfillmentMethod]: body.summary }));
     setClientSecret(body.clientSecret);
     setPublishableKey(body.publishableKey);
@@ -278,6 +339,15 @@ export function CheckoutForm({
       </section>
       <aside className="h-fit rounded-md border bg-card p-4 text-card-foreground">
         <p className="font-semibold">Order summary</p>
+        <div className="mt-3 rounded-md border bg-muted/20 p-3">
+          <div className="flex items-center justify-between gap-4">
+            <span className="text-sm font-medium text-muted-foreground">Estimated order total</span>
+            <span className="text-2xl font-semibold">{money(summary.totalCents)}</span>
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Includes items, shipping or pickup, estimated tax, and the card processing fee before payment.
+          </p>
+        </div>
         <div className="mt-3 grid gap-3 border-b pb-3">
           {summary.items.map((item) => (
             <div key={item.id} className="flex items-start justify-between gap-4 text-sm">
@@ -291,13 +361,15 @@ export function CheckoutForm({
         </div>
         <SummaryLine label="Subtotal" value={summary.subtotalCents} />
         {summary.rewardDiscountCents ? <SummaryLine label="Rewards" value={-summary.rewardDiscountCents} /> : null}
-        <SummaryLine label="Taxes" value={summary.taxCents} />
-        <SummaryLine label="Shipping" value={summary.shippingCents} />
-        <SummaryLine label="Payment processor fee" value={summary.paymentFeeCents} />
+        <SummaryLine label="Estimated tax" value={summary.taxCents} />
+        <SummaryLine label={fulfillmentMethod === "PICKUP" ? "Pickup" : shippingLabel(shippingQuote)} value={summary.shippingCents} pending={fulfillmentMethod === "SHIP" && !shippingQuote && !summaryLoading} />
+        <SummaryLine label="Card processing fee" value={summary.paymentFeeCents} />
         <div className="mt-3 flex items-center justify-between border-t pt-3 text-lg font-semibold">
           <span>Total</span>
-          <span>{money(summary.totalCents)}</span>
+          <span>{summaryLoading ? "Updating..." : money(summary.totalCents)}</span>
         </div>
+        {summaryMessage ? <p className="mt-3 text-xs text-muted-foreground">{summaryMessage}</p> : null}
+        {shippingQuote?.freeShippingApplied ? <p className="mt-3 text-xs font-medium text-emerald-500">Free shipping applied. Label cost would have been {money(shippingQuote.shippingRateCents)}.</p> : null}
         <Button asChild variant="outline" className="mt-4 w-full"><Link href="/cart">Back to cart</Link></Button>
       </aside>
     </div>
@@ -313,13 +385,19 @@ function Field({ label, value, onChange }: { label: string; value: string; onCha
   );
 }
 
-function SummaryLine({ label, value }: { label: string; value: number }) {
+function SummaryLine({ label, value, pending = false }: { label: string; value: number; pending?: boolean }) {
   return (
     <div className="mt-3 flex items-center justify-between text-sm">
       <span className="text-muted-foreground">{label}</span>
-      <span>{value < 0 ? `-${money(Math.abs(value))}` : money(value)}</span>
+      <span>{pending ? "Enter address" : value < 0 ? `-${money(Math.abs(value))}` : money(value)}</span>
     </div>
   );
+}
+
+function shippingLabel(quote: ShippingQuote | null) {
+  const service = [quote?.provider, quote?.service].filter(Boolean).join(" ");
+  const eta = quote?.estimatedDays ? ` (${quote.estimatedDays} day${quote.estimatedDays === 1 ? "" : "s"})` : "";
+  return service ? `Shipping: ${service}${eta}` : "Shipping";
 }
 
 function buildStripeAppearance(mode: StripeThemeMode) {
