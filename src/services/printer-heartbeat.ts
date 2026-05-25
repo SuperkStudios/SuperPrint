@@ -71,10 +71,11 @@ export async function readPrinterTelemetry(printerId: string): Promise<PublicPri
   if (!printer.controlApiUrl.startsWith("ws")) return null;
   const inFlight = readCentauriTelemetry(printer.controlApiUrl, 3500).then(async (telemetry) => {
     const checkedAtMs = Date.now();
-    if (telemetry) {
-      await writeLastPrinterTelemetry(printerId, telemetry).catch(() => undefined);
+    const normalizedTelemetry = telemetry ? normalizePrinterTelemetry(telemetry) : null;
+    if (normalizedTelemetry) {
+      await writeLastPrinterTelemetry(printerId, normalizedTelemetry).catch(() => undefined);
     }
-    const fallbackTelemetry = telemetry
+    const fallbackTelemetry = normalizedTelemetry
       ?? (cached?.telemetry && checkedAtMs - cached.checkedAtMs <= STALE_TELEMETRY_GRACE_MS ? cached.telemetry : null)
       ?? await readLastPrinterTelemetry(printerId, checkedAtMs)
       ?? await readManualPrintTelemetry(printerId, checkedAtMs);
@@ -112,7 +113,7 @@ async function readLastPrinterTelemetry(printerId: string, nowMs = Date.now()): 
   if (!telemetry) return null;
   const updatedAtMs = Date.parse(telemetry.updatedAt);
   if (!Number.isFinite(updatedAtMs) || nowMs - updatedAtMs > STALE_TELEMETRY_GRACE_MS) return null;
-  return telemetry;
+  return normalizePrinterTelemetry(telemetry);
 }
 
 function readStoredPrinterTelemetry(value: unknown): PublicPrinterTelemetry | null {
@@ -120,6 +121,13 @@ function readStoredPrinterTelemetry(value: unknown): PublicPrinterTelemetry | nu
   const telemetry = value as Partial<PublicPrinterTelemetry>;
   if (telemetry.state !== "LIVE" || telemetry.source !== "centauri-sdcp" || typeof telemetry.updatedAt !== "string") return null;
   return telemetry as PublicPrinterTelemetry;
+}
+
+function normalizePrinterTelemetry(telemetry: PublicPrinterTelemetry): PublicPrinterTelemetry {
+  if (telemetry.printStatus === 13 && telemetry.printStatusLabel !== "Printing") {
+    return { ...telemetry, printStatusLabel: "Printing" };
+  }
+  return telemetry;
 }
 
 async function readManualPrintTelemetry(printerId: string, nowMs = Date.now()): Promise<PublicPrinterTelemetry | null> {
@@ -134,7 +142,7 @@ async function readManualPrintTelemetry(printerId: string, nowMs = Date.now()): 
     machineStatus: manualPrint.completed ? 0 : 1,
     machineStatusLabel: manualPrint.completed ? "Idle" : "Printing",
     printStatus: manualPrint.printStatus ?? null,
-    printStatusLabel: manualPrint.printStatusLabel ?? "Printing",
+    printStatusLabel: manualPrint.printStatus === 13 ? "Printing" : manualPrint.printStatusLabel ?? "Printing",
     nozzleTempC: null,
     nozzleTargetC: null,
     bedTempC: null,

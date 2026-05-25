@@ -194,7 +194,8 @@ function printStatusLabel(status: number | null) {
     7: "Stopping",
     8: "Stopped",
     9: "Complete",
-    10: "File checking"
+    10: "File checking",
+    13: "Printing"
   };
   return status == null ? "Unknown" : labels[status] ?? `Print status ${status}`;
 }

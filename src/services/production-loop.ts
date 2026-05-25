@@ -484,9 +484,9 @@ async function markPlatePrintedFromTelemetry(plate: PlateWithIncludes, printerId
   });
   await recordPlatformEvent({ type: "PRODUCTION_PLATE_PRINT_COMPLETED", payload: platePayload(plate, printerId ?? "") });
   await sendMobilePush({
-    title: "Print finished",
-    body: `${plate.color} ${plate.productPart.product.name} is ready to remove from the plate.`,
-    data: { plateJobId: plate.id, action: "print_finished" }
+    title: "Print finished. Remove parts next.",
+    body: `${plate.color} ${plate.productPart.product.name} is done. Next step: clear the build plate and tap Parts Removed to add them to inventory.`,
+    data: { plateJobId: plate.id, action: "remove_finished_parts", nextAction: "markPartsInventoried" }
   }).catch(() => undefined);
   return updated;
 }

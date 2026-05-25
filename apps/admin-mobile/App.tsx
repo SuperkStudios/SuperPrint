@@ -274,6 +274,7 @@ type ProductionLoopState = {
     bedTempC?: number | null;
     bedTargetC?: number | null;
     remainingSeconds?: number | null;
+    printStatus?: number | null;
     printStatusLabel?: string | null;
   } | null;
   counts: { plates: number; printing: number; readyToPrint: number; needsSlicing: number; readyOrders: number };
@@ -2138,7 +2139,7 @@ function PartsScreen({ client, apiBaseUrl }: { client: SuperPrintClient; apiBase
               <View style={styles.telemetryBlock}>
                 <View style={styles.orderTop}>
                   <Text style={styles.rowTitle}>Printing progress</Text>
-                  <Badge label={telemetry?.printStatusLabel ?? "LIVE"} />
+                  <Badge label={telemetry?.printStatusLabel ?? "LIVE"} tone={telemetry?.printStatus === 13 || telemetry?.printStatusLabel === "Printing" ? "success" : "default"} />
                 </View>
                 <View style={styles.progressTrack}>
                   <View style={[styles.progressFill, { width: `${Math.max(3, printPercent)}%` }]} />
@@ -3171,10 +3172,10 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function Badge({ label }: { label: string }) {
+function Badge({ label, tone = "default" }: { label: string; tone?: "default" | "success" }) {
   return (
-    <View style={styles.badge}>
-      <Text style={styles.badgeText}>{label}</Text>
+    <View style={[styles.badge, tone === "success" && styles.badgeSuccess]}>
+      <Text style={[styles.badgeText, tone === "success" && styles.badgeSuccessText]}>{label}</Text>
     </View>
   );
 }
@@ -3755,6 +3756,8 @@ function createStyles(palette: ThemePalette) {
   choiceRow: { padding: 12, borderBottomWidth: 1, borderBottomColor: palette.line, backgroundColor: palette.field },
   badgeRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   badge: { borderRadius: 6, backgroundColor: palette.badgeBg, paddingHorizontal: 8, paddingVertical: 5 },
-  badgeText: { color: palette.cyanDark, fontSize: 11, fontWeight: "900" }
-  });
+  badgeSuccess: { backgroundColor: palette.mint },
+  badgeText: { color: palette.cyanDark, fontSize: 11, fontWeight: "900" },
+  badgeSuccessText: { color: "#ffffff", fontSize: 11, fontWeight: "900" }
+});
 }
