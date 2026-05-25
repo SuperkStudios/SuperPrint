@@ -82,7 +82,8 @@ type AdminOrder = {
   amountPaidCents?: number | null;
   balanceDueCents?: number | null;
   paymentMethod?: string | null;
-  orderSource?: "IN_PERSON" | "PAST_IMPORT" | string | null;
+  orderSource?: "IN_PERSON" | "BACKLOG_IMPORT" | "PAST_IMPORT" | string | null;
+  items?: Array<{ quantity: number; printedQuantity?: number | null }>;
   customer?: { name?: string | null; email: string } | null;
   product?: { name: string } | null;
 };
@@ -109,6 +110,7 @@ type ProductOption = {
 type LineDraft = {
   productId: string;
   quantity: string;
+  printedQuantity: string;
   unitPrice: string;
   selectedFilamentMaterialIds: string[];
   selectedColors: string[];
@@ -1018,7 +1020,7 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
   const [manualTransactionId, setManualTransactionId] = useState("");
   const [internalNotes, setInternalNotes] = useState("");
   const [orderDate, setOrderDate] = useState("");
-  const [source, setSource] = useState<"IN_PERSON" | "PAST_IMPORT">("IN_PERSON");
+  const [source, setSource] = useState<"IN_PERSON" | "BACKLOG_IMPORT" | "PAST_IMPORT">("IN_PERSON");
   const [queueNow, setQueueNow] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
@@ -1090,7 +1092,7 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
     setCustomers([]);
   }
 
-  function selectOrderSource(nextSource: "IN_PERSON" | "PAST_IMPORT") {
+  function selectOrderSource(nextSource: "IN_PERSON" | "BACKLOG_IMPORT" | "PAST_IMPORT") {
     setSource(nextSource);
     setQueueNow(false);
     setStripePayments([]);
@@ -1100,6 +1102,8 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
       setPaidNow((totalCents / 100).toFixed(2));
       setPaymentReference("");
       setManualTransactionId("");
+    } else if (nextSource === "BACKLOG_IMPORT") {
+      selectPaymentMethod("UNPAID");
     }
   }
 
@@ -1224,8 +1228,13 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
   }
 
   async function saveOrder() {
-    if (!customerName.trim() || !customerEmail.trim() || !lines.length) {
-      setMessage("Customer, email, and product are required.");
+    if ((!customerName.trim() || !customerEmail.trim()) && source !== "BACKLOG_IMPORT") {
+      setMessage("Customer and email are required for new orders. Use Backlog if the customer is unknown.");
+      setFlowStep("customer");
+      return;
+    }
+    if (!lines.length) {
+      setMessage("Add at least one product.");
       return;
     }
     if (recordsPastStripePayment && !paymentReference.trim()) {
@@ -1446,6 +1455,7 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
         return {
           productId: line.productId,
           quantity: positiveInt(line.quantity, 1),
+          printedQuantity: source === "BACKLOG_IMPORT" ? Math.min(positiveInt(line.quantity, 1), nonNegativeInt(line.printedQuantity, 0)) : 0,
           unitPriceCents: cents(line.unitPrice),
           selectedFilamentMaterialIds: selectedIds.filter(Boolean),
           selectedColors
@@ -1476,6 +1486,10 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
           <Pressable onPress={() => selectOrderSource("IN_PERSON")} style={[styles.modeCard, source === "IN_PERSON" && styles.modeCardActive]}>
             <AppIconBadge Icon={Plus} small />
             <Text style={[styles.modeTitle, source === "IN_PERSON" && styles.modeTitleActive]}>New order</Text>
+          </Pressable>
+          <Pressable onPress={() => selectOrderSource("BACKLOG_IMPORT")} style={[styles.modeCard, source === "BACKLOG_IMPORT" && styles.modeCardActive]}>
+            <AppIconBadge Icon={PackageCheck} small />
+            <Text style={[styles.modeTitle, source === "BACKLOG_IMPORT" && styles.modeTitleActive]}>Backlog</Text>
           </Pressable>
           <Pressable onPress={() => selectOrderSource("PAST_IMPORT")} style={[styles.modeCard, source === "PAST_IMPORT" && styles.modeCardActive]}>
             <AppIconBadge Icon={History} small />
@@ -1515,8 +1529,8 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
             ))}
           </View>
         ) : null}
-        <Field label="Customer name" value={customerName} onChangeText={setCustomerName} />
-        <Field label="Email" value={customerEmail} onChangeText={setCustomerEmail} keyboardType="email-address" autoCapitalize="none" />
+        <Field label={source === "BACKLOG_IMPORT" ? "Customer name (optional)" : "Customer name"} value={customerName} onChangeText={setCustomerName} />
+        <Field label={source === "BACKLOG_IMPORT" ? "Email (optional)" : "Email"} value={customerEmail} onChangeText={setCustomerEmail} keyboardType="email-address" autoCapitalize="none" />
           <FlowNav onBack={goBack} onNext={goNext} backDisabled={activeStepIndex === 0} nextLabel="Choose Items" />
         </Card>
       ) : null}
@@ -1550,6 +1564,14 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
                 <Field label="Qty" value={line.quantity} onChangeText={(quantity) => updateLine(index, { quantity })} keyboardType="number-pad" grow />
                 <Field label="Unit price" value={line.unitPrice} onChangeText={(unitPrice) => updateLine(index, { unitPrice })} keyboardType="decimal-pad" grow />
               </View>
+              {source === "BACKLOG_IMPORT" ? (
+                <Field
+                  label="Already printed"
+                  value={line.printedQuantity}
+                  onChangeText={(printedQuantity) => updateLine(index, { printedQuantity })}
+                  keyboardType="number-pad"
+                />
+              ) : null}
               <ProductionEstimatePanel line={line} product={product} />
               {Array.from({ length: slotCount }, (_, slotIndex) => {
                 const allowed = product?.allowedFilaments ?? [];
@@ -1790,7 +1812,7 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
             <AppIconBadge Icon={BadgeCheck} small />
           </View>
         <View style={styles.readOnlyPanel}>
-          <InfoRow label="Mode" value={source === "PAST_IMPORT" ? "Past print import" : "New counter order"} />
+          <InfoRow label="Mode" value={source === "PAST_IMPORT" ? "Past print import" : source === "BACKLOG_IMPORT" ? "Backlog / in progress" : "New counter order"} />
           <InfoRow label="Customer" value={customerName || "Missing"} />
           <InfoRow label="Email" value={customerEmail || "Missing"} />
           <InfoRow label="Items" value={`${lines.length} line(s)`} />
@@ -1972,7 +1994,7 @@ function PartsScreen({ client }: { client: SuperPrintClient }) {
   const colorGroups = groupPlannerByColor(printRows);
   const readyOrderNumbers = new Set(planner.filter((row) => row.quantityToPrint === 0).flatMap((row) => row.orders.map((order) => order.orderNumber)));
   const activeOrders = orders.filter((order) => order.orderSource !== "PAST_IMPORT");
-  const readyToBuild = activeOrders.filter((order) => readyOrderNumbers.has(order.orderNumber)).filter((order) => !["PACKING", "SHIPPED", "DELIVERED"].includes(order.shippingStatus ?? ""));
+  const readyToBuild = activeOrders.filter((order) => readyOrderNumbers.has(order.orderNumber) || orderItemsArePrinted(order)).filter((order) => !["PACKING", "SHIPPED", "DELIVERED"].includes(order.shippingStatus ?? ""));
   const deliveryOrders = activeOrders.filter((order) => ["PACKING", "LABEL_READY", "LABEL_PRINTED", "SHIPPED"].includes(order.shippingStatus ?? "") && order.shippingStatus !== "DELIVERED");
   const toPrint = printRows.reduce((total, row) => total + row.quantityToPrint, 0);
   const plates = printRows.reduce((total, row) => total + row.suggestedPlateCount, 0);
@@ -3262,6 +3284,11 @@ function groupPlannerByColor(rows: PartPlannerRow[]) {
     .sort((a, b) => b.quantityToPrint - a.quantityToPrint || a.color.localeCompare(b.color));
 }
 
+function orderItemsArePrinted(order: AdminOrder) {
+  if (!order.items?.length) return false;
+  return order.items.every((item) => (item.printedQuantity ?? 0) >= item.quantity);
+}
+
 function productFor(line: LineDraft, products: ProductOption[]) {
   return products.find((product) => product.id === line.productId) ?? products[0];
 }
@@ -3273,6 +3300,7 @@ function newOrderLine(product: ProductOption, quantity = "1"): LineDraft {
   return {
     productId: product.id,
     quantity,
+    printedQuantity: "0",
     unitPrice: (product.priceCents / 100).toFixed(2),
     selectedFilamentMaterialIds,
     selectedColors
@@ -3281,14 +3309,15 @@ function newOrderLine(product: ProductOption, quantity = "1"): LineDraft {
 
 function estimateLineProduction(line: LineDraft, product: ProductOption) {
   const quantity = positiveInt(line.quantity, 1);
+  const remainingQuantity = Math.max(0, quantity - nonNegativeInt(line.printedQuantity, 0));
   const selectedId = line.selectedFilamentMaterialIds[0] ?? "";
   const filament = product.allowedFilaments?.find((item) => item.filamentMaterialId === selectedId);
   const minutesPerUnit = Math.max(1, Math.ceil(filament?.estimatedPrintMinutesOverride ?? product.estimatedPrintMinutes ?? 0));
-  const plates = estimatePlatformPlates(line, product, quantity);
+  const plates = estimatePlatformPlates(line, product, remainingQuantity);
   return {
-    quantity,
+    quantity: remainingQuantity,
     plates,
-    totalMinutes: minutesPerUnit * quantity,
+    totalMinutes: minutesPerUnit * remainingQuantity,
     totalPlates: plates.reduce((total, plate) => total + plate.plates, 0)
   };
 }

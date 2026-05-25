@@ -22,7 +22,7 @@ export async function getPartProductionPlanner(): Promise<PlannerRow[]> {
         orderSource: { not: "PAST_IMPORT" },
         OR: [
           { paymentStatus: { in: ["PAID", "PARTIAL"] } },
-          { orderSource: "IN_PERSON" }
+          { orderSource: { in: ["IN_PERSON", "BACKLOG_IMPORT"] } }
         ]
       },
       include: {
@@ -53,7 +53,8 @@ export async function getPartProductionPlanner(): Promise<PlannerRow[]> {
         for (const slotIndex of pattern) {
           const color = selectedColors[slotIndex] ?? selectedColors[0] ?? item.selectedColor ?? "Unassigned";
           const key = `${part.id}:${color}`;
-          const quantity = item.quantity;
+          const quantity = Math.max(0, item.quantity - item.printedQuantity);
+          if (!quantity) continue;
           const existing = rows.get(key);
           if (existing) {
             existing.requiredQuantity += quantity;

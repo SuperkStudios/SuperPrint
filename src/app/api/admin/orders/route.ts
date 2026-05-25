@@ -33,7 +33,7 @@ export async function GET() {
   if (response) return response;
 
   const orders = await prisma.order.findMany({
-    include: { customer: true, product: true, upload: true, printJobs: { include: { filament: true, printer: true } } },
+    include: { customer: true, product: true, upload: true, items: true, printJobs: { include: { filament: true, printer: true } } },
     orderBy: { updatedAt: "desc" }
   });
   return NextResponse.json({ orders });

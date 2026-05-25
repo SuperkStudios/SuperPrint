@@ -19,6 +19,7 @@ type ProductOption = {
 type LineDraft = {
   productId: string;
   quantity: number;
+  printedQuantity: number;
   unitPrice: string;
   selectedFilamentMaterialIds: string[];
 };
@@ -67,7 +68,7 @@ export function AdminPosForm({ products }: { products: ProductOption[] }) {
   const [cardLast4, setCardLast4] = useState("");
   const [internalNotes, setInternalNotes] = useState("");
   const [orderDate, setOrderDate] = useState("");
-  const [source, setSource] = useState<"IN_PERSON" | "PAST_IMPORT">("IN_PERSON");
+  const [source, setSource] = useState<"IN_PERSON" | "BACKLOG_IMPORT" | "PAST_IMPORT">("IN_PERSON");
   const [queueNow, setQueueNow] = useState(false);
   const [lines, setLines] = useState<LineDraft[]>(() => firstProduct ? [newLine(firstProduct)] : []);
   const [loading, setLoading] = useState(false);
@@ -154,6 +155,7 @@ export function AdminPosForm({ products }: { products: ProductOption[] }) {
         return {
           productId: line.productId,
           quantity: Math.max(1, line.quantity),
+          printedQuantity: source === "BACKLOG_IMPORT" ? Math.min(Math.max(1, line.quantity), Math.max(0, line.printedQuantity)) : 0,
           unitPriceCents: dollarsToCents(line.unitPrice),
           selectedFilamentMaterialIds: line.selectedFilamentMaterialIds,
           selectedColors
@@ -270,8 +272,8 @@ export function AdminPosForm({ products }: { products: ProductOption[] }) {
       <div className="grid gap-5 lg:grid-cols-[1.15fr_0.85fr]">
         <section className="grid gap-4 rounded-md border bg-card p-4">
           <div className="grid gap-3 md:grid-cols-2">
-            <Field label="Customer name"><Input value={customerName} onChange={(event) => setCustomerName(event.target.value)} required /></Field>
-            <Field label="Email"><Input type="email" value={customerEmail} onChange={(event) => setCustomerEmail(event.target.value)} required /></Field>
+            <Field label={source === "BACKLOG_IMPORT" ? "Customer name (optional)" : "Customer name"}><Input value={customerName} onChange={(event) => setCustomerName(event.target.value)} required={source !== "BACKLOG_IMPORT"} /></Field>
+            <Field label={source === "BACKLOG_IMPORT" ? "Email (optional)" : "Email"}><Input type="email" value={customerEmail} onChange={(event) => setCustomerEmail(event.target.value)} required={source !== "BACKLOG_IMPORT"} /></Field>
           </div>
 
           <div className="grid gap-3">
@@ -280,7 +282,7 @@ export function AdminPosForm({ products }: { products: ProductOption[] }) {
               const slotCount = Math.max(1, product?.colorSlotCount ?? 1);
               return (
                 <div key={index} className="grid gap-3 rounded-md border bg-background p-3">
-                  <div className="grid gap-3 md:grid-cols-[1fr_96px_120px_auto]">
+                  <div className="grid gap-3 md:grid-cols-[1fr_96px_120px_120px_auto]">
                     <Field label="Product">
                       <select className="h-10 rounded-md border bg-background px-3 text-sm" value={line.productId} onChange={(event) => updateLine(index, { productId: event.target.value })}>
                         {products.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
@@ -288,6 +290,7 @@ export function AdminPosForm({ products }: { products: ProductOption[] }) {
                     </Field>
                     <Field label="Qty"><Input type="number" min={1} value={line.quantity} onChange={(event) => updateLine(index, { quantity: Number(event.target.value) })} /></Field>
                     <Field label="Unit price"><Input inputMode="decimal" value={line.unitPrice} onChange={(event) => updateLine(index, { unitPrice: event.target.value })} /></Field>
+                    <Field label="Already printed"><Input type="number" min={0} max={line.quantity} value={source === "BACKLOG_IMPORT" ? line.printedQuantity : 0} onChange={(event) => updateLine(index, { printedQuantity: Number(event.target.value) })} disabled={source !== "BACKLOG_IMPORT"} /></Field>
                     <div className="flex items-end">
                       <Button type="button" size="icon" variant="ghost" onClick={() => setLines((current) => current.filter((_, lineIndex) => lineIndex !== index))} disabled={lines.length === 1} aria-label="Remove line">
                         <Trash2 className="h-4 w-4" />
@@ -328,13 +331,14 @@ export function AdminPosForm({ products }: { products: ProductOption[] }) {
           <CardTitle>Payment</CardTitle>
           <div className="grid grid-cols-3 gap-2">
             {[
+              ["UNPAID", DollarSign],
               ["CASH", DollarSign],
               ["STRIPE_TERMINAL", CreditCard],
               ["STRIPE_MANUAL", CreditCard]
             ].map(([method, Icon]) => (
               <Button key={String(method)} type="button" variant={paymentMethod === method ? "default" : "outline"} onClick={() => setPaymentMethod(String(method))}>
                 <Icon className="h-4 w-4" />
-                {method === "STRIPE_TERMINAL" ? "Terminal" : method === "STRIPE_MANUAL" ? "Manual" : "Cash"}
+                {method === "STRIPE_TERMINAL" ? "Terminal" : method === "STRIPE_MANUAL" ? "Manual" : method === "UNPAID" ? "Delivery" : "Cash"}
               </Button>
             ))}
           </div>
@@ -394,8 +398,9 @@ export function AdminPosForm({ products }: { products: ProductOption[] }) {
             <Field label="Last 4"><Input inputMode="numeric" maxLength={4} value={cardLast4} onChange={(event) => setCardLast4(event.target.value.replace(/\D/g, "").slice(0, 4))} /></Field>
             <Field label="Order date"><Input type="datetime-local" value={orderDate} onChange={(event) => setOrderDate(event.target.value)} /></Field>
             <Field label="Entry type">
-              <select className="h-10 rounded-md border bg-background px-3 text-sm" value={source} onChange={(event) => setSource(event.target.value as "IN_PERSON" | "PAST_IMPORT")}>
+              <select className="h-10 rounded-md border bg-background px-3 text-sm" value={source} onChange={(event) => setSource(event.target.value as "IN_PERSON" | "BACKLOG_IMPORT" | "PAST_IMPORT")}>
                 <option value="IN_PERSON">New in-person</option>
+                <option value="BACKLOG_IMPORT">Backlog / in progress</option>
                 <option value="PAST_IMPORT">Past order</option>
               </select>
             </Field>
@@ -427,6 +432,7 @@ function newLine(product: ProductOption, quantity = 1): LineDraft {
   return {
     productId: product.id,
     quantity,
+    printedQuantity: 0,
     unitPrice: (product.priceCents / 100).toFixed(2),
     selectedFilamentMaterialIds: selected
   };

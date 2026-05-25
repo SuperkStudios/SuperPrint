@@ -11,6 +11,7 @@ const paidMethods = new Set(["CASH", "STRIPE_TERMINAL", "STRIPE_MANUAL", "STRIPE
 type InPersonOrderLineInput = {
   productId: string;
   quantity: number;
+  printedQuantity?: number | null;
   unitPriceCents?: number | null;
   selectedFilamentMaterialIds?: string[];
   selectedColors?: string[];
@@ -28,7 +29,7 @@ export type CreateInPersonOrderInput = {
   cardLast4?: string | null;
   internalNotes?: string | null;
   orderDate?: Date | null;
-  source?: "IN_PERSON" | "PAST_IMPORT";
+  source?: "IN_PERSON" | "BACKLOG_IMPORT" | "PAST_IMPORT";
   queueNow?: boolean;
   fulfillment?: CheckoutFulfillmentInput;
   estimatedPickupAt?: Date | null;
@@ -61,8 +62,10 @@ export type ManualCardOrderInput = TerminalOrderInput;
 
 export async function createInPersonOrder(input: CreateInPersonOrderInput, actorId?: string) {
   if (!input.lines.length) throw new Error("Add at least one product.");
-  const email = input.customerEmail.trim().toLowerCase();
-  if (!email) throw new Error("Customer email is required.");
+  const orderNumber = `SP-${Date.now().toString().slice(-6)}`;
+  const source = input.source ?? "IN_PERSON";
+  const email = input.customerEmail.trim().toLowerCase() || `unknown+${orderNumber.toLowerCase()}@superprint.local`;
+  const customerName = input.customerName.trim() || "Walk-in Customer";
 
   const products = await prisma.product.findMany({
     where: { id: { in: input.lines.map((line) => line.productId) } },
@@ -74,6 +77,7 @@ export async function createInPersonOrder(input: CreateInPersonOrderInput, actor
     const product = productById.get(line.productId);
     if (!product) throw new Error("One of the selected products no longer exists.");
     const quantity = Math.max(1, Math.floor(line.quantity || 1));
+    const printedQuantity = source === "BACKLOG_IMPORT" ? Math.min(quantity, Math.max(0, Math.floor(line.printedQuantity ?? 0))) : 0;
     const slotCount = Math.max(1, Math.min(6, product.colorSlotCount ?? 1));
     const selectedIds = Array.from({ length: slotCount }, (_, index) => {
       const id = line.selectedFilamentMaterialIds?.[index] ?? line.selectedFilamentMaterialIds?.[0] ?? product.defaultFilamentMaterialId ?? product.allowedFilaments[0]?.filamentMaterialId;
@@ -88,6 +92,7 @@ export async function createInPersonOrder(input: CreateInPersonOrderInput, actor
     return {
       product,
       quantity,
+      printedQuantity,
       selectedIds,
       selectedColors,
       selectedMaterial: firstAllowed?.filamentMaterial.material ?? product.defaultMaterial,
@@ -114,17 +119,17 @@ export async function createInPersonOrder(input: CreateInPersonOrderInput, actor
   const order = await prisma.$transaction(async (tx) => {
     const customer = await tx.user.upsert({
       where: { email },
-      update: { name: input.customerName.trim() || email },
+      update: { name: customerName },
       create: {
         email,
-        name: input.customerName.trim() || email,
+        name: customerName,
         emailVerified: true
       }
     });
 
     const created = await tx.order.create({
       data: {
-        orderNumber: `SP-${Date.now().toString().slice(-6)}`,
+        orderNumber,
         customerId: customer.id,
         productId: normalizedLines[0]?.product.id,
         subtotalCents,
@@ -139,12 +144,17 @@ export async function createInPersonOrder(input: CreateInPersonOrderInput, actor
         cardBrand: input.cardBrand?.trim() || null,
         cardLast4: input.cardLast4?.trim() || null,
         paidAt: paymentStatus === "PAID" ? input.orderDate ?? new Date() : null,
-        orderSource: input.source ?? "IN_PERSON",
-        internalNotes: [input.internalNotes?.trim(), input.estimatedPickupAt ? `Estimated pickup: ${input.estimatedPickupAt.toISOString()}` : null].filter(Boolean).join("\n") || null,
+        orderSource: source,
+        internalNotes: [
+          input.customerEmail.trim() ? null : "Customer email was unknown at entry.",
+          input.customerName.trim() ? null : "Customer name was unknown at entry.",
+          input.internalNotes?.trim(),
+          input.estimatedPickupAt ? `Estimated pickup: ${input.estimatedPickupAt.toISOString()}` : null
+        ].filter(Boolean).join("\n") || null,
         status,
         fulfillmentMethod,
         shippingStatus: fulfillmentMethod === "SHIP" ? "NOT_STARTED" : "PICKUP",
-        shippingName: shippingAddress?.name?.trim() || input.customerName.trim() || email,
+        shippingName: shippingAddress?.name?.trim() || customerName,
         shippingStreet1: fulfillmentMethod === "SHIP" ? shippingAddress?.street1?.trim() || null : null,
         shippingStreet2: fulfillmentMethod === "SHIP" ? shippingAddress?.street2?.trim() || null : null,
         shippingCity: fulfillmentMethod === "SHIP" ? shippingAddress?.city?.trim() || null : shippingAddress?.city?.trim() || null,
@@ -162,6 +172,7 @@ export async function createInPersonOrder(input: CreateInPersonOrderInput, actor
           create: normalizedLines.map((line) => ({
             productId: line.product.id,
             quantity: line.quantity,
+            printedQuantity: line.printedQuantity,
             unitPriceCents: line.unitPriceCents,
             subtotalCents: line.subtotalCents,
             totalCents: line.subtotalCents,
@@ -180,7 +191,8 @@ export async function createInPersonOrder(input: CreateInPersonOrderInput, actor
 
     if (input.queueNow && paymentStatus === "PAID") {
       await queueOrderJobs(tx, created.id, normalizedLines);
-      return tx.order.update({ where: { id: created.id }, data: { status: "QUEUED" }, include: { customer: true, items: { include: { product: true } }, printJobs: true } });
+      const hasRemainingPrintWork = normalizedLines.some((line) => line.quantity > line.printedQuantity);
+      return tx.order.update({ where: { id: created.id }, data: { status: hasRemainingPrintWork ? "QUEUED" : "PAID" }, include: { customer: true, items: { include: { product: true } }, printJobs: true } });
     }
 
     if (input.source === "PAST_IMPORT" && input.pastPrinterHistory && input.pastHistorySpoolId) {
@@ -521,7 +533,8 @@ async function queueOrderJobs(tx: Prisma.TransactionClient, orderId: string, lin
   let queuePosition = nextQueuePosition(activeJobs.map((job) => job.queuePosition));
   for (const line of lines) {
     const slotCount = Math.max(1, Math.min(6, line.product.colorSlotCount ?? 1));
-    for (let unitIndex = 0; unitIndex < line.quantity; unitIndex += 1) {
+    const unitsToQueue = Math.max(0, line.quantity - (line.printedQuantity ?? 0));
+    for (let unitIndex = 0; unitIndex < unitsToQueue; unitIndex += 1) {
       for (let slotIndex = 0; slotIndex < slotCount; slotIndex += 1) {
         const selectedAllowed = line.product.allowedFilaments.find((item) => item.filamentMaterialId === line.selectedIds[slotIndex]);
         const reservedGrams = Math.max(1, Math.ceil((selectedAllowed?.estimatedGramsOverride ?? line.product.estimatedGrams) / slotCount));
@@ -558,6 +571,7 @@ async function queueOrderJobs(tx: Prisma.TransactionClient, orderId: string, lin
 function normalizeQueuedLine(line: {
   product: Awaited<ReturnType<typeof prisma.product.findMany>>[number] & { allowedFilaments: Array<{ filamentMaterialId: string; estimatedGramsOverride: number | null; estimatedPrintMinutesOverride: number | null; filamentMaterial?: { material: string } }> };
   quantity: number;
+  printedQuantity?: number;
   selectedIds: string[];
   selectedColors: string[];
   selectedMaterial: string;

@@ -6,6 +6,7 @@ import { createTerminalOrderPayment } from "@/services/in-person-orders";
 const lineSchema = z.object({
   productId: z.string().min(1),
   quantity: z.number().int().min(1).max(500),
+  printedQuantity: z.number().int().min(0).max(500).optional().default(0),
   unitPriceCents: z.number().int().nonnegative().optional().nullable(),
   selectedFilamentMaterialIds: z.array(z.string()).default([]),
   selectedColors: z.array(z.string()).default([])
@@ -24,12 +25,12 @@ const addressSchema = z.object({
 });
 
 const schema = z.object({
-  customerName: z.string().trim().min(1),
+  customerName: z.string().trim().optional().default(""),
   customerEmail: z.string().trim().email(),
   lines: z.array(lineSchema).min(1),
   internalNotes: z.string().optional().nullable(),
   orderDate: z.string().optional().nullable(),
-  source: z.enum(["IN_PERSON", "PAST_IMPORT"]).default("IN_PERSON"),
+  source: z.enum(["IN_PERSON", "BACKLOG_IMPORT", "PAST_IMPORT"]).default("IN_PERSON"),
   savePaymentMethod: z.boolean().default(true),
   estimatedPickupAt: z.string().optional().nullable(),
   fulfillment: z.object({

@@ -876,6 +876,7 @@ model OrderItem {
   selectedFilamentMaterial   FilamentSpool? @relation("OrderItemSelectedFilament", fields: [selectedFilamentMaterialId], references: [id])
   selectedFilamentMaterialIds Json          @default("[]")
   selectedColors             Json          @default("[]")
+  printedQuantity            Int            @default(0)
   createdAt                  DateTime       @default(now())
 
   @@index([orderId])

@@ -6,6 +6,7 @@ import { createInPersonOrder } from "@/services/in-person-orders";
 const lineSchema = z.object({
   productId: z.string().min(1),
   quantity: z.number().int().min(1).max(500),
+  printedQuantity: z.number().int().min(0).max(500).optional().default(0),
   unitPriceCents: z.number().int().nonnegative().optional().nullable(),
   selectedFilamentMaterialIds: z.array(z.string()).default([]),
   selectedColors: z.array(z.string()).default([])
@@ -37,8 +38,8 @@ const printerHistorySchema = z.object({
 });
 
 const schema = z.object({
-  customerName: z.string().trim().min(1),
-  customerEmail: z.string().trim().email(),
+  customerName: z.string().trim().optional().default(""),
+  customerEmail: z.string().trim().optional().default(""),
   lines: z.array(lineSchema).min(1),
   paymentMethod: z.enum(["UNPAID", "CASH", "STRIPE_TERMINAL", "STRIPE_MANUAL", "STRIPE_LINK", "OTHER"]),
   amountPaidCents: z.number().int().nonnegative(),
@@ -48,7 +49,7 @@ const schema = z.object({
   cardLast4: z.string().regex(/^\d{0,4}$/).optional().nullable(),
   internalNotes: z.string().optional().nullable(),
   orderDate: z.string().optional().nullable(),
-  source: z.enum(["IN_PERSON", "PAST_IMPORT"]).default("IN_PERSON"),
+  source: z.enum(["IN_PERSON", "BACKLOG_IMPORT", "PAST_IMPORT"]).default("IN_PERSON"),
   queueNow: z.boolean().default(false),
   estimatedPickupAt: z.string().optional().nullable(),
   fulfillment: z.object({
@@ -61,6 +62,15 @@ const schema = z.object({
   shippoShipmentId: z.string().optional().nullable(),
   pastPrinterHistory: printerHistorySchema.optional().nullable(),
   pastHistorySpoolId: z.string().optional().nullable()
+}).superRefine((value, context) => {
+  if (value.customerEmail && !z.string().email().safeParse(value.customerEmail).success) {
+    context.addIssue({ code: "custom", path: ["customerEmail"], message: "Email must be valid when provided." });
+  }
+  value.lines.forEach((line, index) => {
+    if ((line.printedQuantity ?? 0) > line.quantity) {
+      context.addIssue({ code: "custom", path: ["lines", index, "printedQuantity"], message: "Already printed cannot be greater than quantity." });
+    }
+  });
 });
 
 export async function POST(request: Request) {

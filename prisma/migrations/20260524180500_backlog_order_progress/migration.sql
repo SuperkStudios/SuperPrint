@@ -1,0 +1,1 @@
+ALTER TABLE "OrderItem" ADD COLUMN "printedQuantity" INTEGER NOT NULL DEFAULT 0;
