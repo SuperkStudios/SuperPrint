@@ -13,7 +13,7 @@ import { recordPlatformEvent } from "@/services/events";
 
 const telemetryCache = new Map<string, { telemetry: PublicPrinterTelemetry | null; checkedAtMs: number; inFlight?: Promise<PublicPrinterTelemetry | null> }>();
 const TELEMETRY_CACHE_MS = 2500;
-const STALE_TELEMETRY_GRACE_MS = 60_000;
+const STALE_TELEMETRY_GRACE_MS = 5 * 60_000;
 const MANUAL_PRINT_PROGRESS_EVENT_STEP = 5;
 
 export async function refreshPrinterHeartbeat(printerId: string) {
@@ -69,9 +69,15 @@ export async function readPrinterTelemetry(printerId: string): Promise<PublicPri
 
   const printer = await prisma.printer.findUniqueOrThrow({ where: { id: printerId } });
   if (!printer.controlApiUrl.startsWith("ws")) return null;
-  const inFlight = readCentauriTelemetry(printer.controlApiUrl, 3500).then((telemetry) => {
+  const inFlight = readCentauriTelemetry(printer.controlApiUrl, 3500).then(async (telemetry) => {
     const checkedAtMs = Date.now();
-    const fallbackTelemetry = telemetry ?? (cached?.telemetry && checkedAtMs - cached.checkedAtMs <= STALE_TELEMETRY_GRACE_MS ? cached.telemetry : null);
+    if (telemetry) {
+      await writeLastPrinterTelemetry(printerId, telemetry).catch(() => undefined);
+    }
+    const fallbackTelemetry = telemetry
+      ?? (cached?.telemetry && checkedAtMs - cached.checkedAtMs <= STALE_TELEMETRY_GRACE_MS ? cached.telemetry : null)
+      ?? await readLastPrinterTelemetry(printerId, checkedAtMs)
+      ?? await readManualPrintTelemetry(printerId, checkedAtMs);
     telemetryCache.set(printerId, { telemetry: fallbackTelemetry, checkedAtMs });
     return fallbackTelemetry;
   }).finally(() => {
@@ -86,6 +92,64 @@ export async function readPrinterTelemetry(printerId: string): Promise<PublicPri
     await recordManualPrintDetection(printer.id, telemetry).catch(() => undefined);
   }
   return telemetry;
+}
+
+function telemetrySettingKey(printerId: string) {
+  return `printerTelemetry.lastGood.${printerId}`;
+}
+
+async function writeLastPrinterTelemetry(printerId: string, telemetry: PublicPrinterTelemetry) {
+  await prisma.systemSetting.upsert({
+    where: { key: telemetrySettingKey(printerId) },
+    update: { value: telemetry as unknown as Prisma.InputJsonObject },
+    create: { key: telemetrySettingKey(printerId), value: telemetry as unknown as Prisma.InputJsonObject }
+  });
+}
+
+async function readLastPrinterTelemetry(printerId: string, nowMs = Date.now()): Promise<PublicPrinterTelemetry | null> {
+  const setting = await prisma.systemSetting.findUnique({ where: { key: telemetrySettingKey(printerId) } });
+  const telemetry = readStoredPrinterTelemetry(setting?.value);
+  if (!telemetry) return null;
+  const updatedAtMs = Date.parse(telemetry.updatedAt);
+  if (!Number.isFinite(updatedAtMs) || nowMs - updatedAtMs > STALE_TELEMETRY_GRACE_MS) return null;
+  return telemetry;
+}
+
+function readStoredPrinterTelemetry(value: unknown): PublicPrinterTelemetry | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const telemetry = value as Partial<PublicPrinterTelemetry>;
+  if (telemetry.state !== "LIVE" || telemetry.source !== "centauri-sdcp" || typeof telemetry.updatedAt !== "string") return null;
+  return telemetry as PublicPrinterTelemetry;
+}
+
+async function readManualPrintTelemetry(printerId: string, nowMs = Date.now()): Promise<PublicPrinterTelemetry | null> {
+  const setting = await prisma.systemSetting.findUnique({ where: { key: `manualPrint.active.${printerId}` } });
+  const manualPrint = readManualPrintSnapshot(setting?.value);
+  if (!manualPrint?.lastSeenAt) return null;
+  const updatedAtMs = Date.parse(manualPrint.lastSeenAt);
+  if (!Number.isFinite(updatedAtMs) || nowMs - updatedAtMs > STALE_TELEMETRY_GRACE_MS) return null;
+  return {
+    state: "LIVE",
+    source: "centauri-sdcp",
+    machineStatus: manualPrint.completed ? 0 : 1,
+    machineStatusLabel: manualPrint.completed ? "Idle" : "Printing",
+    printStatus: manualPrint.printStatus ?? null,
+    printStatusLabel: manualPrint.printStatusLabel ?? "Printing",
+    nozzleTempC: null,
+    nozzleTargetC: null,
+    bedTempC: null,
+    bedTargetC: null,
+    chamberTempC: null,
+    chamberTargetC: null,
+    progressPercent: manualPrint.progressPercent,
+    currentLayer: manualPrint.currentLayer,
+    totalLayer: manualPrint.totalLayer,
+    elapsedSeconds: null,
+    remainingSeconds: null,
+    printSpeedPercent: null,
+    currentFileName: manualPrint.fileName,
+    updatedAt: manualPrint.lastSeenAt
+  };
 }
 
 export async function recordManualPrintDetection(printerId: string, telemetry: PublicPrinterTelemetry) {

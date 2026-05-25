@@ -34,7 +34,6 @@ const activeStatuses = ["PLANNED", "SLICING", "READY", "NEEDS_FILAMENT", "PRINTI
 export async function getProductionLoopState() {
   const [printer, plateJobs, planner, openMaintenance] = await Promise.all([
     prisma.printer.findFirst({
-      where: { status: { not: "OFFLINE" } },
       include: { currentFilament: true },
       orderBy: { updatedAt: "desc" }
     }),
