@@ -87,6 +87,24 @@ const materialDensities = {
 };
 
 const server = http.createServer(async (request, response) => {
+  if (request.method === "GET" && request.url === "/healthz") {
+    try {
+      const selected = resolveSlicer();
+      sendJson(response, 200, {
+        ok: true,
+        slicer: selected.name,
+        port,
+        host
+      });
+    } catch (error) {
+      sendJson(response, 503, {
+        ok: false,
+        error: error instanceof Error ? error.message : "No slicer configured"
+      });
+    }
+    return;
+  }
+
   if (request.method !== "POST" || !["/estimate", "/slice-plate"].includes(request.url ?? "")) {
     sendJson(response, 404, { error: "Not found" });
     return;

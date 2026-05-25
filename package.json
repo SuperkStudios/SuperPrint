@@ -16,6 +16,7 @@
     "db:seed": "tsx prisma/seed.ts",
     "docker:start": "sh scripts/docker-start.sh",
     "host-slicer": "node scripts/host-slicer-estimator.mjs",
+    "host-slicer:ensure": "node scripts/ensure-host-slicer.mjs",
     "supernode:register": "node scripts/register-supernode.mjs",
     "worker": "tsx src/workers/print-worker.ts",
     "slice-worker": "tsx src/workers/slice-worker.ts",

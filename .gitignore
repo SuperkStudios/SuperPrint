@@ -8,6 +8,7 @@ coverage
 .env.supernode
 .env.*.local
 *.log
+.superprint/
 .DS_Store
 prisma/dev.db
 /uploads
