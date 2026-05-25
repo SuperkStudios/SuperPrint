@@ -98,7 +98,7 @@ export async function getProductionLoopState() {
       plates: ordered.length,
       printing: ordered.filter((job) => job.status === "PRINTING").length,
       readyToPrint: ordered.filter((job) => job.status === "READY").length,
-      needsSlicing: ordered.filter((job) => !hasUsableSlicerEstimate(job)).length,
+      needsSlicing: ordered.filter((job) => job.status === "SLICING").length,
       readyOrders: readyOrders.length
     }
   };
@@ -185,9 +185,10 @@ export async function runProductionLoopAction(input: {
     const adapter = process.env.CENTAURI_DIRECT_START_ENABLED === "true"
       ? new CentauriPrinterControlAdapter({ controlApiUrl: printer.controlApiUrl })
       : new ManualNoopPrinterControlAdapter();
+    const printStorageKey = getPlatePrintStorageKey(plate);
     const ack = await adapter.startPrint({
       printJobId: plate.id,
-      gcodeLocalPath: resolveLocalStoragePath(plate.outputStorageKey!)
+      gcodeLocalPath: resolveLocalStoragePath(printStorageKey)
     });
     const updated = await prisma.productionPlateJob.update({
       where: { id: plate.id },
@@ -290,14 +291,6 @@ function buildNextAction(input: {
       primaryButton: "Filament Changed"
     };
   }
-  if (!hasUsableSlicerEstimate(input.nextPlate)) {
-    return {
-      type: "needs_slicing",
-      title: "Waiting for slicer estimate",
-      detail: "The plate needs real Elegoo/Orca slicer time, grams, and G-code before printing.",
-      primaryButton: "Refresh"
-    };
-  }
   if (!input.nextPlate.plateClearConfirmedAt) {
     return {
       type: "confirm_plate_clear",
@@ -309,15 +302,15 @@ function buildNextAction(input: {
   return {
     type: "send_print",
     title: "Send next plate",
-    detail: `${input.nextPlate.quantityPlanned} ${input.nextPlate.color} ${input.nextPlate.productPart.name}, ${input.nextPlate.estimatedPrintMinutes} minutes, ${input.nextPlate.estimatedGrams}g.`,
+    detail: buildPrintDetail(input.nextPlate),
     primaryButton: "Send Print"
   };
 }
 
 function assertPlateCanStart(plate: PlateWithIncludes, currentFilamentId?: string | null) {
-  if (!hasUsableSlicerEstimate(plate)) throw new Error("This plate needs a real slicer estimate and G-code before printing.");
   if (plate.filamentId && plate.filamentId !== currentFilamentId && !plate.filamentConfirmedAt) throw new Error("Confirm the correct filament is loaded before printing.");
   if (!plate.plateClearConfirmedAt) throw new Error("Confirm the build plate is clear before printing.");
+  getPlatePrintStorageKey(plate);
 }
 
 async function getPrinterForPlate(plate: PlateWithIncludes) {
@@ -374,6 +367,9 @@ function summarizeBatches(jobs: PlateWithIncludes[], currentFilament?: { id: str
 
 function serializePlate(plate: PlateWithIncludes) {
   const orderRefs = Array.isArray(plate.orderRefs) ? plate.orderRefs : [];
+  const estimateLabel = hasUsableSlicerEstimate(plate)
+    ? `${plate.estimatedPrintMinutes} min · ${plate.estimatedGrams}g`
+    : `Using uploaded file · product estimate ${plate.productPart.product.estimatedPrintMinutes} min · ${plate.productPart.product.estimatedGrams}g`;
   return {
     id: plate.id,
     status: plate.status,
@@ -388,7 +384,7 @@ function serializePlate(plate: PlateWithIncludes) {
     estimate: hasUsableSlicerEstimate(plate)
       ? { minutes: plate.estimatedPrintMinutes, grams: plate.estimatedGrams, message: plate.slicerMessage }
       : null,
-    estimateLabel: hasUsableSlicerEstimate(plate) ? `${plate.estimatedPrintMinutes} min · ${plate.estimatedGrams}g` : "Needs slicing estimate",
+    estimateLabel,
     aiPlateCheck: {
       status: plate.aiPlateCheckStatus,
       confidence: plate.aiPlateCheckConfidence,
@@ -398,6 +394,19 @@ function serializePlate(plate: PlateWithIncludes) {
     plateClearConfirmedAt: plate.plateClearConfirmedAt?.toISOString() ?? null,
     orderRefs
   };
+}
+
+function getPlatePrintStorageKey(plate: PlateWithIncludes) {
+  const key = plate.outputStorageKey ?? plate.inputStorageKey;
+  if (!key) throw new Error("This plate does not have an uploaded product file or sliced print file attached.");
+  return key;
+}
+
+function buildPrintDetail(plate: PlateWithIncludes) {
+  if (hasUsableSlicerEstimate(plate)) {
+    return `${plate.quantityPlanned} ${plate.color} ${plate.productPart.name}, ${plate.estimatedPrintMinutes} minutes, ${plate.estimatedGrams}g.`;
+  }
+  return `${plate.quantityPlanned} ${plate.color} ${plate.productPart.name}. Using the uploaded product file; product estimate is ${plate.productPart.product.estimatedPrintMinutes} minutes and ${plate.productPart.product.estimatedGrams}g.`;
 }
 
 async function getAssemblyReadyOrders(planner: Awaited<ReturnType<typeof getPartProductionPlanner>>) {
