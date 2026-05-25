@@ -17,7 +17,7 @@
     },
     "ios": {
       "supportsTablet": true,
-      "buildNumber": "13",
+      "buildNumber": "14",
       "bundleIdentifier": "studio.superk.superprint.admin",
       "associatedDomains": [
         "webcredentials:print.superk.studio",
