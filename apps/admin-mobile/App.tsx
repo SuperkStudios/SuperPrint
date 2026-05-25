@@ -2134,6 +2134,20 @@ function PartsScreen({ client, apiBaseUrl }: { client: SuperPrintClient; apiBase
               <Text style={styles.stepText}>2. Load filament, physically check the plate, and clean it.</Text>
               <Text style={styles.stepText}>3. Send the plate, wait for finish, then inventory parts.</Text>
             </View>
+            {nextPlate?.status === "PRINTING" ? (
+              <View style={styles.telemetryBlock}>
+                <View style={styles.orderTop}>
+                  <Text style={styles.rowTitle}>Printing progress</Text>
+                  <Badge label={telemetry?.printStatusLabel ?? "LIVE"} />
+                </View>
+                <View style={styles.progressTrack}>
+                  <View style={[styles.progressFill, { width: `${Math.max(3, printPercent)}%` }]} />
+                </View>
+                <Text style={styles.cardCopy}>{printPercent}% · Layer {formatLayerValue(telemetry?.currentLayer)}/{formatLayerValue(telemetry?.totalLayer)} · {formatRemainingSeconds(telemetry?.remainingSeconds)} left</Text>
+                <Text style={styles.cardCopy}>Nozzle {formatTempPair(telemetry?.nozzleTempC, telemetry?.nozzleTargetC)} · Bed {formatTempPair(telemetry?.bedTempC, telemetry?.bedTargetC)}</Text>
+                <Text style={styles.summaryText}>SuperPrint is watching printer telemetry and will unlock part removal when the printer reports complete.</Text>
+              </View>
+            ) : null}
             <Pressable
               disabled={Boolean(savingKey) || !primaryAction}
               onPress={() => primaryAction && runAction(primaryAction, nextPlate?.id)}
@@ -2158,21 +2172,6 @@ function PartsScreen({ client, apiBaseUrl }: { client: SuperPrintClient; apiBase
                 <InfoRow label="Estimate" value={nextPlate.estimateLabel} />
                 <InfoRow label="Plate check" value={nextPlate.plateClearConfirmedAt ? "Employee confirmed clear" : "Needs human check"} />
               </View>
-              {nextPlate.status === "PRINTING" ? (
-                <View style={styles.readOnlyPanel}>
-                  <View style={styles.telemetryBlock}>
-                    <View style={styles.orderTop}>
-                      <Text style={styles.rowTitle}>Printing progress</Text>
-                      <Badge label={telemetry?.printStatusLabel ?? "LIVE"} />
-                    </View>
-                    <View style={styles.progressTrack}>
-                      <View style={[styles.progressFill, { width: `${Math.max(3, printPercent)}%` }]} />
-                    </View>
-                    <Text style={styles.cardCopy}>{printPercent}% · Layer {formatLayerValue(telemetry?.currentLayer)}/{formatLayerValue(telemetry?.totalLayer)} · {formatRemainingSeconds(telemetry?.remainingSeconds)} left</Text>
-                    <Text style={styles.cardCopy}>Nozzle {formatTempPair(telemetry?.nozzleTempC, telemetry?.nozzleTargetC)} · Bed {formatTempPair(telemetry?.bedTempC, telemetry?.bedTargetC)}</Text>
-                  </View>
-                </View>
-              ) : null}
               {nextPlate.partManifest?.length ? (
                 <View style={styles.readOnlyPanel}>
                   {nextPlate.partManifest.map((part) => (
@@ -2186,11 +2185,6 @@ function PartsScreen({ client, apiBaseUrl }: { client: SuperPrintClient; apiBase
                   <Text style={styles.secondaryButtonText}>I Checked Plate</Text>
                 </Pressable>
               </View>
-              {nextPlate.status === "PRINTING" ? (
-                <View style={styles.summaryBand}>
-                  <Text style={styles.summaryText}>SuperPrint is watching printer telemetry and will unlock part removal when the printer reports complete.</Text>
-                </View>
-              ) : null}
               {nextPlate.status === "PRINTED" ? (
                 <Pressable disabled={Boolean(savingKey)} onPress={() => runAction("markPartsInventoried", nextPlate.id)} style={styles.primaryButton}>
                   <Text style={styles.primaryButtonText}>Removed Parts / Add To Inventory</Text>

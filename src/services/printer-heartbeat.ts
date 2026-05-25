@@ -13,6 +13,7 @@ import { recordPlatformEvent } from "@/services/events";
 
 const telemetryCache = new Map<string, { telemetry: PublicPrinterTelemetry | null; checkedAtMs: number; inFlight?: Promise<PublicPrinterTelemetry | null> }>();
 const TELEMETRY_CACHE_MS = 2500;
+const STALE_TELEMETRY_GRACE_MS = 60_000;
 const MANUAL_PRINT_PROGRESS_EVENT_STEP = 5;
 
 export async function refreshPrinterHeartbeat(printerId: string) {
@@ -69,8 +70,10 @@ export async function readPrinterTelemetry(printerId: string): Promise<PublicPri
   const printer = await prisma.printer.findUniqueOrThrow({ where: { id: printerId } });
   if (!printer.controlApiUrl.startsWith("ws")) return null;
   const inFlight = readCentauriTelemetry(printer.controlApiUrl, 3500).then((telemetry) => {
-    telemetryCache.set(printerId, { telemetry, checkedAtMs: Date.now() });
-    return telemetry;
+    const checkedAtMs = Date.now();
+    const fallbackTelemetry = telemetry ?? (cached?.telemetry && checkedAtMs - cached.checkedAtMs <= STALE_TELEMETRY_GRACE_MS ? cached.telemetry : null);
+    telemetryCache.set(printerId, { telemetry: fallbackTelemetry, checkedAtMs });
+    return fallbackTelemetry;
   }).finally(() => {
     const next = telemetryCache.get(printerId);
     if (next?.inFlight === inFlight) {
