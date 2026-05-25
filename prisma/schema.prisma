@@ -193,6 +193,16 @@ enum PlatformEventType {
   PRINT_FAILED
   FILAMENT_LOW
   MAINTENANCE_DUE
+  PRODUCTION_PLATE_READY
+  PRODUCTION_FILAMENT_CHANGE_REQUIRED
+  PRODUCTION_FILAMENT_CHANGE_COMPLETED
+  PRODUCTION_PLATE_CLEAR_CHECK_PASSED
+  PRODUCTION_PLATE_CLEAR_CHECK_FAILED
+  PRODUCTION_PLATE_PRINT_STARTED
+  PRODUCTION_PLATE_PRINT_COMPLETED
+  PRODUCTION_ASSEMBLY_READY
+  MOBILE_PUSH_SENT
+  MOBILE_PUSH_FAILED
   VIDEO_READY
   FACTORY_CONTRIBUTION_CREATED
   FACTORY_GOAL_FUNDED
@@ -284,6 +294,8 @@ model User {
   merchantOrders MerchantOrder[]
   events       PlatformEvent[]
   operatorPrintStarts PrintJob[] @relation("OperatorPrintStarts")
+  mobilePushTokens MobilePushToken[]
+  productionCheckpoints ProductionOperatorCheckpoint[]
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
 }
@@ -682,6 +694,11 @@ model ProductionPlateJob {
   slicerMessage          String?
   estimatedPrintMinutes  Int?
   estimatedGrams         Int?
+  filamentConfirmedAt    DateTime?
+  plateClearConfirmedAt  DateTime?
+  aiPlateCheckStatus     String?
+  aiPlateCheckConfidence Int?
+  aiPlateCheckReason     String?
   lastError              String?
   printedQuantity        Int                      @default(0)
   inventoriedQuantity    Int                      @default(0)
@@ -1114,6 +1131,36 @@ model FilamentSpool {
   pricingSnapshots OrderPricingSnapshot[]
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
+}
+
+model MobilePushToken {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token       String   @unique
+  platform    String
+  deviceName  String?
+  appVersion  String?
+  enabled     Boolean  @default(true)
+  lastSeenAt  DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId, enabled])
+}
+
+model ProductionOperatorCheckpoint {
+  id             String   @id @default(cuid())
+  plateJobId     String?
+  action         String
+  actorId        String?
+  actor          User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  printerId      String?
+  payload        Json     @default("{}")
+  createdAt      DateTime @default(now())
+
+  @@index([plateJobId, createdAt])
+  @@index([action, createdAt])
 }
 
 model PricingSettings {

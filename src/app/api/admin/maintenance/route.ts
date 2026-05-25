@@ -33,7 +33,7 @@ export async function POST(request: Request) {
   if (body.action === "generateSchedule") {
     const printers = await prisma.printer.findMany({
       include: {
-        maintenanceTasks: { where: { status: { in: ["OPEN", "IN_PROGRESS"] } } }
+        maintenanceTasks: true
       }
     });
     const planned = printers.flatMap((printer) =>
@@ -41,7 +41,8 @@ export async function POST(request: Request) {
         printerId: printer.id,
         totalRuntimeMinutes: printer.totalRuntimeMinutes,
         failedPrintCount: printer.failedPrintCount,
-        existingOpenTaskTitles: printer.maintenanceTasks.map((task) => task.title)
+        existingOpenTaskTitles: printer.maintenanceTasks.filter((task) => ["OPEN", "IN_PROGRESS"].includes(task.status)).map((task) => task.title),
+        completedTasks: printer.maintenanceTasks.filter((task) => task.status === "COMPLETED").map((task) => ({ title: task.title, completedAt: task.completedAt }))
       })
     );
     const tasks = await Promise.all(planned.map((task) => prisma.maintenanceTask.create({ data: task })));

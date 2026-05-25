@@ -4,6 +4,7 @@ export type MaintenancePlanInput = {
   totalRuntimeMinutes: number;
   failedPrintCount: number;
   existingOpenTaskTitles?: string[];
+  completedTasks?: Array<{ title: string; completedAt: Date | string | null }>;
 };
 
 export type PlannedMaintenanceTask = {
@@ -14,6 +15,11 @@ export type PlannedMaintenanceTask = {
 };
 
 const maintenanceTemplates = [
+  {
+    title: "ELEGOO 90-day motion lubrication",
+    everyDays: 90,
+    description: "Follow ELEGOO Centauri Carbon routine maintenance: power off where instructed, clean X/Y/Z plain shafts and Z lead screws, apply lubricating grease, move the axes to distribute it, and wipe away excess grease."
+  },
   {
     title: "Clean build plate and verify camera view",
     everyRuntimeMinutes: 24 * 60,
@@ -35,7 +41,10 @@ export function planMaintenanceTasks(input: MaintenancePlanInput): PlannedMainte
   const now = input.now ?? new Date();
   const existingTitles = new Set(input.existingOpenTaskTitles ?? []);
   const tasks = maintenanceTemplates
-    .filter((template) => input.totalRuntimeMinutes >= template.everyRuntimeMinutes)
+    .filter((template) => {
+      if (template.everyDays) return isCalendarMaintenanceDue(template.title, template.everyDays, input.completedTasks ?? [], now);
+      return input.totalRuntimeMinutes >= (template.everyRuntimeMinutes ?? Number.MAX_SAFE_INTEGER);
+    })
     .filter((template) => !existingTitles.has(template.title))
     .map((template) => ({
       printerId: input.printerId,
@@ -60,6 +69,9 @@ export function recommendedMaintenanceChecklist() {
   return [
     "Clear bed and remove all loose plastic",
     "Clean build plate with approved cleaner",
+    "Every 90 days: clean and grease X/Y/Z plain shafts",
+    "Every 90 days: clean and grease Z-axis lead screws",
+    "Every 90 days: clean Z-axis linear bearing holes",
     "Inspect nozzle and hotend for blobs or leaks",
     "Check belts, pulleys, fans, and filament path",
     "Clean rods/rails and lubricate only manufacturer-approved parts",
@@ -67,4 +79,13 @@ export function recommendedMaintenanceChecklist() {
     "Run bed mesh or calibration if the failure touched the bed",
     "Confirm the correct filament is loaded before resuming queue"
   ];
+}
+
+function isCalendarMaintenanceDue(title: string, everyDays: number, completedTasks: Array<{ title: string; completedAt: Date | string | null }>, now: Date) {
+  const latestCompleted = completedTasks
+    .filter((task) => task.title === title && task.completedAt)
+    .map((task) => new Date(task.completedAt!).getTime())
+    .sort((a, b) => b - a)[0];
+  if (!latestCompleted) return true;
+  return now.getTime() - latestCompleted >= everyDays * 24 * 60 * 60 * 1000;
 }

@@ -1,7 +1,9 @@
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useMemo, useState } from "react";
 import * as AppleAuthentication from "expo-apple-authentication";
+import Constants from "expo-constants";
 import * as LocalAuthentication from "expo-local-authentication";
+import * as Notifications from "expo-notifications";
 import * as SecureStore from "expo-secure-store";
 import { StripeProvider, useStripe } from "@stripe/stripe-react-native";
 import { StripeTerminalProvider, useStripeTerminal } from "@stripe/stripe-terminal-react-native";
@@ -55,6 +57,15 @@ const defaultApiBaseUrl = process.env.EXPO_PUBLIC_SUPERPRINT_URL ?? "https://pri
 const secureSessionKey = "superprint.admin.sessionCookie";
 const secureEmailKey = "superprint.admin.email";
 const secureSessionMetaKey = "superprint.admin.sessionMeta";
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+    shouldShowBanner: true,
+    shouldShowList: true
+  })
+});
 
 type ScreenKey = "dashboard" | "pos" | "orders" | "queue" | "parts" | "filament" | "merchants" | "products" | "customers" | "reports" | "settings";
 
@@ -217,6 +228,41 @@ type PartInventoryRow = {
   quantityPerUnit: number;
   product: { name: string };
   inventory: Array<{ id: string; color: string; quantityOnHand: number; location: string; notes?: string | null }>;
+};
+
+type ProductionLoopState = {
+  printer: {
+    id: string;
+    name: string;
+    modelName: string;
+    status: string;
+    cameraStatus: string;
+    currentFilament: { id: string; name: string; color: string; material: string; remainingGrams: number } | null;
+  } | null;
+  nextAction: { type: string; title: string; detail: string; primaryButton: string };
+  nextPlate: {
+    id: string;
+    status: string;
+    productName: string;
+    partName: string;
+    color: string;
+    quantityPlanned: number;
+    plateIndex: number;
+    plateCount: number;
+    material: string;
+    filament: { id: string; name: string; color: string; material: string } | null;
+    estimate: { minutes: number; grams: number; message?: string | null } | null;
+    estimateLabel: string;
+    aiPlateCheck: { status?: string | null; confidence?: number | null; reason?: string | null };
+    filamentConfirmedAt?: string | null;
+    plateClearConfirmedAt?: string | null;
+    orderRefs: Array<{ orderNumber?: string; quantity?: number; customerEmail?: string }>;
+  } | null;
+  batches: Array<{ key: string; label: string; totalQuantity: number; plateCount: number; plateIds: string[] }>;
+  readyOrders: Array<{ id: string; orderNumber: string; productName: string; customerEmail: string; fulfillmentMethod: string; shippingStatus: string }>;
+  maintenance: Array<{ id: string; title: string; description: string; printerName: string; dueAt: string; status: string }>;
+  camera: { status: string; streamUrl: string; recentFrameAvailable: boolean; lastFrameAt: string | null } | null;
+  counts: { plates: number; printing: number; readyToPrint: number; needsSlicing: number; readyOrders: number };
 };
 
 type FilamentSpool = {
@@ -457,6 +503,31 @@ const expectedPaymentOptions: Array<{ key: ExpectedPaymentType; label: string; i
   { key: "CASH", label: "Cash", icon: Banknote }
 ];
 
+async function registerForPushNotificationsAsync() {
+  if (Platform.OS === "android") {
+    await Notifications.setNotificationChannelAsync("production", {
+      name: "Production",
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: "#00A9CE"
+    });
+  }
+  const existing = await Notifications.getPermissionsAsync();
+  let granted = existing.granted || existing.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL;
+  if (!granted) {
+    const requested = await Notifications.requestPermissionsAsync({
+      ios: { allowAlert: true, allowBadge: true, allowSound: true }
+    });
+    granted = requested.granted || requested.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL;
+  }
+  if (!granted) return null;
+  const projectId = Constants.expoConfig?.extra?.eas?.projectId ?? Constants.easConfig?.projectId;
+  const token = projectId
+    ? await Notifications.getExpoPushTokenAsync({ projectId })
+    : await Notifications.getExpoPushTokenAsync();
+  return token.data;
+}
+
 export default function App() {
   const [screen, setScreen] = useState<ScreenKey>("dashboard");
   const systemScheme = useColorScheme();
@@ -496,6 +567,25 @@ export default function App() {
     const response = await client.post<{ secret: string }>("/api/admin/pos/terminal/connection-token", {});
     return response.secret;
   }, [client]);
+
+  useEffect(() => {
+    if (!sessionInfo?.signedIn || !sessionInfo.user?.adminAllowed || !settings.adminCookie) return;
+    let cancelled = false;
+    registerForPushNotificationsAsync()
+      .then(async (token) => {
+        if (!token || cancelled) return;
+        await client.post("/api/admin/mobile-push-token", {
+          token,
+          platform: Platform.OS,
+          deviceName: Constants.deviceName ?? null,
+          appVersion: Constants.expoConfig?.version ?? null
+        });
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [client, sessionInfo?.signedIn, sessionInfo?.user?.adminAllowed, settings.adminCookie]);
 
   useEffect(() => {
     let cancelled = false;
@@ -946,7 +1036,7 @@ function AppShell({
         {screen === "orders" && <OrdersScreen client={client} />}
         {screen === "settings" && <SettingsScreen settings={settings} setSettings={setSettings} sessionInfo={sessionInfo} sessionMeta={sessionMeta} onSignOut={onSignOut} />}
         {screen === "queue" && <QueueScreen client={client} />}
-        {screen === "parts" && <PartsScreen client={client} />}
+        {screen === "parts" && <PartsScreen client={client} apiBaseUrl={settings.apiBaseUrl} />}
         {screen === "filament" && <FilamentScreen client={client} />}
         {screen === "merchants" && <MerchantsScreen client={client} />}
         {screen === "products" && <ProductsScreen client={client} />}
@@ -1937,27 +2027,19 @@ function QueueScreen({ client }: { client: SuperPrintClient }) {
   );
 }
 
-function PartsScreen({ client }: { client: SuperPrintClient }) {
-  const [planner, setPlanner] = useState<PartPlannerRow[]>([]);
-  const [parts, setParts] = useState<PartInventoryRow[]>([]);
-  const [orders, setOrders] = useState<AdminOrder[]>([]);
-  const [mode, setMode] = useState<"print" | "build" | "deliver">("print");
+function PartsScreen({ client, apiBaseUrl }: { client: SuperPrintClient; apiBaseUrl: string }) {
+  const [state, setState] = useState<ProductionLoopState | null>(null);
+  const [mode, setMode] = useState<"production" | "build" | "maintenance">("production");
   const [loading, setLoading] = useState(false);
   const [savingKey, setSavingKey] = useState("");
-  const [deliveryPaymentRefs, setDeliveryPaymentRefs] = useState<Record<string, string>>({});
   const [message, setMessage] = useState("Sign in in Settings, then refresh action items.");
 
   async function load() {
     setLoading(true);
     try {
-      const [response, orderResponse] = await Promise.all([
-        client.get<{ planner: PartPlannerRow[]; parts: PartInventoryRow[] }>("/api/admin/parts"),
-        client.get<{ orders: AdminOrder[] }>("/api/admin/orders")
-      ]);
-      setPlanner(response.planner);
-      setParts(response.parts);
-      setOrders(orderResponse.orders);
-      setMessage(response.planner.length || response.parts.length || orderResponse.orders.length ? "" : "No action items found yet.");
+      const response = await client.get<ProductionLoopState>("/api/admin/production-loop");
+      setState(response);
+      setMessage(response.counts.plates || response.readyOrders.length || response.maintenance.length ? "" : "No production work is waiting.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not load action items.");
     } finally {
@@ -1965,69 +2047,40 @@ function PartsScreen({ client }: { client: SuperPrintClient }) {
     }
   }
 
-  async function logPrinted(row: PartPlannerRow, amount: number) {
-    const quantity = Math.max(1, amount);
-    setSavingKey(`${row.key}:${quantity}`);
-    setMessage(`Logging ${quantity} ${row.color} ${row.partName}...`);
+  async function runAction(action: string, plateJobId?: string, orderId?: string) {
+    setSavingKey(`${action}:${plateJobId ?? orderId ?? "loop"}`);
+    setMessage("Updating production...");
     try {
-      await client.post("/api/admin/parts", {
-        productPartId: row.partId,
-        color: row.color,
-        quantityDelta: quantity,
-        location: "Fresh prints",
-        notes: `Logged from SuperPrint Admin action items for ${row.productName}`
-      });
-      setMessage(`Logged ${quantity} printed ${row.partName}.`);
-      await load();
+      const response = await client.post<{ state: ProductionLoopState; result?: { status: string; reason: string } }>("/api/admin/production-loop", { action, plateJobId, orderId });
+      setState(response.state);
+      setMessage(response.result ? `${response.result.status}: ${response.result.reason}` : "Production updated.");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Could not log printed parts.");
+      setMessage(error instanceof Error ? error.message : "Could not update production.");
     } finally {
       setSavingKey("");
     }
   }
 
-  async function updateOrder(
-    order: AdminOrder,
-    action: "markPacking" | "markShipped" | "markDelivered" | "markPaidCashDelivered" | "markPaidReferenceDelivered",
-    paymentReference?: string
-  ) {
-    setSavingKey(`${order.id}:${action}`);
-    setMessage(`Updating ${order.orderNumber}...`);
-    try {
-      await client.post("/api/admin/orders", { orderId: order.id, action, paymentReference });
-      setMessage(`${order.orderNumber} updated.`);
-      await load();
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Could not update order.");
-    } finally {
-      setSavingKey("");
-    }
-  }
-
-  const printRows = planner.filter((row) => row.quantityToPrint > 0).sort(sortPlannerRows);
-  const colorGroups = groupPlannerByColor(printRows);
-  const readyOrderNumbers = new Set(planner.filter((row) => row.quantityToPrint === 0).flatMap((row) => row.orders.map((order) => order.orderNumber)));
-  const activeOrders = orders.filter((order) => order.orderSource !== "PAST_IMPORT");
-  const readyToBuild = activeOrders.filter((order) => readyOrderNumbers.has(order.orderNumber) || orderItemsArePrinted(order)).filter((order) => !["PACKING", "SHIPPED", "DELIVERED"].includes(order.shippingStatus ?? ""));
-  const deliveryOrders = activeOrders.filter((order) => ["PACKING", "LABEL_READY", "LABEL_PRINTED", "SHIPPED"].includes(order.shippingStatus ?? "") && order.shippingStatus !== "DELIVERED");
-  const toPrint = printRows.reduce((total, row) => total + row.quantityToPrint, 0);
-  const plates = printRows.reduce((total, row) => total + row.suggestedPlateCount, 0);
+  const nextPlate = state?.nextPlate ?? null;
+  const nextAction = state?.nextAction ?? null;
+  const cameraUrl = state?.camera?.streamUrl ? `${apiBaseUrl.replace(/\/$/, "")}${state.camera.streamUrl}` : null;
+  const primaryAction = resolveProductionButtonAction(nextAction?.type);
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.screenBody}>
-      <ScreenHeader title="Action Items" detail="Walk through what to print, build, and deliver without doing the math in your head." />
+      <ScreenHeader title="Action Items" detail="Run production from loaded filament to packed orders." />
       <LoadButton title="Refresh Action Items" loading={loading} onPress={load} />
       <View style={styles.metricRow}>
-        <Metric label="Print" value={String(toPrint)} />
-        <Metric label="Plates" value={String(plates)} />
-        <Metric label="Build" value={String(readyToBuild.length)} />
-        <Metric label="Deliver" value={String(deliveryOrders.length)} />
+        <Metric label="Plates" value={String(state?.counts.plates ?? 0)} />
+        <Metric label="Ready" value={String(state?.counts.readyToPrint ?? 0)} />
+        <Metric label="Slicing" value={String(state?.counts.needsSlicing ?? 0)} />
+        <Metric label="Build" value={String(state?.counts.readyOrders ?? 0)} />
       </View>
       <View style={styles.segment}>
         {([
-          ["print", "Print"],
+          ["production", "Produce"],
           ["build", "Build"],
-          ["deliver", "Deliver"]
+          ["maintenance", "Maintain"]
         ] as const).map(([key, label]) => (
           <Pressable key={key} onPress={() => setMode(key)} style={[styles.segmentItem, mode === key && styles.segmentItemActive]}>
             <Text style={[styles.segmentText, mode === key && styles.segmentTextActive]}>{label}</Text>
@@ -2035,133 +2088,136 @@ function PartsScreen({ client }: { client: SuperPrintClient }) {
         ))}
       </View>
 
-      {mode === "print" ? (
-        colorGroups.length ? colorGroups.map((group) => (
-          <Card key={group.color}>
+      {mode === "production" ? (
+        <>
+          <Card>
             <View style={styles.orderTop}>
-              <View>
-                <Text style={styles.cardTitle}>{group.color}</Text>
-                <Text style={styles.cardCopy}>Print highest quantity first, then log parts as they come off the plate.</Text>
+              <View style={styles.grow}>
+                <Text style={styles.cardTitle}>{nextAction?.title ?? "Start production"}</Text>
+                <Text style={styles.cardCopy}>{nextAction?.detail ?? message}</Text>
               </View>
-              <Badge label={`${group.quantityToPrint} parts`} />
+              {state?.printer ? <Badge label={state.printer.name} /> : <Badge label="No printer" />}
             </View>
-            {group.rows.map((row) => (
-              <View key={row.key} style={styles.actionItem}>
-                <View style={styles.grow}>
-                  <Text style={styles.rowTitle}>{row.productName} · {row.partName}</Text>
-                  <Text style={styles.cardCopy}>Need {row.requiredQuantity}, stored {row.quantityOnHand}, print {row.quantityToPrint} · {row.suggestedPlateCount} plate{row.suggestedPlateCount === 1 ? "" : "s"}</Text>
-                  {row.plates?.length ? (
-                    <Text style={styles.cardCopy}>{row.plates.map((plate) => `Plate ${plate.plateIndex}/${plate.plateCount}: ${plate.quantity}/${plate.maxPerPlate}${plate.isFull ? " full" : ""}`).join(" · ")}</Text>
-                  ) : null}
-                  <Text style={styles.cardCopy}>{row.orders.map((order) => `${order.orderNumber} x${order.quantity}`).join(", ")}</Text>
-                </View>
-                <View style={styles.actionButtons}>
-                  <Pressable disabled={Boolean(savingKey)} onPress={() => logPrinted(row, 1)} style={styles.compactButton}>
-                    <Text style={styles.compactButtonText}>+1</Text>
-                  </Pressable>
-                  <Pressable disabled={Boolean(savingKey)} onPress={() => logPrinted(row, row.quantityToPrint)} style={styles.compactButton}>
-                    <Text style={styles.compactButtonText}>Printed</Text>
-                  </Pressable>
-                </View>
-              </View>
-            ))}
+            <View style={styles.stepList}>
+              <Text style={styles.stepText}>1. Print the biggest color batch first.</Text>
+              <Text style={styles.stepText}>2. Confirm filament, camera safety, and clean plate.</Text>
+              <Text style={styles.stepText}>3. Send the plate, wait for finish, then inventory parts.</Text>
+            </View>
+            <Pressable
+              disabled={Boolean(savingKey) || !primaryAction}
+              onPress={() => primaryAction && runAction(primaryAction, nextPlate?.id)}
+              style={[styles.primaryButton, (!primaryAction || Boolean(savingKey)) && styles.disabled]}
+            >
+              {savingKey ? <ActivityIndicator color={palette.actionText} /> : <Text style={styles.primaryButtonText}>{nextAction?.primaryButton ?? "Start Production"}</Text>}
+            </Pressable>
           </Card>
-        )) : <Card><Text style={styles.cardCopy}>{message || "Nothing needs printing. Move to Build."}</Text></Card>
+
+          {nextPlate ? (
+            <Card>
+              <View style={styles.orderTop}>
+                <View style={styles.grow}>
+                  <Text style={styles.cardTitle}>{nextPlate.color} {nextPlate.partName}</Text>
+                  <Text style={styles.cardCopy}>{nextPlate.productName} · plate {nextPlate.plateIndex}/{nextPlate.plateCount} · {nextPlate.quantityPlanned} part{nextPlate.quantityPlanned === 1 ? "" : "s"}</Text>
+                </View>
+                <Badge label={nextPlate.status} />
+              </View>
+              <View style={styles.readOnlyPanel}>
+                <InfoRow label="Filament needed" value={nextPlate.filament?.name ?? `${nextPlate.color} ${nextPlate.material}`} />
+                <InfoRow label="Currently loaded" value={state?.printer?.currentFilament?.name ?? "Unknown"} />
+                <InfoRow label="Estimate" value={nextPlate.estimateLabel} />
+                <InfoRow label="AI plate check" value={nextPlate.aiPlateCheck.status ? `${nextPlate.aiPlateCheck.status}${nextPlate.aiPlateCheck.confidence ? ` ${nextPlate.aiPlateCheck.confidence}%` : ""}` : "Not checked"} />
+              </View>
+              {nextPlate.aiPlateCheck.reason ? <Text style={styles.cardCopy}>{nextPlate.aiPlateCheck.reason}</Text> : null}
+              {nextPlate.orderRefs.length ? <Text style={styles.cardCopy}>Orders: {nextPlate.orderRefs.map((order) => `${order.orderNumber ?? "Order"} x${order.quantity ?? 1}`).join(", ")}</Text> : null}
+              <View style={styles.actionButtons}>
+                <Pressable disabled={Boolean(savingKey)} onPress={() => runAction("runAiPlateCheck", nextPlate.id)} style={styles.secondaryButton}>
+                  <Text style={styles.secondaryButtonText}>AI Check</Text>
+                </Pressable>
+                <Pressable disabled={Boolean(savingKey)} onPress={() => runAction("confirmPlateClear", nextPlate.id)} style={styles.secondaryButton}>
+                  <Text style={styles.secondaryButtonText}>Plate Clear</Text>
+                </Pressable>
+              </View>
+              {nextPlate.status === "PRINTING" ? (
+                <View style={styles.inline}>
+                  <Pressable disabled={Boolean(savingKey)} onPress={() => runAction("markPrintFinished", nextPlate.id)} style={[styles.primaryButton, styles.grow]}>
+                    <Text style={styles.primaryButtonText}>Print Finished</Text>
+                  </Pressable>
+                  <Pressable disabled={Boolean(savingKey)} onPress={() => runAction("markPartsInventoried", nextPlate.id)} style={[styles.secondaryButton, styles.grow]}>
+                    <Text style={styles.secondaryButtonText}>Parts Removed</Text>
+                  </Pressable>
+                </View>
+              ) : null}
+              {nextPlate.status === "PRINTED" ? (
+                <Pressable disabled={Boolean(savingKey)} onPress={() => runAction("markPartsInventoried", nextPlate.id)} style={styles.primaryButton}>
+                  <Text style={styles.primaryButtonText}>Removed Parts / Add To Inventory</Text>
+                </Pressable>
+              ) : null}
+            </Card>
+          ) : null}
+
+          {cameraUrl ? (
+            <Card>
+              <View style={styles.orderTop}>
+                <View>
+                  <Text style={styles.cardTitle}>Build plate camera</Text>
+                  <Text style={styles.cardCopy}>{state?.camera?.recentFrameAvailable ? "Fresh SuperNode frame available." : "Waiting for a fresh SuperNode frame."}</Text>
+                </View>
+                <Badge label={state?.camera?.status ?? "Camera"} />
+              </View>
+              <Image source={{ uri: cameraUrl }} style={styles.cameraPreview} resizeMode="cover" />
+            </Card>
+          ) : null}
+
+          {state?.batches.length ? (
+            <Card>
+              <Text style={styles.cardTitle}>Color order</Text>
+              {state.batches.map((batch, index) => (
+                <View key={batch.key} style={styles.actionItem}>
+                  <Text style={styles.rowTitle}>{index + 1}. {batch.label}</Text>
+                  <Text style={styles.cardCopy}>{batch.totalQuantity} parts · {batch.plateCount} plate{batch.plateCount === 1 ? "" : "s"}</Text>
+                </View>
+              ))}
+            </Card>
+          ) : null}
+        </>
       ) : null}
 
       {mode === "build" ? (
-        readyToBuild.length ? readyToBuild.map((order) => (
+        state?.readyOrders.length ? state.readyOrders.map((order) => (
           <Card key={order.id}>
             <View style={styles.orderTop}>
               <View style={styles.grow}>
                 <Text style={styles.cardTitle}>{order.orderNumber}</Text>
-                <Text style={styles.cardCopy}>{order.customer?.email ?? "No customer email"} · {order.product?.name ?? "Order"}</Text>
+                <Text style={styles.cardCopy}>{order.customerEmail} · {order.productName}</Text>
               </View>
               <Badge label={order.fulfillmentMethod ?? "FULFILL"} />
             </View>
             <View style={styles.stepList}>
               <Text style={styles.stepText}>1. Pull printed parts by color.</Text>
-              <Text style={styles.stepText}>2. Assemble and quality check.</Text>
-              <Text style={styles.stepText}>3. Mark ready for pickup or packing.</Text>
+              <Text style={styles.stepText}>2. Assemble the product and check quality.</Text>
+              <Text style={styles.stepText}>3. Put it in packaging or pickup area.</Text>
             </View>
-            <Pressable disabled={Boolean(savingKey)} onPress={() => updateOrder(order, "markPacking")} style={styles.primaryButton}>
+            <Pressable disabled={Boolean(savingKey)} onPress={() => runAction("markOrderPacked", undefined, order.id)} style={styles.primaryButton}>
               <Text style={styles.primaryButtonText}>{order.fulfillmentMethod === "PICKUP" ? "Ready for Pickup" : "Built / Pack It"}</Text>
             </Pressable>
           </Card>
         )) : <Card><Text style={styles.cardCopy}>{message || "No orders are ready to build yet."}</Text></Card>
       ) : null}
 
-      {mode === "deliver" ? (
-        deliveryOrders.length ? deliveryOrders.map((order) => {
-          const balanceDue = order.balanceDueCents ?? Math.max(0, order.totalCents - (order.amountPaidCents ?? 0));
-          const needsPayment = order.paymentStatus !== "PAID" || balanceDue > 0;
-          const paymentRef = deliveryPaymentRefs[order.id] ?? "";
-          return (
-            <Card key={order.id}>
-              <View style={styles.orderTop}>
-                <View style={styles.grow}>
-                  <Text style={styles.cardTitle}>{order.orderNumber}</Text>
-                  <Text style={styles.cardCopy}>{order.customer?.email ?? "No customer email"} · {order.shippingStatus ?? "Ready"}</Text>
-                </View>
-                <Badge label={order.fulfillmentMethod ?? "FULFILL"} />
+      {mode === "maintenance" ? (
+        state?.maintenance.length ? state.maintenance.map((task) => (
+          <Card key={task.id}>
+            <View style={styles.orderTop}>
+              <View style={styles.grow}>
+                <Text style={styles.cardTitle}>{task.title}</Text>
+                <Text style={styles.cardCopy}>{task.printerName} · {task.status}</Text>
               </View>
-              <View style={styles.badgeRow}>
-                <Badge label={order.paymentStatus} />
-                <Badge label={needsPayment ? `Due ${money(balanceDue || order.totalCents)}` : "Paid"} />
-              </View>
-              {needsPayment ? (
-                <>
-                  <Field
-                    label="Stripe / card reference"
-                    value={paymentRef}
-                    onChangeText={(value) => setDeliveryPaymentRefs((current) => ({ ...current, [order.id]: value }))}
-                    autoCapitalize="none"
-                  />
-                  <View style={styles.inline}>
-                    <Pressable
-                      disabled={Boolean(savingKey)}
-                      onPress={() => updateOrder(order, "markPaidCashDelivered", "Cash on delivery")}
-                      style={[styles.secondaryButton, styles.grow]}
-                    >
-                      <Text style={styles.secondaryButtonText}>Cash + Delivered</Text>
-                    </Pressable>
-                    <Pressable
-                      disabled={Boolean(savingKey) || !paymentRef.trim()}
-                      onPress={() => updateOrder(order, "markPaidReferenceDelivered", paymentRef.trim())}
-                      style={[styles.primaryButton, styles.grow, !paymentRef.trim() && styles.disabled]}
-                    >
-                      <Text style={styles.primaryButtonText}>Ref + Delivered</Text>
-                    </Pressable>
-                  </View>
-                </>
-              ) : (
-                <View style={styles.inline}>
-                  {order.fulfillmentMethod === "SHIP" && order.shippingStatus !== "SHIPPED" ? (
-                    <Pressable disabled={Boolean(savingKey)} onPress={() => updateOrder(order, "markShipped")} style={[styles.secondaryButton, styles.grow]}>
-                      <Text style={styles.secondaryButtonText}>Shipped</Text>
-                    </Pressable>
-                  ) : null}
-                  <Pressable disabled={Boolean(savingKey)} onPress={() => updateOrder(order, "markDelivered")} style={[styles.primaryButton, styles.grow]}>
-                    <Text style={styles.primaryButtonText}>Delivered</Text>
-                  </Pressable>
-                </View>
-              )}
-            </Card>
-          );
-        }) : <Card><Text style={styles.cardCopy}>{message || "No deliveries are waiting."}</Text></Card>
+              <Badge label="Due" />
+            </View>
+            <Text style={styles.cardCopy}>{task.description}</Text>
+          </Card>
+        )) : <Card><Text style={styles.cardCopy}>No maintenance is due. ELEGOO motion lubrication is scheduled as a 90-day check, not every print.</Text></Card>
       ) : null}
-
-      {mode === "print" && parts.length ? parts.slice(0, 6).map((part) => (
-        <Card key={part.id}>
-          <Text style={styles.cardTitle}>{part.product.name} · {part.name}</Text>
-          <Text style={styles.cardCopy}>{part.role} · slot {part.colorSlotIndex + 1} · {part.quantityPerUnit} per item</Text>
-          <View style={styles.badgeRow}>
-            {part.inventory.length ? part.inventory.map((item) => (
-              <Badge key={item.id} label={`${item.color}: ${item.quantityOnHand} @ ${item.location}`} />
-            )) : <Badge label="No stock logged" />}
-          </View>
-        </Card>
-      )) : null}
       {message ? <Text style={styles.message}>{message}</Text> : null}
     </ScrollView>
   );
@@ -3335,6 +3391,16 @@ function orderItemsArePrinted(order: AdminOrder) {
   return order.items.every((item) => (item.printedQuantity ?? 0) >= item.quantity);
 }
 
+function resolveProductionButtonAction(type?: string) {
+  if (type === "start_production") return "startProduction";
+  if (type === "change_filament") return "confirmFilamentChanged";
+  if (type === "ai_plate_check") return "runAiPlateCheck";
+  if (type === "confirm_plate_clear") return "confirmPlateClear";
+  if (type === "send_print") return "sendPlateToPrinter";
+  if (type === "printing") return "markPrintFinished";
+  return null;
+}
+
 function productFor(line: LineDraft, products: ProductOption[]) {
   return products.find((product) => product.id === line.productId) ?? products[0];
 }
@@ -3598,6 +3664,7 @@ function createStyles(palette: ThemePalette) {
   spoolRow: { borderTopWidth: 1, borderTopColor: palette.line, paddingTop: 12, gap: 10 },
   progressTrack: { height: 10, borderRadius: 999, backgroundColor: palette.secondaryBg, overflow: "hidden" },
   progressFill: { height: 10, borderRadius: 999, backgroundColor: palette.cyan },
+  cameraPreview: { width: "100%", height: 210, borderRadius: 8, backgroundColor: palette.field },
   actionButtons: { flexDirection: "row", gap: 8 },
   compactButton: { minHeight: 38, borderRadius: 8, backgroundColor: palette.actionBg, alignItems: "center", justifyContent: "center", paddingHorizontal: 14 },
   compactButtonText: { color: palette.actionText, fontSize: 12, fontWeight: "900" },

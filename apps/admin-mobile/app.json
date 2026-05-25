@@ -88,6 +88,13 @@
           "locationWhenInUsePermission": "Location access is required for Stripe Terminal readers and Tap to Pay."
         }
       ],
+      [
+        "expo-notifications",
+        {
+          "defaultChannel": "production",
+          "enableBackgroundRemoteNotifications": false
+        }
+      ],
       "expo-secure-store"
     ]
   }

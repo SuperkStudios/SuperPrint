@@ -3,6 +3,7 @@ import path from "node:path";
 import { Prisma } from "@prisma/client";
 import { buildLocalStorageKey, resolveLocalStoragePath } from "@/lib/storage";
 import { prisma } from "@/lib/prisma";
+import { hasUsableSlicerEstimate, planProductionPlateOrder } from "@/domain/production-loop";
 import { getPartProductionPlanner } from "./part-planner";
 import { authenticateSuperNode } from "./supernode-jobs";
 
@@ -60,7 +61,7 @@ export async function getProductionPlateDashboard() {
       orderBy: [{ status: "asc" }, { createdAt: "asc" }]
     })
   ]);
-  const next = plateJobs.find((job) => ["PLANNED", "SLICING", "READY", "NEEDS_FILAMENT"].includes(job.status));
+  const next = orderProductionPlateJobs(plateJobs).find((job) => ["PLANNED", "SLICING", "READY", "NEEDS_FILAMENT"].includes(job.status));
   return { planner, plateJobs, next };
 }
 
@@ -73,16 +74,16 @@ export async function listProductionPlateJobsForNode(nodeId: string, bearer: str
   const jobs = await prisma.productionPlateJob.findMany({
     where: { status: "PLANNED" },
     include: { productPart: { include: { product: true } }, filament: true },
-    orderBy: [{ createdAt: "asc" }],
-    take: 2
+    orderBy: [{ createdAt: "asc" }]
   });
-  if (jobs.length) {
+  const planned = orderProductionPlateJobs(jobs).slice(0, 2);
+  if (planned.length) {
     await prisma.productionPlateJob.updateMany({
-      where: { id: { in: jobs.map((job) => job.id) }, status: "PLANNED" },
+      where: { id: { in: planned.map((job) => job.id) }, status: "PLANNED" },
       data: { status: "SLICING", lastError: null }
     });
   }
-  return jobs.map((job) => ({
+  return planned.map((job) => ({
     id: job.id,
     productName: job.productPart.product.name,
     partName: job.productPart.name,
@@ -117,6 +118,9 @@ export async function acknowledgeProductionPlateSliced(input: {
   slicerMessage?: string | null;
 }) {
   await authenticateSuperNode(input.nodeId, input.bearer);
+  if (!input.gcodeBase64 || !input.estimatedPrintMinutes || !input.estimatedGrams) {
+    throw new Error("Sliced production plates must include G-code, estimated minutes, and estimated grams before they can be printed.");
+  }
   const outputStorageKey = input.gcodeBase64 ? buildLocalStorageKey("sliced", `${input.plateJobId}.gcode`) : undefined;
   if (outputStorageKey && input.gcodeBase64) {
     const outputPath = resolveLocalStoragePath(outputStorageKey);
@@ -144,6 +148,10 @@ export async function updateProductionPlateJobStatus(input: {
   inventoriedQuantity?: number;
   lastError?: string | null;
 }) {
+  const existing = await prisma.productionPlateJob.findUnique({ where: { id: input.id } });
+  if (input.status === "READY" && existing && !hasUsableSlicerEstimate(existing)) {
+    throw new Error("Plate needs a real slicer estimate and G-code before it can be marked ready.");
+  }
   return prisma.productionPlateJob.update({
     where: { id: input.id },
     data: {
@@ -155,6 +163,31 @@ export async function updateProductionPlateJobStatus(input: {
       completedAt: ["PRINTED", "INVENTORIED"].includes(input.status) ? new Date() : undefined
     }
   });
+}
+
+export function orderProductionPlateJobs<T extends {
+  id: string;
+  filamentId: string | null;
+  color: string;
+  quantityPlanned: number;
+  createdAt: Date;
+  filament?: { material: string; color: string } | null;
+}>(jobs: T[], currentFilament?: { id?: string | null; material?: string | null; color?: string | null } | null) {
+  const plan = planProductionPlateOrder({
+    currentFilamentId: currentFilament?.id,
+    currentMaterial: currentFilament?.material,
+    currentColor: currentFilament?.color,
+    plates: jobs.map((job) => ({
+      id: job.id,
+      filamentId: job.filamentId,
+      material: job.filament?.material,
+      color: job.color,
+      quantityPlanned: job.quantityPlanned,
+      createdAt: job.createdAt
+    }))
+  });
+  const rank = new Map(plan.orderedPlateIds.map((id, index) => [id, index]));
+  return [...jobs].sort((a, b) => (rank.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (rank.get(b.id) ?? Number.MAX_SAFE_INTEGER));
 }
 
 function chooseFilamentForColor<T extends { id: string; color: string; active: boolean }>(filaments: T[], color: string) {
