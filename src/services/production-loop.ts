@@ -76,6 +76,7 @@ export async function getProductionLoopState() {
       : null,
     nextAction: buildNextAction({ printer, nextPlate, latestCameraFrame, readyOrders, openMaintenance }),
     nextPlate: nextPlate ? serializePlate(nextPlate) : null,
+    plates: ordered.map(serializePlate),
     batches: summarizeBatches(ordered, printer?.currentFilament),
     readyOrders,
     maintenance: openMaintenance.map((task) => ({

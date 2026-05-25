@@ -259,12 +259,15 @@ type ProductionLoopState = {
     partManifest?: Array<{ productPartId: string; partName: string; color: string; quantityPerProduct: number; quantityPlanned: number }>;
     orderRefs: Array<{ orderNumber?: string; quantity?: number; customerEmail?: string }>;
   } | null;
+  plates?: ProductionPlate[];
   batches: Array<{ key: string; label: string; totalQuantity: number; plateCount: number; plateIds: string[] }>;
   readyOrders: Array<{ id: string; orderNumber: string; productName: string; customerEmail: string; fulfillmentMethod: string; shippingStatus: string }>;
   maintenance: Array<{ id: string; title: string; description: string; printerName: string; dueAt: string; status: string }>;
   camera: { status: string; streamUrl: string; recentFrameAvailable: boolean; lastFrameAt: string | null } | null;
   counts: { plates: number; printing: number; readyToPrint: number; needsSlicing: number; readyOrders: number };
 };
+
+type ProductionPlate = NonNullable<ProductionLoopState["nextPlate"]>;
 
 type FilamentSpool = {
   id: string;
@@ -1964,16 +1967,16 @@ function OrdersScreen({ client }: { client: SuperPrintClient }) {
 }
 
 function QueueScreen({ client }: { client: SuperPrintClient }) {
-  const [jobs, setJobs] = useState<AdminJob[]>([]);
+  const [state, setState] = useState<ProductionLoopState | null>(null);
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState("Sign in in Settings, then refresh the production queue.");
+  const [message, setMessage] = useState("Loading production queue...");
 
   async function load() {
     setLoading(true);
     try {
-      const response = await client.get<{ jobs: AdminJob[] }>("/api/admin/queue");
-      setJobs(response.jobs);
-      setMessage(response.jobs.length ? "" : "No print jobs in the queue yet.");
+      const response = await client.get<ProductionLoopState>("/api/admin/production-loop");
+      setState(response);
+      setMessage(response.plates?.length ? "" : "No production plates in the queue yet.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not load queue.");
     } finally {
@@ -1981,47 +1984,50 @@ function QueueScreen({ client }: { client: SuperPrintClient }) {
     }
   }
 
-  const plateBatches = buildQueuePlateBatches(jobs.filter((job) => job.status === "QUEUED"));
+  useEffect(() => {
+    void load();
+  }, [client]);
+
+  const plates = state?.plates ?? [];
+  const orderGroups = buildProductionOrderGroups(plates);
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.screenBody}>
       <ScreenHeader title="Queue" detail="Live jobs by status, plate order, material, and customer." />
       <LoadButton title="Refresh Queue" loading={loading} onPress={load} />
-      {plateBatches.length ? (
+      {plates.length ? (
         <Card>
           <View style={styles.orderTop}>
             <View>
               <Text style={styles.cardTitle}>Build plates</Text>
-              <Text style={styles.cardCopy}>Same product and filament stay together until a plate is full.</Text>
+              <Text style={styles.cardCopy}>Each plate is one filament color. Orders can split across plates.</Text>
             </View>
-            <Badge label={`${plateBatches.length} plate${plateBatches.length === 1 ? "" : "s"}`} />
+            <Badge label={`${plates.length} plate${plates.length === 1 ? "" : "s"}`} />
           </View>
-          {plateBatches.map((batch) => (
-            <View key={batch.key} style={styles.actionItem}>
+          {plates.map((plate) => (
+            <View key={plate.id} style={styles.actionItem}>
               <View style={styles.grow}>
-                <Text style={styles.rowTitle}>{batch.productName}</Text>
-                <Text style={styles.cardCopy}>{batch.filamentLabel} · Plate {batch.plateIndex}/{batch.plateCount}: {batch.count}/{batch.max} product{batch.max === 1 ? "" : "s"}{batch.isFull ? " · full" : ""}</Text>
-                <Text style={styles.cardCopy}>Queue #{batch.positions.join(", #")}</Text>
+                <Text style={styles.rowTitle}>{plate.color} {plate.productName}</Text>
+                <Text style={styles.cardCopy}>Plate {plate.plateIndex}/{plate.plateCount}: {plate.quantityPlanned} product{plate.quantityPlanned === 1 ? "" : "s"} · {plate.status}</Text>
+                {plate.partManifest?.length ? <Text style={styles.cardCopy}>{plate.partManifest.map((part) => `${part.quantityPlanned} ${part.partName}`).join(", ")}</Text> : null}
+                {plate.orderRefs.length ? <Text style={styles.cardCopy}>Orders: {plate.orderRefs.map((order) => `${order.orderNumber ?? "Order"} x${order.quantity ?? 1}`).join(", ")}</Text> : null}
               </View>
             </View>
           ))}
         </Card>
       ) : null}
-      {jobs.length ? jobs.map((job) => (
-        <Card key={job.id}>
-          <View style={styles.orderTop}>
-            <View style={styles.grow}>
-              <Text style={styles.cardTitle}>{job.order?.orderNumber ?? "Print job"}</Text>
-              <Text style={styles.cardCopy}>{job.order?.product?.name ?? job.order?.customer?.email ?? "Unassigned job"}</Text>
+      {orderGroups.length ? orderGroups.map((order) => (
+        <Card key={order.orderNumber}>
+          <Text style={styles.cardTitle}>{order.orderNumber}</Text>
+          <Text style={styles.cardCopy}>{order.productName}</Text>
+          {order.plates.map((plate) => (
+            <View key={plate.key} style={styles.actionItem}>
+              <View style={styles.grow}>
+                <Text style={styles.rowTitle}>{plate.color} plate · {plate.quantity} product{plate.quantity === 1 ? "" : "s"}</Text>
+                {plate.parts.map((part) => <Text key={`${plate.key}:${part.partName}`} style={styles.cardCopy}>{part.quantity} {part.partName}</Text>)}
+              </View>
             </View>
-            <Text style={styles.money}>{job.queuePosition ? `#${job.queuePosition}` : job.status}</Text>
-          </View>
-          <View style={styles.badgeRow}>
-            <Badge label={job.status} />
-            {job.filament ? <Badge label={`${job.filament.color} ${job.filament.material}`} /> : null}
-            {job.printer?.publicName ? <Badge label={job.printer.publicName} /> : null}
-            {job.etaMinutes ? <Badge label={`${job.etaMinutes}m`} /> : null}
-          </View>
+          ))}
         </Card>
       )) : <Card><Text style={styles.cardCopy}>{message}</Text></Card>}
     </ScrollView>
@@ -2033,7 +2039,7 @@ function PartsScreen({ client, apiBaseUrl }: { client: SuperPrintClient; apiBase
   const [mode, setMode] = useState<"production" | "build" | "maintenance">("production");
   const [loading, setLoading] = useState(false);
   const [savingKey, setSavingKey] = useState("");
-  const [message, setMessage] = useState("Sign in in Settings, then refresh action items.");
+  const [message, setMessage] = useState("Loading action items...");
 
   async function load() {
     setLoading(true);
@@ -2061,6 +2067,10 @@ function PartsScreen({ client, apiBaseUrl }: { client: SuperPrintClient; apiBase
       setSavingKey("");
     }
   }
+
+  useEffect(() => {
+    void load();
+  }, [client]);
 
   const nextPlate = state?.nextPlate ?? null;
   const nextAction = state?.nextAction ?? null;
@@ -3376,6 +3386,37 @@ function buildQueuePlateBatches(jobs: AdminJob[]) {
   });
 }
 
+function buildProductionOrderGroups(plates: ProductionPlate[]) {
+  const groups = new Map<string, {
+    orderNumber: string;
+    productName: string;
+    plates: Array<{
+      key: string;
+      color: string;
+      quantity: number;
+      parts: Array<{ partName: string; quantity: number }>;
+    }>;
+  }>();
+  for (const plate of plates) {
+    for (const order of plate.orderRefs) {
+      const orderNumber = order.orderNumber ?? "Order";
+      const quantity = Math.max(1, Math.round(Number(order.quantity ?? 1)));
+      const group = groups.get(orderNumber) ?? { orderNumber, productName: plate.productName, plates: [] };
+      group.plates.push({
+        key: `${plate.id}:${orderNumber}`,
+        color: plate.color,
+        quantity,
+        parts: (plate.partManifest ?? []).map((part) => ({
+          partName: part.partName,
+          quantity: Math.max(1, Math.round(quantity * part.quantityPerProduct))
+        }))
+      });
+      groups.set(orderNumber, group);
+    }
+  }
+  return [...groups.values()].sort((a, b) => a.orderNumber.localeCompare(b.orderNumber));
+}
+
 function orderItemsArePrinted(order: AdminOrder) {
   if (!order.items?.length) return false;
   return order.items.every((item) => (item.printedQuantity ?? 0) >= item.quantity);
@@ -3429,20 +3470,26 @@ function estimatePlatformPlates(line: LineDraft, product: ProductOption, quantit
     : [{ id: product.id, name: product.name, colorSlotIndex: 0, colorSlotPattern: [], quantityPerUnit: 1 }];
   const rows = new Map<string, { key: string; label: string; quantity: number; maxPerPlate: number; plates: number }>();
   for (const part of parts) {
-    const color = line.selectedColors[0]?.trim() || line.selectedColors.find((item) => item.trim())?.trim() || `Color 1`;
-    const key = `${part.id}:${color.toLowerCase()}`;
-    const copiesPerProduct = Math.max(1, part.quantityPerUnit);
-    const maxPerPlate = Math.max(1, (product.maxBatchQuantity ?? 1) * copiesPerProduct);
-    const existing = rows.get(key) ?? {
-      key,
-      label: `${part.name} ${color}`,
-      quantity: 0,
-      maxPerPlate,
-      plates: 0
-    };
-    existing.quantity += quantity * copiesPerProduct;
-    existing.plates = Math.ceil(existing.quantity / existing.maxPerPlate);
-    rows.set(key, existing);
+    const pattern = part.colorSlotPattern?.length ? part.colorSlotPattern : Array.from({ length: Math.max(1, part.quantityPerUnit) }, () => part.colorSlotIndex);
+    const colorCounts = new Map<string, number>();
+    for (const slotIndex of pattern) {
+      const color = line.selectedColors[slotIndex]?.trim() || line.selectedColors[0]?.trim() || `Color ${slotIndex + 1}`;
+      colorCounts.set(color, (colorCounts.get(color) ?? 0) + 1);
+    }
+    for (const [color, copiesPerProduct] of colorCounts) {
+      const key = `${part.id}:${color.toLowerCase()}`;
+      const maxPerPlate = Math.max(1, (product.maxBatchQuantity ?? 1) * copiesPerProduct);
+      const existing = rows.get(key) ?? {
+        key,
+        label: `${part.name} ${color}`,
+        quantity: 0,
+        maxPerPlate,
+        plates: 0
+      };
+      existing.quantity += quantity * copiesPerProduct;
+      existing.plates = Math.ceil(existing.quantity / existing.maxPerPlate);
+      rows.set(key, existing);
+    }
   }
   return [...rows.values()];
 }

@@ -52,8 +52,12 @@ export async function getPartProductionPlanner(): Promise<PlannerRow[]> {
     for (const item of order.items) {
       const selectedColors = jsonStringArray(item.selectedColors).length ? jsonStringArray(item.selectedColors) : item.selectedColor ? [item.selectedColor] : [];
       for (const part of item.product.parts) {
-        const productionColor = selectedColors[0] ?? item.selectedColor ?? "Unassigned";
-        const colorCounts = new Map([[productionColor, Math.max(1, part.quantityPerUnit)]]);
+        const pattern = part.colorSlotPattern.length ? part.colorSlotPattern : Array.from({ length: part.quantityPerUnit }, () => part.colorSlotIndex);
+        const colorCounts = new Map<string, number>();
+        for (const slotIndex of pattern) {
+          const color = selectedColors[slotIndex] ?? selectedColors[0] ?? item.selectedColor ?? "Unassigned";
+          colorCounts.set(color, (colorCounts.get(color) ?? 0) + 1);
+        }
         for (const [color, quantityPerProductColor] of colorCounts) {
           const key = `${part.id}:${color}`;
           const quantity = Math.max(0, item.quantity - item.printedQuantity) * quantityPerProductColor;
