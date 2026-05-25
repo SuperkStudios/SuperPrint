@@ -1,4 +1,5 @@
 import { StatusBar } from "expo-status-bar";
+import * as DocumentPicker from "expo-document-picker";
 import * as SecureStore from "expo-secure-store";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -20,12 +21,14 @@ import {
   useColorScheme,
   View
 } from "react-native";
+import { StripeProvider, useStripe } from "@stripe/stripe-react-native";
 import { StripeTerminalProvider, useStripeTerminal } from "@stripe/stripe-terminal-react-native";
 
 const brandMark = require("./assets/superprint-mark.png");
 const brandLockup = require("./assets/superprint-compact-lockup-light.png");
 
-type ScreenKey = "home" | "enable" | "checkout" | "store" | "orders" | "reports" | "filament" | "settings";
+type ScreenKey = "home" | "store" | "cart" | "orders" | "prints" | "upload" | "rewards" | "support" | "profile" | "becomeMerchant" | "enable" | "checkout" | "reports" | "filament" | "settings";
+type AppMode = "customer" | "merchant";
 type AuthMode = "signIn" | "signUp";
 type SetupStep = "welcome" | "business" | "owner" | "tax" | "review";
 type MerchantStatus = "DRAFT" | "SUBMITTED" | "NEEDS_REVIEW" | "APPROVED" | "REJECTED";
@@ -116,6 +119,140 @@ type MaterialStock = {
   gramsUsed: string;
   lowAt: string;
   updatedAt?: string;
+};
+
+type CustomerAddress = {
+  name: string;
+  street1: string;
+  street2: string;
+  city: string;
+  state: string;
+  zip: string;
+  country: string;
+  phone: string;
+  email: string;
+};
+
+type CustomerProfile = {
+  id: string;
+  email: string;
+  name: string;
+  image?: string | null;
+  username?: string | null;
+  bio?: string | null;
+  rewardsPointsBalance: number;
+  shippingAddress: CustomerAddress;
+};
+
+type CartSummary = {
+  items: Array<{
+    id: string;
+    productId: string;
+    name: string;
+    slug: string;
+    imageUrl: string;
+    quantity: number;
+    selectedFilamentMaterialIds?: string[];
+    selectedMaterial?: string | null;
+    selectedColor?: string | null;
+    selectedColors?: string[];
+    unitPriceCents: number;
+    subtotalCents: number;
+  }>;
+  itemCount: number;
+  subtotalCents: number;
+  rewardDiscountCents: number;
+  taxCents: number;
+  shippingCents: number;
+  paymentFeeCents: number;
+  totalCents: number;
+  estimatedGrams?: number;
+  estimatedPrintMinutes?: number;
+};
+
+type CustomerProduct = {
+  id: string;
+  slug: string;
+  name: string;
+  description: string;
+  imageUrl: string;
+  priceCents: number;
+  estimatedPrintMinutes: number;
+  estimatedGrams: number;
+  defaultMaterial: string;
+  colorSlotCount: number;
+  maxBatchQuantity: number;
+  materials: Array<{
+    id: string;
+    material: string;
+    color: string;
+    brand: string;
+    remainingGrams: number;
+    requiresAdminApproval: boolean;
+    estimatedPrintMinutes: number;
+    finalCustomerPriceCents: number;
+    unavailableReason?: string | null;
+    marginWarning?: string | null;
+  }>;
+};
+
+type CustomerOrder = {
+  id: string;
+  orderNumber: string;
+  status: string;
+  paymentStatus?: string | null;
+  totalCents: number;
+  rewardPointsEarned: number;
+  rewardPointsRedeemed: number;
+  rewardDiscountCents: number;
+  fulfillmentMethod?: string | null;
+  shippingStatus?: string | null;
+  trackingUrl?: string | null;
+  trackingNumber?: string | null;
+  createdAt: string;
+  itemSummary: string;
+  items: Array<{ id: string; productId: string; name: string; slug: string; imageUrl: string; quantity: number; selectedColors?: string[] }>;
+  upload?: { id: string; fileName: string; status: string; estimatedPriceCents?: number | null } | null;
+  printJobs: Array<{ id: string; status: string; queuePosition?: number | null; etaMinutes?: number | null; printerName?: string | null; printerStatus?: string | null }>;
+  media: Array<{ id: string; url: string; type: string }>;
+};
+
+type RewardsSummary = {
+  balance: number;
+  redeemableCents: number;
+  rewardPresets: Array<{ id: string; label: string; points: number }>;
+  activeRedemptions: Array<{ id: string; description: string; points: number; centsBasis?: number | null }>;
+  transactions: Array<{ id: string; description: string; points: number; status: string; createdAt: string }>;
+};
+
+type CustomerUpload = {
+  id: string;
+  fileName: string;
+  status: string;
+  notes?: string | null;
+  estimatedGrams?: number | null;
+  estimatedPrintMinutes?: number | null;
+  estimatedPriceCents?: number | null;
+  createdAt: string;
+};
+
+type SupportTicket = {
+  id: string;
+  ticketNumber: string;
+  subject: string;
+  status: string;
+  lastMessageAt: string;
+  messages?: Array<{ body: string; createdAt: string }>;
+};
+
+type CustomerHomeData = {
+  user: CustomerProfile;
+  cart: CartSummary;
+  rewards: RewardsSummary;
+  orders: CustomerOrder[];
+  activePrints: CustomerOrder[];
+  merchantApplication: MerchantApplication | null;
+  supportOpen: number;
 };
 
 const sessionKey = "superprint.merchant.session";
@@ -244,8 +381,17 @@ export default function App() {
   const [platformTheme, setPlatformTheme] = useState<PlatformTheme>({ brandName: "SuperPrint", primaryColor: defaultPrimaryColor });
   const [session, setSession] = useState<UserSession | null>(null);
   const [screen, setScreen] = useState<ScreenKey>("home");
+  const [appMode, setAppMode] = useState<AppMode>("customer");
   const [loading, setLoading] = useState(true);
   const [pendingSession, setPendingSession] = useState<UserSession | null>(null);
+  const [customerHome, setCustomerHome] = useState<CustomerHomeData | null>(null);
+  const [customerProducts, setCustomerProducts] = useState<CustomerProduct[]>([]);
+  const [customerOrders, setCustomerOrders] = useState<CustomerOrder[]>([]);
+  const [customerCart, setCustomerCart] = useState<CartSummary | null>(null);
+  const [customerRewards, setCustomerRewards] = useState<RewardsSummary | null>(null);
+  const [customerUploads, setCustomerUploads] = useState<CustomerUpload[]>([]);
+  const [supportTickets, setSupportTickets] = useState<SupportTicket[]>([]);
+  const [customerPublishableKey, setCustomerPublishableKey] = useState("");
   const [application, setApplication] = useState<MerchantApplication>(emptyApplication);
   const [products, setProducts] = useState<Product[]>(starterProducts);
   const [orders, setOrders] = useState<Order[]>([]);
@@ -381,12 +527,20 @@ export default function App() {
   async function refreshPlatformData() {
     setRefreshing(true);
     try {
-      const [applicationResult, productResult, orderResult] = await Promise.all([
-        client.get<{ application: MerchantApplication | null }>("/api/merchant/application"),
-        client.get<{ products: Product[] }>("/api/merchant/products"),
-        client.get<{ orders: Order[] }>("/api/merchant/orders")
+      const [homeResult, storeResult, customerOrderResult, applicationResult, productResult, orderResult] = await Promise.all([
+        client.get<CustomerHomeData>("/api/mobile/home"),
+        client.get<{ products: CustomerProduct[] }>("/api/mobile/store"),
+        client.get<{ orders: CustomerOrder[] }>("/api/mobile/orders"),
+        client.get<{ application: MerchantApplication | null }>("/api/merchant/application").catch(() => ({ application: null })),
+        client.get<{ products: Product[] }>("/api/merchant/products").catch(() => ({ products: [] })),
+        client.get<{ orders: Order[] }>("/api/merchant/orders").catch(() => ({ orders: [] }))
       ]);
-      setApplication(hydrateApplication(applicationResult.application, session));
+      setCustomerHome(homeResult);
+      setCustomerProducts(storeResult.products);
+      setCustomerOrders(customerOrderResult.orders);
+      setCustomerCart(homeResult.cart);
+      setCustomerRewards(homeResult.rewards);
+      setApplication(hydrateApplication(applicationResult.application ?? homeResult.merchantApplication, session));
       setProducts(productResult.products.length ? productResult.products : starterProducts);
       setOrders(orderResult.orders);
     } finally {
@@ -418,6 +572,15 @@ export default function App() {
     await SecureStore.deleteItemAsync(sessionKey);
     setSession(null);
     setPendingSession(null);
+    setCustomerHome(null);
+    setCustomerProducts([]);
+    setCustomerOrders([]);
+    setCustomerCart(null);
+    setCustomerRewards(null);
+    setCustomerUploads([]);
+    setSupportTickets([]);
+    setAppMode("customer");
+    setScreen("home");
     setApplication(emptyApplication);
     setProducts(starterProducts);
     setOrders([]);
@@ -436,7 +599,7 @@ export default function App() {
         <StatusBar style={activeAppearance === "dark" ? "light" : "dark"} />
         <View style={styles.center}>
           <ActivityIndicator color={palette.primary} />
-          <Text style={styles.muted}>Loading merchant store...</Text>
+          <Text style={styles.muted}>Loading SuperPrint...</Text>
         </View>
       </SafeAreaView>
     );
@@ -476,77 +639,85 @@ export default function App() {
         <StatusBar style={activeAppearance === "dark" ? "light" : "dark"} />
         <View style={styles.center}>
           <ActivityIndicator color={palette.primary} />
-          <Text style={styles.muted}>Loading merchant dashboard...</Text>
+          <Text style={styles.muted}>Loading your workspace...</Text>
         </View>
       </SafeAreaView>
     );
   }
 
-  const needsApplicationSetup = !application.id || application.status === "DRAFT";
+  const merchantApproved = application.status === "APPROVED";
+  const merchantStarted = Boolean(application.id) && application.status !== "DRAFT";
+  const merchantUnlocked = merchantApproved;
+  const merchantSetupVisible = appMode === "merchant" && !merchantUnlocked;
 
   return (
-    <StripeTerminalProvider tokenProvider={tokenProvider}>
-      <SafeAreaView style={styles.safe}>
-        <TerminalWarmup enabled={Boolean(session?.token)} />
-        <StatusBar style={activeAppearance === "dark" ? "light" : "dark"} />
-        {needsApplicationSetup ? null : (
-          <>
-            <View style={styles.topBar}>
-              <Pressable onPress={() => setScreen("home")} style={styles.brandButton}>
-                <Image source={brandLockup} style={styles.brandLockup} resizeMode="contain" />
-                <Text style={styles.brandSub}>{application.businessName || session.user.email}</Text>
-              </Pressable>
-              <Pressable onPress={() => setScreen("settings")} style={styles.iconButton}>
-                <Text style={styles.iconButtonText}>Settings</Text>
-              </Pressable>
-            </View>
-            <ScrollView horizontal style={styles.nav} contentContainerStyle={styles.navInner} showsHorizontalScrollIndicator={false}>
-              {[
-                ["home", "Dashboard"],
-                ["checkout", "New Order"],
-                ["store", "Store"],
-                ["orders", "Orders"],
-                ["reports", "Reports"],
-                ["filament", "Filament"]
-              ].map(([key, label]) => (
-                <Pressable key={key} onPress={() => setScreen(key as ScreenKey)} style={[styles.navPill, screen === key && styles.navPillActive]}>
-                  <Text style={[styles.navText, screen === key && styles.navTextActive]}>{label}</Text>
-                </Pressable>
-              ))}
-            </ScrollView>
-          </>
-        )}
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.content}>
-          {needsApplicationSetup ? (
-            <OnboardingScreen application={application} setApplication={setApplication} session={session} client={client} onRefresh={refreshPlatformData} stripeReturnMessage={stripeReturnMessage} onStripeReturnMessageRead={() => setStripeReturnMessage("")} />
-          ) : (
-            <>
-              {screen === "home" && <HomeScreen application={application} products={products} orders={orders} materials={materials} refreshing={refreshing} onOpen={setScreen} onRefresh={refreshPlatformData} />}
-              {screen === "enable" && <EnableScreen application={application} client={client} onCheckout={() => setScreen("checkout")} />}
-              {screen === "checkout" && <CheckoutScreen application={application} products={products} client={client} onOrder={(order) => setOrders((current) => [order, ...current.filter((item) => item.id !== order.id)])} />}
-              {screen === "store" && <StoreScreen products={products} setProducts={setProducts} client={client} />}
-              {screen === "orders" && <OrdersScreen orders={orders} onRefresh={refreshPlatformData} />}
-              {screen === "reports" && <ReportsScreen orders={orders} products={products} />}
-              {screen === "filament" && <FilamentScreen materials={materials} setMaterials={setMaterials} />}
-              {screen === "settings" && <SettingsScreen backendUrl={backendUrl} setBackendUrl={setBackendUrl} userEmail={session.user.email} application={application} setApplication={setApplication} client={client} refreshing={refreshing} onRefresh={refreshPlatformData} onOpenTapSetup={() => setScreen("enable")} onSignOut={signOut} stripeReturnMessage={stripeReturnMessage} onStripeReturnMessageRead={() => setStripeReturnMessage("")} />}
-            </>
-          )}
-        </KeyboardAvoidingView>
-        <TapToPayAwarenessModal
-          visible={!needsApplicationSetup && showTapToPayAwareness}
-          application={application}
-          onEnable={() => dismissTapToPayAwareness("enable")}
-          onDismiss={() => dismissTapToPayAwareness()}
-        />
-      </SafeAreaView>
-    </StripeTerminalProvider>
+    <StripeProvider publishableKey={customerPublishableKey}>
+      <StripeTerminalProvider tokenProvider={tokenProvider}>
+        <SafeAreaView style={styles.safe}>
+          <TerminalWarmup enabled={Boolean(session?.token && appMode === "merchant" && merchantUnlocked)} />
+          <StatusBar style={activeAppearance === "dark" ? "light" : "dark"} />
+          <View style={styles.topBar}>
+            <Pressable onPress={() => setScreen("home")} style={styles.brandButton}>
+              <Image source={brandLockup} style={styles.brandLockup} resizeMode="contain" />
+              <Text style={styles.brandSub}>{appMode === "merchant" ? application.businessName || session.user.email : session.user.email}</Text>
+            </Pressable>
+            <Pressable onPress={() => setScreen(appMode === "merchant" ? "settings" : "profile")} style={styles.iconButton}>
+              <Text style={styles.iconButtonText}>{appMode === "merchant" ? "Settings" : "Profile"}</Text>
+            </Pressable>
+          </View>
+          <ViewModeSwitch appMode={appMode} merchantUnlocked={merchantUnlocked} merchantStarted={merchantStarted} onSwitch={(nextMode) => {
+            setAppMode(nextMode);
+            setScreen("home");
+          }} onBecomeMerchant={() => {
+            setAppMode("merchant");
+            setScreen("becomeMerchant");
+          }} />
+          {appMode === "customer" ? <CustomerNav screen={screen} onOpen={setScreen} /> : merchantUnlocked ? <MerchantNav screen={screen} onOpen={setScreen} /> : null}
+          <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.content}>
+            {appMode === "customer" ? (
+              <>
+                {screen === "home" && <CustomerHomeScreen home={customerHome} refreshing={refreshing} merchantUnlocked={merchantUnlocked} merchantStarted={merchantStarted} onOpen={setScreen} onRefresh={refreshPlatformData} onSwitchMerchant={() => { setAppMode("merchant"); setScreen(merchantUnlocked ? "home" : "becomeMerchant"); }} />}
+                {screen === "store" && <CustomerStoreScreen products={customerProducts} cart={customerCart} client={client} onCart={setCustomerCart} onOpenCart={() => setScreen("cart")} />}
+                {screen === "cart" && <CustomerCartScreen cart={customerCart} client={client} profile={customerHome?.user ?? null} onCart={setCustomerCart} onPublishableKey={setCustomerPublishableKey} onPaid={() => { refreshPlatformData().catch(() => undefined); setScreen("orders"); }} />}
+                {screen === "orders" && <CustomerOrdersScreen orders={customerOrders} onRefresh={refreshPlatformData} />}
+                {screen === "prints" && <CustomerPrintsScreen orders={customerOrders} onRefresh={refreshPlatformData} />}
+                {screen === "upload" && <CustomerUploadScreen client={client} uploads={customerUploads} setUploads={setCustomerUploads} />}
+                {screen === "rewards" && <CustomerRewardsScreen rewards={customerRewards} client={client} onRewards={setCustomerRewards} />}
+                {screen === "support" && <CustomerSupportScreen client={client} tickets={supportTickets} setTickets={setSupportTickets} />}
+                {screen === "profile" && <CustomerProfileScreen profile={customerHome?.user ?? null} backendUrl={backendUrl} setBackendUrl={setBackendUrl} client={client} merchantUnlocked={merchantUnlocked} merchantStarted={merchantStarted} onProfile={(user) => setCustomerHome((current) => current ? { ...current, user } : current)} onBecomeMerchant={() => { setAppMode("merchant"); setScreen("becomeMerchant"); }} onSignOut={signOut} />}
+                {screen === "becomeMerchant" && <MerchantAccessScreen application={application} merchantUnlocked={merchantUnlocked} onSwitchMerchant={() => { setAppMode("merchant"); setScreen("home"); }} onApply={() => { setAppMode("merchant"); setScreen("becomeMerchant"); }} />}
+              </>
+            ) : merchantSetupVisible ? (
+              <OnboardingScreen application={application} setApplication={setApplication} session={session} client={client} onRefresh={refreshPlatformData} stripeReturnMessage={stripeReturnMessage} onStripeReturnMessageRead={() => setStripeReturnMessage("")} />
+            ) : (
+              <>
+                {screen === "home" && <HomeScreen application={application} products={products} orders={orders} materials={materials} refreshing={refreshing} onOpen={setScreen} onRefresh={refreshPlatformData} />}
+                {screen === "enable" && <EnableScreen application={application} client={client} onCheckout={() => setScreen("checkout")} />}
+                {screen === "checkout" && <CheckoutScreen application={application} products={products} client={client} onOrder={(order) => setOrders((current) => [order, ...current.filter((item) => item.id !== order.id)])} />}
+                {screen === "store" && <StoreScreen products={products} setProducts={setProducts} client={client} />}
+                {screen === "orders" && <OrdersScreen orders={orders} onRefresh={refreshPlatformData} />}
+                {screen === "reports" && <ReportsScreen orders={orders} products={products} />}
+                {screen === "filament" && <FilamentScreen materials={materials} setMaterials={setMaterials} />}
+                {screen === "settings" && <SettingsScreen backendUrl={backendUrl} setBackendUrl={setBackendUrl} userEmail={session.user.email} application={application} setApplication={setApplication} client={client} refreshing={refreshing} onRefresh={refreshPlatformData} onOpenTapSetup={() => setScreen("enable")} onSignOut={signOut} stripeReturnMessage={stripeReturnMessage} onStripeReturnMessageRead={() => setStripeReturnMessage("")} />}
+              </>
+            )}
+          </KeyboardAvoidingView>
+          <TapToPayAwarenessModal
+            visible={appMode === "merchant" && merchantUnlocked && showTapToPayAwareness}
+            application={application}
+            onEnable={() => dismissTapToPayAwareness("enable")}
+            onDismiss={() => dismissTapToPayAwareness()}
+          />
+        </SafeAreaView>
+      </StripeTerminalProvider>
+    </StripeProvider>
   );
 }
 
 async function unlockSavedSession() {
   const localAuth = NativeModules.SuperPrintLocalAuthentication as SuperPrintLocalAuthenticationModule | undefined;
   if (!localAuth) return true;
-  return localAuth.authenticate("Unlock your saved SuperPrint Merchant session.");
+  return localAuth.authenticate("Unlock your saved SuperPrint session.");
 }
 
 function hydrateApplication(remote: MerchantApplication | null | undefined, session?: UserSession | null): MerchantApplication {
@@ -627,6 +798,98 @@ function TapToPayAwarenessModal({
   );
 }
 
+function ViewModeSwitch({
+  appMode,
+  merchantUnlocked,
+  merchantStarted,
+  onSwitch,
+  onBecomeMerchant
+}: {
+  appMode: AppMode;
+  merchantUnlocked: boolean;
+  merchantStarted: boolean;
+  onSwitch: (mode: AppMode) => void;
+  onBecomeMerchant: () => void;
+}) {
+  return (
+    <View style={styles.modeSwitch}>
+      <Pressable onPress={() => onSwitch("customer")} style={[styles.modeTab, appMode === "customer" && styles.modeTabActive]}>
+        <Text style={[styles.modeIcon, appMode === "customer" && styles.modeIconActive]}>⌂</Text>
+        <Text style={[styles.modeText, appMode === "customer" && styles.modeTextActive]}>Customer</Text>
+      </Pressable>
+      <Pressable onPress={merchantUnlocked ? () => onSwitch("merchant") : onBecomeMerchant} style={[styles.modeTab, appMode === "merchant" && styles.modeTabActive]}>
+        <Text style={[styles.modeIcon, appMode === "merchant" && styles.modeIconActive]}>$</Text>
+        <Text style={[styles.modeText, appMode === "merchant" && styles.modeTextActive]}>{merchantUnlocked ? "Merchant" : merchantStarted ? "Merchant status" : "Become merchant"}</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+function CustomerNav({ screen, onOpen }: { screen: ScreenKey; onOpen: (screen: ScreenKey) => void }) {
+  const items: Array<[ScreenKey, string, string]> = [
+    ["home", "⌂", "Home"],
+    ["store", "▣", "Store"],
+    ["cart", "+", "Cart"],
+    ["orders", "#", "Orders"],
+    ["prints", "◌", "Prints"],
+    ["upload", "↑", "Upload"],
+    ["rewards", "★", "Rewards"],
+    ["support", "?", "Support"]
+  ];
+  return <IconNav items={items} screen={screen} onOpen={onOpen} />;
+}
+
+function MerchantNav({ screen, onOpen }: { screen: ScreenKey; onOpen: (screen: ScreenKey) => void }) {
+  const items: Array<[ScreenKey, string, string]> = [
+    ["home", "⌁", "Dash"],
+    ["checkout", "$", "Sale"],
+    ["store", "▣", "Store"],
+    ["orders", "#", "Orders"],
+    ["reports", "▤", "Reports"],
+    ["filament", "◎", "Filament"],
+    ["enable", "◈", "Tap"]
+  ];
+  return <IconNav items={items} screen={screen} onOpen={onOpen} />;
+}
+
+function IconNav({ items, screen, onOpen }: { items: Array<[ScreenKey, string, string]>; screen: ScreenKey; onOpen: (screen: ScreenKey) => void }) {
+  return (
+    <ScrollView horizontal style={styles.nav} contentContainerStyle={styles.navInner} showsHorizontalScrollIndicator={false}>
+      {items.map(([key, icon, label]) => (
+        <Pressable key={key} onPress={() => onOpen(key)} style={[styles.navPill, screen === key && styles.navPillActive]}>
+          <Text style={[styles.navIcon, screen === key && styles.navTextActive]}>{icon}</Text>
+          <Text style={[styles.navText, screen === key && styles.navTextActive]}>{label}</Text>
+        </Pressable>
+      ))}
+    </ScrollView>
+  );
+}
+
+function MerchantAccessScreen({
+  application,
+  merchantUnlocked,
+  onSwitchMerchant,
+  onApply
+}: {
+  application: MerchantApplication;
+  merchantUnlocked: boolean;
+  onSwitchMerchant: () => void;
+  onApply: () => void;
+}) {
+  return (
+    <ScrollView style={styles.screen} contentContainerStyle={styles.body}>
+      <SectionHeader title="Merchant access" detail={merchantUnlocked ? "Your selling tools are unlocked." : "Apply once, then switch between customer and merchant views whenever you need."} />
+      <Card>
+        <Text style={styles.cardTitle}>{merchantUnlocked ? "Merchant view ready" : application.id ? "Application in progress" : "Become a SuperPrint merchant"}</Text>
+        <Text style={styles.copy}>{merchantUnlocked ? "Switch to merchant mode to manage products, checkout, reports, filament, and Tap to Pay." : application.id ? `Current status: ${application.status.replace(/_/g, " ")}. Continue setup or check Stripe Connect status.` : "Customers can become merchants from the same account. The app keeps buying and selling separate, but one switch connects both."}</Text>
+        <Pressable onPress={merchantUnlocked ? onSwitchMerchant : onApply} style={styles.primaryButton}>
+          <Text style={styles.primaryButtonText}>{merchantUnlocked ? "Open Merchant View" : application.id ? "Continue Merchant Setup" : "Apply to Become a Merchant"}</Text>
+        </Pressable>
+      </Card>
+    </ScrollView>
+  );
+}
+
 function BiometricUnlockScreen({
   email,
   onUnlock,
@@ -637,7 +900,7 @@ function BiometricUnlockScreen({
   onSignInInstead: () => Promise<void>;
 }) {
   const [unlocking, setUnlocking] = useState(false);
-  const [status, setStatus] = useState("Use Face ID, Touch ID, or your device passcode to unlock your saved merchant session.");
+  const [status, setStatus] = useState("Use Face ID, Touch ID, or your device passcode to unlock your saved SuperPrint session.");
 
   async function unlock() {
     setUnlocking(true);
@@ -657,7 +920,7 @@ function BiometricUnlockScreen({
     <SafeAreaView style={styles.safe}>
       <StatusBar style={palette.paper === darkPalette.paper ? "light" : "dark"} />
       <ScrollView style={styles.screen} contentContainerStyle={styles.body}>
-        <SectionHeader title="Unlock SuperPrint Merchant" detail={email} />
+        <SectionHeader title="Unlock SuperPrint" detail={email} />
         <Card>
           <Text style={styles.cardTitle}>Session protected</Text>
           <Text style={styles.copy}>{status}</Text>
@@ -703,7 +966,7 @@ function AuthScreen({
       return;
     }
     try {
-      const result = await client.post<UserSession>("/api/merchant/mobile/session", {
+      const result = await client.post<UserSession>("/api/mobile/session", {
         mode,
         email,
         password,
@@ -721,7 +984,7 @@ function AuthScreen({
     <SafeAreaView style={styles.safe}>
       <StatusBar style={palette.paper === darkPalette.paper ? "light" : "dark"} />
       <ScrollView style={styles.screen} contentContainerStyle={styles.body}>
-        <SectionHeader title="SuperPrint Merchant" detail="Sign in with your main print.superk.studio account to apply and manage your store." />
+        <SectionHeader title="SuperPrint" detail="Sign in or create an account to order, pay, track prints, and switch into merchant tools when approved." />
         <Card>
           <View style={styles.segment}>
             <Pressable onPress={() => setMode("signIn")} style={[styles.segmentItem, mode === "signIn" && styles.segmentItemActive]}>
@@ -753,6 +1016,529 @@ function AuthScreen({
         </Card>
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+function CustomerHomeScreen({
+  home,
+  refreshing,
+  merchantUnlocked,
+  merchantStarted,
+  onOpen,
+  onRefresh,
+  onSwitchMerchant
+}: {
+  home: CustomerHomeData | null;
+  refreshing: boolean;
+  merchantUnlocked: boolean;
+  merchantStarted: boolean;
+  onOpen: (screen: ScreenKey) => void;
+  onRefresh: () => void;
+  onSwitchMerchant: () => void;
+}) {
+  const activePrint = home?.activePrints[0];
+  return (
+    <ScrollView style={styles.screen} contentContainerStyle={styles.body}>
+      <Text style={styles.kicker}>SuperPrint</Text>
+      <Text style={styles.h1}>Your print floor</Text>
+      <Text style={styles.muted}>Order, pay, upload, and watch your parts move through the queue.</Text>
+      <View style={styles.metrics}>
+        <Metric label="Cart items" value={String(home?.cart.itemCount ?? 0)} />
+        <Metric label="Rewards" value={`${home?.rewards.balance ?? 0} pts`} />
+        <Metric label="Orders" value={String(home?.orders.length ?? 0)} />
+        <Metric label="Active prints" value={String(home?.activePrints.length ?? 0)} />
+      </View>
+      <Card>
+        <View style={styles.rowBetween}>
+          <View style={styles.grow}>
+            <Text style={styles.cardTitle}>{activePrint ? activePrint.itemSummary : "Start a print"}</Text>
+            <Text style={styles.copy}>{activePrint ? printProgressLine(activePrint) : "Browse tested products or upload a model for review."}</Text>
+          </View>
+          <Badge label={activePrint ? activePrint.status : "Ready"} />
+        </View>
+        <View style={styles.quickGrid}>
+          <Pressable onPress={() => onOpen("store")} style={styles.quickTile}><IconBadge label="▣" /><Text style={styles.rowTitle}>Shop</Text></Pressable>
+          <Pressable onPress={() => onOpen("upload")} style={styles.quickTile}><IconBadge label="↑" /><Text style={styles.rowTitle}>Upload</Text></Pressable>
+          <Pressable onPress={() => onOpen("prints")} style={styles.quickTile}><IconBadge label="◌" /><Text style={styles.rowTitle}>Track</Text></Pressable>
+          <Pressable onPress={() => onOpen("support")} style={styles.quickTile}><IconBadge label="?" /><Text style={styles.rowTitle}>Support</Text></Pressable>
+        </View>
+      </Card>
+      <Card>
+        <Text style={styles.cardTitle}>{merchantUnlocked ? "Merchant tools unlocked" : merchantStarted ? "Merchant application" : "Sell on SuperPrint"}</Text>
+        <Text style={styles.copy}>{merchantUnlocked ? "Switch views whenever you want to take payments or manage products." : merchantStarted ? "Continue your merchant setup and Stripe Connect verification." : "Use the same account to become a merchant, then switch between buying and selling."}</Text>
+        <Pressable onPress={onSwitchMerchant} style={styles.secondaryButton}>
+          <Text style={styles.secondaryButtonText}>{merchantUnlocked ? "Switch to Merchant View" : merchantStarted ? "Check Merchant Status" : "Become a Merchant"}</Text>
+        </Pressable>
+      </Card>
+      <Card>
+        <Text style={styles.cardTitle}>Recent orders</Text>
+        {home?.orders.length ? home.orders.slice(0, 3).map((order) => (
+          <Pressable key={order.id} onPress={() => onOpen("orders")} style={styles.activityRow}>
+            <View style={styles.grow}>
+              <Text style={styles.rowTitle}>{order.itemSummary}</Text>
+              <Text style={styles.copy}>{printProgressLine(order)}</Text>
+            </View>
+            <Text style={styles.money}>{money(order.totalCents)}</Text>
+          </Pressable>
+        )) : <Text style={styles.copy}>Orders show up here after checkout.</Text>}
+        <Pressable disabled={refreshing} onPress={onRefresh} style={[styles.secondaryButton, refreshing && styles.disabled]}>
+          <Text style={styles.secondaryButtonText}>{refreshing ? "Refreshing..." : "Refresh"}</Text>
+        </Pressable>
+      </Card>
+    </ScrollView>
+  );
+}
+
+function CustomerStoreScreen({ products, cart, client, onCart, onOpenCart }: { products: CustomerProduct[]; cart: CartSummary | null; client: MerchantClient; onCart: (cart: CartSummary) => void; onOpenCart: () => void }) {
+  const [selectedByProduct, setSelectedByProduct] = useState<Record<string, string[]>>({});
+  const [status, setStatus] = useState("");
+  const [loadingId, setLoadingId] = useState("");
+
+  async function add(product: CustomerProduct) {
+    const materialIds = selectedByProduct[product.id] ?? defaultMaterialIds(product);
+    setLoadingId(product.id);
+    setStatus("");
+    try {
+      const selected = materialIds.map((id) => product.materials.find((material) => material.id === id) ?? product.materials[0]).filter(Boolean);
+      const next = await client.post<CartSummary>("/api/mobile/cart", {
+        productId: product.id,
+        quantity: 1,
+        selectedFilamentMaterialId: selected[0]?.id,
+        selectedFilamentMaterialIds: selected.map((item) => item.id),
+        selectedMaterial: selected[0]?.material,
+        selectedColor: selected[0]?.color,
+        selectedColors: selected.map((item) => item.color)
+      });
+      onCart(next);
+      setStatus(`${product.name} added to cart.`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not add to cart.");
+    } finally {
+      setLoadingId("");
+    }
+  }
+
+  return (
+    <ScrollView style={styles.screen} contentContainerStyle={styles.body}>
+      <SectionHeader title="Store" detail={`${cart?.itemCount ?? 0} items in cart. Choose materials, add to cart, and checkout natively.`} />
+      {products.map((product) => {
+        const selectedIds = selectedByProduct[product.id] ?? defaultMaterialIds(product);
+        const selected = product.materials.find((material) => material.id === selectedIds[0]) ?? product.materials[0];
+        return (
+          <Card key={product.id}>
+            <Image source={{ uri: absoluteUrl(client.baseUrl, product.imageUrl) }} style={styles.productImage} resizeMode="cover" />
+            <View style={styles.rowBetween}>
+              <View style={styles.grow}>
+                <Text style={styles.cardTitle}>{product.name}</Text>
+                <Text style={styles.copy}>{product.description}</Text>
+              </View>
+              <Text style={styles.money}>{money(selected?.finalCustomerPriceCents ?? product.priceCents)}</Text>
+            </View>
+            <Text style={styles.copy}>{product.estimatedPrintMinutes} min · {product.estimatedGrams}g estimate</Text>
+            {Array.from({ length: Math.max(1, product.colorSlotCount) }).map((_, slotIndex) => (
+              <View key={slotIndex} style={styles.field}>
+                <Text style={styles.label}>Color {slotIndex + 1}</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRail}>
+                  {product.materials.map((material) => {
+                    const active = selectedIds[slotIndex] === material.id;
+                    return (
+                      <Pressable key={`${slotIndex}-${material.id}`} onPress={() => setSelectedByProduct((current) => ({ ...current, [product.id]: selectedIds.map((id, index) => index === slotIndex ? material.id : id) }))} style={[styles.chip, active && styles.chipActive]}>
+                        <Text style={[styles.chipText, active && styles.chipTextActive]}>{material.color} {material.material}</Text>
+                      </Pressable>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+            ))}
+            <Pressable disabled={loadingId === product.id || Boolean(selected?.unavailableReason || selected?.requiresAdminApproval)} onPress={() => add(product)} style={[styles.primaryButton, (loadingId === product.id || Boolean(selected?.unavailableReason || selected?.requiresAdminApproval)) && styles.disabled]}>
+              {loadingId === product.id ? <ActivityIndicator color={palette.primaryText} /> : <Text style={styles.primaryButtonText}>Add to Cart</Text>}
+            </Pressable>
+            {selected?.unavailableReason ? <Text style={styles.message}>{selected.unavailableReason}</Text> : null}
+          </Card>
+        );
+      })}
+      <Pressable onPress={onOpenCart} style={styles.primaryButton}><Text style={styles.primaryButtonText}>Open Cart</Text></Pressable>
+      {status ? <Text style={styles.message}>{status}</Text> : null}
+    </ScrollView>
+  );
+}
+
+function CustomerCartScreen({ cart, client, profile, onCart, onPublishableKey, onPaid }: { cart: CartSummary | null; client: MerchantClient; profile: CustomerProfile | null; onCart: (cart: CartSummary) => void; onPublishableKey: (key: string) => void; onPaid: () => void }) {
+  const stripe = useStripe();
+  const [fulfillmentMethod, setFulfillmentMethod] = useState<"SHIP" | "PICKUP">("SHIP");
+  const [address, setAddress] = useState<CustomerAddress>(profile?.shippingAddress ?? emptyAddress(profile?.email));
+  const [acceptedLegal, setAcceptedLegal] = useState(false);
+  const [status, setStatus] = useState("");
+  const [loading, setLoading] = useState("");
+
+  useEffect(() => {
+    if (profile?.shippingAddress) setAddress(profile.shippingAddress);
+  }, [profile?.id]);
+
+  async function updateQuantity(itemId: string, quantity: number) {
+    setLoading(itemId);
+    try {
+      const next = await client.request<CartSummary>("/api/mobile/cart", { method: "PATCH", body: JSON.stringify({ itemId, quantity }), headers: { "Content-Type": "application/json" } });
+      onCart(next);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not update cart.");
+    } finally {
+      setLoading("");
+    }
+  }
+
+  async function checkout() {
+    if (!cart?.items.length) return;
+    setLoading("checkout");
+    setStatus("Preparing secure payment...");
+    try {
+      const response = await client.post<{ summary: CartSummary; clientSecret: string; publishableKey: string; order: { stripePaymentIntentId?: string | null } }>("/api/mobile/checkout/payment-intent", {
+        acceptedLegal,
+        savePaymentMethod: true,
+        fulfillment: {
+          method: fulfillmentMethod,
+          address: fulfillmentMethod === "PICKUP" ? { ...address, street1: address.street1 || "Local pickup", city: "Fort Collins", state: "CO", zip: address.zip || "80521" } : address
+        }
+      });
+      onPublishableKey(response.publishableKey);
+      onCart(response.summary);
+      const init = await stripe.initPaymentSheet({
+        merchantDisplayName: "SuperPrint",
+        paymentIntentClientSecret: response.clientSecret,
+        returnURL: "superprint-merchant://stripe-redirect"
+      });
+      if (init.error) throw new Error(init.error.message);
+      const presented = await stripe.presentPaymentSheet();
+      if (presented.error) throw new Error(presented.error.message);
+      const paymentIntentId = response.order.stripePaymentIntentId ?? paymentIntentIdFromClientSecret(response.clientSecret);
+      if (paymentIntentId) await client.post("/api/mobile/checkout/complete", { paymentIntentId });
+      setStatus("Payment approved. Your print has moved into the queue.");
+      onPaid();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Payment could not be completed.");
+    } finally {
+      setLoading("");
+    }
+  }
+
+  if (!cart?.items.length) {
+    return (
+      <ScrollView style={styles.screen} contentContainerStyle={styles.body}>
+        <SectionHeader title="Cart" detail="Your cart is ready when you are." />
+        <Card><Text style={styles.copy}>Your cart is empty. Add a product from the store to checkout.</Text></Card>
+      </ScrollView>
+    );
+  }
+
+  return (
+    <ScrollView style={styles.screen} contentContainerStyle={styles.body}>
+      <SectionHeader title="Cart" detail={`${cart.itemCount} items · ${money(cart.totalCents)} estimated total`} />
+      {cart.items.map((item) => (
+        <Card key={item.id}>
+          <View style={styles.rowBetween}>
+            <View style={styles.grow}>
+              <Text style={styles.cardTitle}>{item.name}</Text>
+              <Text style={styles.copy}>{item.selectedColors?.join(" + ") || item.selectedColor} · {money(item.unitPriceCents)} each</Text>
+            </View>
+            <Text style={styles.money}>{money(item.subtotalCents)}</Text>
+          </View>
+          <View style={styles.actionButtons}>
+            <Pressable disabled={loading === item.id} onPress={() => updateQuantity(item.id, item.quantity - 1)} style={[styles.secondaryButton, styles.grow]}><Text style={styles.secondaryButtonText}>−</Text></Pressable>
+            <View style={[styles.quantityBox, styles.grow]}><Text style={styles.rowTitle}>{item.quantity}</Text></View>
+            <Pressable disabled={loading === item.id} onPress={() => updateQuantity(item.id, item.quantity + 1)} style={[styles.secondaryButton, styles.grow]}><Text style={styles.secondaryButtonText}>+</Text></Pressable>
+          </View>
+        </Card>
+      ))}
+      <Card>
+        <Text style={styles.cardTitle}>Delivery</Text>
+        <View style={styles.segment}>
+          <Pressable onPress={() => setFulfillmentMethod("SHIP")} style={[styles.segmentItem, fulfillmentMethod === "SHIP" && styles.segmentItemActive]}><Text style={fulfillmentMethod === "SHIP" ? styles.segmentTextActive : styles.segmentText}>Ship</Text></Pressable>
+          <Pressable onPress={() => setFulfillmentMethod("PICKUP")} style={[styles.segmentItem, fulfillmentMethod === "PICKUP" && styles.segmentItemActive]}><Text style={fulfillmentMethod === "PICKUP" ? styles.segmentTextActive : styles.segmentText}>Pickup</Text></Pressable>
+        </View>
+        <Field label="Name" value={address.name} onChangeText={(name) => setAddress({ ...address, name })} />
+        {fulfillmentMethod === "SHIP" ? (
+          <>
+            <Field label="Street" value={address.street1} onChangeText={(street1) => setAddress({ ...address, street1 })} />
+            <View style={styles.inline}>
+              <Field label="City" value={address.city} onChangeText={(city) => setAddress({ ...address, city })} grow />
+              <Field label="State" value={address.state} onChangeText={(state) => setAddress({ ...address, state })} grow />
+              <Field label="ZIP" value={address.zip} onChangeText={(zip) => setAddress({ ...address, zip })} grow />
+            </View>
+          </>
+        ) : null}
+        <View style={styles.switchRow}><Text style={styles.label}>I accept SuperPrint checkout terms</Text><Switch value={acceptedLegal} onValueChange={setAcceptedLegal} /></View>
+        <Pressable disabled={!acceptedLegal || loading === "checkout"} onPress={checkout} style={[styles.primaryButton, (!acceptedLegal || loading === "checkout") && styles.disabled]}>
+          {loading === "checkout" ? <ActivityIndicator color={palette.primaryText} /> : <Text style={styles.primaryButtonText}>Pay {money(cart.totalCents)}</Text>}
+        </Pressable>
+        {status ? <Text style={styles.message}>{status}</Text> : null}
+      </Card>
+    </ScrollView>
+  );
+}
+
+function CustomerOrdersScreen({ orders, onRefresh }: { orders: CustomerOrder[]; onRefresh: () => void }) {
+  return (
+    <ScrollView style={styles.screen} contentContainerStyle={styles.body}>
+      <SectionHeader title="Orders" detail="History, invoices, delivery, rewards, and media." />
+      <Pressable onPress={onRefresh} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>Refresh Orders</Text></Pressable>
+      {orders.length ? orders.map((order) => <CustomerOrderCard key={order.id} order={order} />) : <Card><Text style={styles.copy}>No orders yet.</Text></Card>}
+    </ScrollView>
+  );
+}
+
+function CustomerPrintsScreen({ orders, onRefresh }: { orders: CustomerOrder[]; onRefresh: () => void }) {
+  const active = orders.filter((order) => order.printJobs.some((job) => ["QUEUED", "READY_ON_NODE", "AWAITING_OPERATOR_START", "PRINTING", "PAUSED"].includes(job.status)));
+  return (
+    <ScrollView style={styles.screen} contentContainerStyle={styles.body}>
+      <SectionHeader title="Print tracker" detail="Watch your queued, ready, and printing jobs move through SuperPrint." />
+      <Pressable onPress={onRefresh} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>Refresh Prints</Text></Pressable>
+      {(active.length ? active : orders).map((order) => <CustomerOrderCard key={order.id} order={order} focusPrints />)}
+    </ScrollView>
+  );
+}
+
+function CustomerOrderCard({ order, focusPrints }: { order: CustomerOrder; focusPrints?: boolean }) {
+  return (
+    <Card>
+      <View style={styles.rowBetween}>
+        <View style={styles.grow}>
+          <Text style={styles.cardTitle}>{order.itemSummary}</Text>
+          <Text style={styles.copy}>{order.orderNumber} · {new Date(order.createdAt).toLocaleDateString()}</Text>
+        </View>
+        <Text style={styles.money}>{money(order.totalCents)}</Text>
+      </View>
+      <View style={styles.badgeRow}>
+        <Badge label={order.status} />
+        <Badge label={order.paymentStatus ?? "payment"} />
+        <Badge label={order.fulfillmentMethod ?? "delivery"} />
+      </View>
+      {(focusPrints ? order.printJobs : order.printJobs.slice(0, 3)).map((job) => (
+        <View key={job.id} style={styles.activityRow}>
+          <IconBadge label={job.status === "PRINTING" ? "▶" : "#"} />
+          <View style={styles.grow}>
+            <Text style={styles.rowTitle}>{job.status.replace(/_/g, " ")}</Text>
+            <Text style={styles.copy}>{job.printerName ?? "Printer pending"}{job.queuePosition ? ` · Queue #${job.queuePosition}` : ""}{job.etaMinutes ? ` · ${job.etaMinutes} min` : ""}</Text>
+          </View>
+        </View>
+      ))}
+      {!order.printJobs.length ? <Text style={styles.copy}>Print jobs appear after checkout is paid and queued.</Text> : null}
+      {order.media.length ? <View style={styles.badgeRow}>{order.media.map((media) => <Badge key={media.id} label={media.type} />)}</View> : null}
+      {order.trackingUrl ? <Pressable onPress={() => Linking.openURL(order.trackingUrl!)} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>Track Package</Text></Pressable> : null}
+    </Card>
+  );
+}
+
+function CustomerUploadScreen({ client, uploads, setUploads }: { client: MerchantClient; uploads: CustomerUpload[]; setUploads: (uploads: CustomerUpload[]) => void }) {
+  const [notes, setNotes] = useState("");
+  const [acceptedLegal, setAcceptedLegal] = useState(false);
+  const [status, setStatus] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    client.get<{ uploads: CustomerUpload[] }>("/api/mobile/uploads").then((result) => setUploads(result.uploads)).catch(() => undefined);
+  }, [client, setUploads]);
+
+  async function upload() {
+    setLoading(true);
+    setStatus("");
+    try {
+      const picked = await DocumentPicker.getDocumentAsync({
+        type: ["model/stl", "application/vnd.ms-3mfdocument", "application/octet-stream"],
+        copyToCacheDirectory: true,
+        multiple: false
+      });
+      if (picked.canceled) return;
+      const asset = picked.assets[0];
+      const body = new FormData();
+      body.append("acceptedLegal", acceptedLegal ? "true" : "false");
+      body.append("notes", notes);
+      body.append("file", {
+        uri: asset.uri,
+        name: asset.name,
+        type: asset.mimeType ?? "application/octet-stream"
+      } as unknown as Blob);
+      const result = await client.upload<{ upload: CustomerUpload }>("/api/mobile/uploads", body);
+      setUploads([result.upload, ...uploads]);
+      setNotes("");
+      setStatus("Model uploaded for review.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not upload model.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <ScrollView style={styles.screen} contentContainerStyle={styles.body}>
+      <SectionHeader title="Upload" detail="Send custom STL or 3MF files for review and pricing." />
+      <Card>
+        <Field label="Notes" value={notes} onChangeText={setNotes} />
+        <View style={styles.switchRow}><Text style={styles.label}>I accept upload and platform terms</Text><Switch value={acceptedLegal} onValueChange={setAcceptedLegal} /></View>
+        <Pressable disabled={!acceptedLegal || loading} onPress={upload} style={[styles.primaryButton, (!acceptedLegal || loading) && styles.disabled]}>
+          {loading ? <ActivityIndicator color={palette.primaryText} /> : <Text style={styles.primaryButtonText}>Choose Model File</Text>}
+        </Pressable>
+        {status ? <Text style={styles.message}>{status}</Text> : null}
+      </Card>
+      {uploads.map((upload) => (
+        <Card key={upload.id}>
+          <View style={styles.rowBetween}>
+            <View style={styles.grow}>
+              <Text style={styles.cardTitle}>{upload.fileName}</Text>
+              <Text style={styles.copy}>{upload.estimatedGrams ?? "-"}g · {upload.estimatedPrintMinutes ?? "-"} min</Text>
+            </View>
+            <Badge label={upload.status} />
+          </View>
+        </Card>
+      ))}
+    </ScrollView>
+  );
+}
+
+function CustomerRewardsScreen({ rewards, client, onRewards }: { rewards: RewardsSummary | null; client: MerchantClient; onRewards: (rewards: RewardsSummary) => void }) {
+  const [status, setStatus] = useState("");
+  useEffect(() => {
+    client.get<RewardsSummary>("/api/mobile/rewards").then(onRewards).catch(() => undefined);
+  }, [client, onRewards]);
+
+  async function redeem(rewardId: string) {
+    try {
+      const result = await client.post<{ summary: RewardsSummary }>("/api/mobile/rewards", { action: "redeem", rewardId });
+      onRewards(result.summary);
+      setStatus("Reward reserved for checkout.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not redeem reward.");
+    }
+  }
+
+  return (
+    <ScrollView style={styles.screen} contentContainerStyle={styles.body}>
+      <SectionHeader title="Rewards" detail={`${rewards?.balance ?? 0} points available · ${money(rewards?.redeemableCents ?? 0)} value`} />
+      <Card>
+        <Text style={styles.cardTitle}>Redeem</Text>
+        {rewards?.rewardPresets.map((preset) => (
+          <Pressable key={preset.id} onPress={() => redeem(preset.id)} style={styles.secondaryButton}>
+            <Text style={styles.secondaryButtonText}>{preset.label} · {preset.points} pts</Text>
+          </Pressable>
+        ))}
+        {status ? <Text style={styles.message}>{status}</Text> : null}
+      </Card>
+      <Card>
+        <Text style={styles.cardTitle}>Activity</Text>
+        {rewards?.transactions.slice(0, 12).map((transaction) => (
+          <View key={transaction.id} style={styles.activityRow}>
+            <View style={styles.grow}><Text style={styles.rowTitle}>{transaction.description}</Text><Text style={styles.copy}>{transaction.status}</Text></View>
+            <Text style={styles.money}>{transaction.points > 0 ? "+" : ""}{transaction.points}</Text>
+          </View>
+        ))}
+      </Card>
+    </ScrollView>
+  );
+}
+
+function CustomerSupportScreen({ client, tickets, setTickets }: { client: MerchantClient; tickets: SupportTicket[]; setTickets: (tickets: SupportTicket[]) => void }) {
+  const [subject, setSubject] = useState("");
+  const [message, setMessage] = useState("");
+  const [status, setStatus] = useState("");
+  useEffect(() => {
+    client.get<{ tickets: SupportTicket[] }>("/api/mobile/support").then((result) => setTickets(result.tickets)).catch(() => undefined);
+  }, [client, setTickets]);
+
+  async function submit() {
+    try {
+      const result = await client.post<{ ticket: SupportTicket }>("/api/mobile/support", { subject, message });
+      setTickets([result.ticket, ...tickets]);
+      setSubject("");
+      setMessage("");
+      setStatus("Support ticket opened.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not open ticket.");
+    }
+  }
+
+  return (
+    <ScrollView style={styles.screen} contentContainerStyle={styles.body}>
+      <SectionHeader title="Support" detail="Ask about orders, uploads, delivery, or print quality." />
+      <Card>
+        <Field label="Subject" value={subject} onChangeText={setSubject} />
+        <Field label="Message" value={message} onChangeText={setMessage} />
+        <Pressable onPress={submit} style={styles.primaryButton}><Text style={styles.primaryButtonText}>Open Ticket</Text></Pressable>
+        {status ? <Text style={styles.message}>{status}</Text> : null}
+      </Card>
+      {tickets.map((ticket) => (
+        <Card key={ticket.id}>
+          <View style={styles.rowBetween}><Text style={styles.cardTitle}>{ticket.subject}</Text><Badge label={ticket.status} /></View>
+          <Text style={styles.copy}>{ticket.ticketNumber}</Text>
+        </Card>
+      ))}
+    </ScrollView>
+  );
+}
+
+function CustomerProfileScreen({ profile, backendUrl, setBackendUrl, client, merchantUnlocked, merchantStarted, onProfile, onBecomeMerchant, onSignOut }: { profile: CustomerProfile | null; backendUrl: string; setBackendUrl: (value: string) => void; client: MerchantClient; merchantUnlocked: boolean; merchantStarted: boolean; onProfile: (profile: CustomerProfile) => void; onBecomeMerchant: () => void; onSignOut: () => void }) {
+  const [name, setName] = useState(profile?.name ?? "");
+  const [username, setUsername] = useState(profile?.username ?? "");
+  const [bio, setBio] = useState(profile?.bio ?? "");
+  const [address, setAddress] = useState<CustomerAddress>(profile?.shippingAddress ?? emptyAddress(profile?.email));
+  const [status, setStatus] = useState("");
+  useEffect(() => {
+    if (!profile) return;
+    setName(profile.name);
+    setUsername(profile.username ?? "");
+    setBio(profile.bio ?? "");
+    setAddress(profile.shippingAddress);
+  }, [profile?.id]);
+
+  async function save() {
+    try {
+      await client.post("/api/mobile/profile", {
+        name,
+        username,
+        bio,
+        shippingName: address.name,
+        shippingStreet1: address.street1,
+        shippingStreet2: address.street2,
+        shippingCity: address.city,
+        shippingState: address.state,
+        shippingZip: address.zip,
+        shippingCountry: address.country,
+        shippingPhone: address.phone
+      });
+      const result = await client.get<{ user: CustomerProfile }>("/api/mobile/profile");
+      onProfile(result.user);
+      setStatus("Profile saved.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not save profile.");
+    }
+  }
+
+  return (
+    <ScrollView style={styles.screen} contentContainerStyle={styles.body}>
+      <SectionHeader title="Profile" detail="Account, shipping, rewards identity, and merchant access." />
+      <Card>
+        <Field label="Name" value={name} onChangeText={setName} />
+        <Field label="Username" value={username} onChangeText={setUsername} autoCapitalize="none" />
+        <Field label="Bio" value={bio} onChangeText={setBio} />
+        <Field label="Shipping name" value={address.name} onChangeText={(next) => setAddress({ ...address, name: next })} />
+        <Field label="Street" value={address.street1} onChangeText={(street1) => setAddress({ ...address, street1 })} />
+        <View style={styles.inline}>
+          <Field label="City" value={address.city} onChangeText={(city) => setAddress({ ...address, city })} grow />
+          <Field label="State" value={address.state} onChangeText={(state) => setAddress({ ...address, state })} grow />
+          <Field label="ZIP" value={address.zip} onChangeText={(zip) => setAddress({ ...address, zip })} grow />
+        </View>
+        <Pressable onPress={save} style={styles.primaryButton}><Text style={styles.primaryButtonText}>Save Profile</Text></Pressable>
+        {status ? <Text style={styles.message}>{status}</Text> : null}
+      </Card>
+      <Card>
+        <Text style={styles.cardTitle}>{merchantUnlocked ? "Merchant enabled" : merchantStarted ? "Merchant application started" : "Become a merchant"}</Text>
+        <Text style={styles.copy}>Use one SuperPrint account to buy prints and sell with Tap to Pay.</Text>
+        <Pressable onPress={onBecomeMerchant} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>{merchantUnlocked ? "Switch to Merchant View" : "Open Merchant Setup"}</Text></Pressable>
+      </Card>
+      <Card>
+        <Text style={styles.cardTitle}>App connection</Text>
+        <Field label="SuperPrint URL" value={backendUrl} onChangeText={setBackendUrl} autoCapitalize="none" />
+        <Pressable onPress={onSignOut} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>Sign Out</Text></Pressable>
+      </Card>
+    </ScrollView>
   );
 }
 
@@ -1832,7 +2618,7 @@ class MerchantClient {
     return this.request<T>(path, { method: "POST", body });
   }
 
-  private async request<T>(path: string, init: RequestInit) {
+  async request<T>(path: string, init: RequestInit) {
     const headers: Record<string, string> = {
       ...(init.headers as Record<string, string> | undefined),
       ...(this.token ? { Authorization: `Bearer ${this.token}` } : {})
@@ -1846,6 +2632,42 @@ class MerchantClient {
 
 function cents(value: string) {
   return Math.max(0, Math.round(Number(value || 0) * 100));
+}
+
+function defaultMaterialIds(product: CustomerProduct) {
+  const fallback = product.materials[0]?.id ?? "";
+  return Array.from({ length: Math.max(1, product.colorSlotCount) }, () => fallback).filter(Boolean);
+}
+
+function emptyAddress(email?: string) {
+  return {
+    name: "",
+    street1: "",
+    street2: "",
+    city: "",
+    state: "CO",
+    zip: "",
+    country: "US",
+    phone: "",
+    email: email ?? ""
+  };
+}
+
+function absoluteUrl(baseUrl: string, value: string) {
+  if (/^https?:\/\//.test(value)) return value;
+  return `${baseUrl}${value.startsWith("/") ? value : `/${value}`}`;
+}
+
+function paymentIntentIdFromClientSecret(clientSecret: string) {
+  return clientSecret.split("_secret_")[0] || null;
+}
+
+function printProgressLine(order: CustomerOrder) {
+  const active = order.printJobs.find((job) => ["PRINTING", "PAUSED", "AWAITING_OPERATOR_START", "READY_ON_NODE", "QUEUED"].includes(job.status));
+  if (!active) return order.status.replace(/_/g, " ");
+  const queue = active.queuePosition ? ` · Queue #${active.queuePosition}` : "";
+  const eta = active.etaMinutes ? ` · ${active.etaMinutes} min` : "";
+  return `${active.status.replace(/_/g, " ")}${queue}${eta}`;
 }
 
 function dollars(value: number) {
@@ -1867,10 +2689,18 @@ function createStyles(palette: ThemePalette) {
   brandSub: { color: palette.muted, fontSize: 12, fontWeight: "700" },
   iconButton: { minHeight: 36, justifyContent: "center", paddingHorizontal: 12, borderRadius: 8, backgroundColor: palette.secondaryBg, borderWidth: 1, borderColor: palette.secondaryBorder },
   iconButtonText: { color: palette.primary, fontWeight: "900", fontSize: 12 },
+  modeSwitch: { flexDirection: "row", gap: 8, padding: 10, backgroundColor: palette.card, borderBottomColor: palette.line, borderBottomWidth: 1 },
+  modeTab: { flex: 1, minHeight: 42, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderRadius: 8, borderWidth: 1, borderColor: palette.line, backgroundColor: palette.field },
+  modeTabActive: { backgroundColor: palette.primary, borderColor: palette.primary },
+  modeIcon: { color: palette.primary, fontSize: 16, fontWeight: "900" },
+  modeIconActive: { color: palette.primaryText },
+  modeText: { color: palette.slate, fontSize: 12, fontWeight: "900" },
+  modeTextActive: { color: palette.primaryText },
   nav: { flexGrow: 0, backgroundColor: palette.card, borderBottomColor: palette.line, borderBottomWidth: 1 },
   navInner: { padding: 10, gap: 8 },
-  navPill: { minHeight: 36, justifyContent: "center", paddingHorizontal: 14, borderRadius: 8, borderWidth: 1, borderColor: palette.line, backgroundColor: palette.field },
+  navPill: { minHeight: 42, minWidth: 68, justifyContent: "center", alignItems: "center", gap: 2, paddingHorizontal: 12, borderRadius: 8, borderWidth: 1, borderColor: palette.line, backgroundColor: palette.field },
   navPillActive: { backgroundColor: palette.primary, borderColor: palette.primary },
+  navIcon: { color: palette.primary, fontSize: 15, fontWeight: "900" },
   navText: { color: palette.slate, fontSize: 12, fontWeight: "900" },
   navTextActive: { color: palette.primaryText },
   content: { flex: 1 },
@@ -1897,6 +2727,7 @@ function createStyles(palette: ThemePalette) {
   iconBadgeText: { color: palette.primary, fontSize: 15, fontWeight: "900" },
   card: { backgroundColor: palette.card, borderColor: palette.line, borderWidth: 1, borderRadius: 8, padding: 16, gap: 12 },
   cardTitle: { color: palette.ink, fontSize: 18, fontWeight: "900" },
+  productImage: { width: "100%", height: 180, borderRadius: 8, backgroundColor: palette.field },
   metrics: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
   metric: { width: "47.8%", backgroundColor: palette.card, borderColor: palette.line, borderWidth: 1, borderRadius: 8, padding: 14 },
   metricValue: { color: palette.ink, fontSize: 19, fontWeight: "900", textTransform: "capitalize" },
@@ -1914,6 +2745,7 @@ function createStyles(palette: ThemePalette) {
   inline: { flexDirection: "row", gap: 10 },
   grow: { flex: 1 },
   actionButtons: { flexDirection: "row", gap: 10 },
+  quantityBox: { minHeight: 44, borderRadius: 8, borderWidth: 1, borderColor: palette.line, backgroundColor: palette.field, alignItems: "center", justifyContent: "center" },
   badgeRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   badge: { borderRadius: 999, backgroundColor: palette.secondaryBg, borderWidth: 1, borderColor: palette.secondaryBorder, paddingHorizontal: 10, paddingVertical: 6 },
   badgeText: { color: palette.primary, fontSize: 11, fontWeight: "900", textTransform: "capitalize" },

@@ -1,7 +1,7 @@
 import type { ExpoConfig } from "expo/config";
 
 const config: ExpoConfig = {
-  name: "SuperPrint Merchant",
+  name: "SuperPrint",
   slug: "superprint-merchant",
   scheme: "superprint-merchant",
   version: "0.1.0",
@@ -26,6 +26,13 @@ const config: ExpoConfig = {
     permissions: ["ACCESS_FINE_LOCATION", "BLUETOOTH", "BLUETOOTH_ADMIN", "BLUETOOTH_CONNECT", "NFC"]
   },
   plugins: [
+    [
+      "@stripe/stripe-react-native",
+      {
+        merchantIdentifier: "merchant.studio.superk.superprint",
+        enableGooglePay: false
+      }
+    ],
     [
       "@stripe/stripe-terminal-react-native",
       {
