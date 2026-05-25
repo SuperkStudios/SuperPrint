@@ -1020,7 +1020,7 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
   const [manualTransactionId, setManualTransactionId] = useState("");
   const [internalNotes, setInternalNotes] = useState("");
   const [orderDate, setOrderDate] = useState("");
-  const [source, setSource] = useState<"IN_PERSON" | "BACKLOG_IMPORT" | "PAST_IMPORT">("IN_PERSON");
+  const [source, setSource] = useState<"IN_PERSON" | "PAST_IMPORT">("IN_PERSON");
   const [queueNow, setQueueNow] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
@@ -1092,7 +1092,7 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
     setCustomers([]);
   }
 
-  function selectOrderSource(nextSource: "IN_PERSON" | "BACKLOG_IMPORT" | "PAST_IMPORT") {
+  function selectOrderSource(nextSource: "IN_PERSON" | "PAST_IMPORT") {
     setSource(nextSource);
     setQueueNow(false);
     setStripePayments([]);
@@ -1102,7 +1102,7 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
       setPaidNow((totalCents / 100).toFixed(2));
       setPaymentReference("");
       setManualTransactionId("");
-    } else if (nextSource === "BACKLOG_IMPORT") {
+    } else {
       selectPaymentMethod("UNPAID");
     }
   }
@@ -1228,11 +1228,6 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
   }
 
   async function saveOrder() {
-    if ((!customerName.trim() || !customerEmail.trim()) && source !== "BACKLOG_IMPORT") {
-      setMessage("Customer and email are required for new orders. Use Backlog if the customer is unknown.");
-      setFlowStep("customer");
-      return;
-    }
     if (!lines.length) {
       setMessage("Add at least one product.");
       return;
@@ -1455,7 +1450,7 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
         return {
           productId: line.productId,
           quantity: positiveInt(line.quantity, 1),
-          printedQuantity: source === "BACKLOG_IMPORT" ? Math.min(positiveInt(line.quantity, 1), nonNegativeInt(line.printedQuantity, 0)) : 0,
+          printedQuantity: source === "PAST_IMPORT" ? 0 : Math.min(positiveInt(line.quantity, 1), nonNegativeInt(line.printedQuantity, 0)),
           unitPriceCents: cents(line.unitPrice),
           selectedFilamentMaterialIds: selectedIds.filter(Boolean),
           selectedColors
@@ -1486,10 +1481,6 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
           <Pressable onPress={() => selectOrderSource("IN_PERSON")} style={[styles.modeCard, source === "IN_PERSON" && styles.modeCardActive]}>
             <AppIconBadge Icon={Plus} small />
             <Text style={[styles.modeTitle, source === "IN_PERSON" && styles.modeTitleActive]}>New order</Text>
-          </Pressable>
-          <Pressable onPress={() => selectOrderSource("BACKLOG_IMPORT")} style={[styles.modeCard, source === "BACKLOG_IMPORT" && styles.modeCardActive]}>
-            <AppIconBadge Icon={PackageCheck} small />
-            <Text style={[styles.modeTitle, source === "BACKLOG_IMPORT" && styles.modeTitleActive]}>Backlog</Text>
           </Pressable>
           <Pressable onPress={() => selectOrderSource("PAST_IMPORT")} style={[styles.modeCard, source === "PAST_IMPORT" && styles.modeCardActive]}>
             <AppIconBadge Icon={History} small />
@@ -1529,8 +1520,8 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
             ))}
           </View>
         ) : null}
-        <Field label={source === "BACKLOG_IMPORT" ? "Customer name (optional)" : "Customer name"} value={customerName} onChangeText={setCustomerName} />
-        <Field label={source === "BACKLOG_IMPORT" ? "Email (optional)" : "Email"} value={customerEmail} onChangeText={setCustomerEmail} keyboardType="email-address" autoCapitalize="none" />
+        <Field label="Customer name (optional)" value={customerName} onChangeText={setCustomerName} />
+        <Field label="Email (optional)" value={customerEmail} onChangeText={setCustomerEmail} keyboardType="email-address" autoCapitalize="none" />
           <FlowNav onBack={goBack} onNext={goNext} backDisabled={activeStepIndex === 0} nextLabel="Choose Items" />
         </Card>
       ) : null}
@@ -1564,7 +1555,7 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
                 <Field label="Qty" value={line.quantity} onChangeText={(quantity) => updateLine(index, { quantity })} keyboardType="number-pad" grow />
                 <Field label="Unit price" value={line.unitPrice} onChangeText={(unitPrice) => updateLine(index, { unitPrice })} keyboardType="decimal-pad" grow />
               </View>
-              {source === "BACKLOG_IMPORT" ? (
+              {source !== "PAST_IMPORT" ? (
                 <Field
                   label="Already printed"
                   value={line.printedQuantity}
@@ -1812,7 +1803,7 @@ function POSScreen({ client, settings, setSettings }: { client: SuperPrintClient
             <AppIconBadge Icon={BadgeCheck} small />
           </View>
         <View style={styles.readOnlyPanel}>
-          <InfoRow label="Mode" value={source === "PAST_IMPORT" ? "Past print import" : source === "BACKLOG_IMPORT" ? "Backlog / in progress" : "New counter order"} />
+          <InfoRow label="Mode" value={source === "PAST_IMPORT" ? "Past print import" : "New counter order"} />
           <InfoRow label="Customer" value={customerName || "Missing"} />
           <InfoRow label="Email" value={customerEmail || "Missing"} />
           <InfoRow label="Items" value={`${lines.length} line(s)`} />

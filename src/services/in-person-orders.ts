@@ -77,7 +77,7 @@ export async function createInPersonOrder(input: CreateInPersonOrderInput, actor
     const product = productById.get(line.productId);
     if (!product) throw new Error("One of the selected products no longer exists.");
     const quantity = Math.max(1, Math.floor(line.quantity || 1));
-    const printedQuantity = source === "BACKLOG_IMPORT" ? Math.min(quantity, Math.max(0, Math.floor(line.printedQuantity ?? 0))) : 0;
+    const printedQuantity = source === "PAST_IMPORT" ? 0 : Math.min(quantity, Math.max(0, Math.floor(line.printedQuantity ?? 0)));
     const slotCount = Math.max(1, Math.min(6, product.colorSlotCount ?? 1));
     const selectedIds = Array.from({ length: slotCount }, (_, index) => {
       const id = line.selectedFilamentMaterialIds?.[index] ?? line.selectedFilamentMaterialIds?.[0] ?? product.defaultFilamentMaterialId ?? product.allowedFilaments[0]?.filamentMaterialId;
