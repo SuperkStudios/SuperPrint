@@ -1,5 +1,5 @@
 import { StatusBar } from "expo-status-bar";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import * as AppleAuthentication from "expo-apple-authentication";
 import Constants from "expo-constants";
 import * as LocalAuthentication from "expo-local-authentication";
@@ -36,8 +36,6 @@ import {
 } from "lucide-react-native";
 import {
   ActivityIndicator,
-  Animated,
-  Easing,
   Image,
   KeyboardAvoidingView,
   Platform,
@@ -3195,43 +3193,18 @@ function PrintStat({ label, value }: { label: string; value: string }) {
 }
 
 function PrinterProgressVisual({ progressPercent }: { progressPercent: number }) {
-  const head = useRef(new Animated.Value(0)).current;
-  const glow = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    const headLoop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(head, { toValue: 1, duration: 1800, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-        Animated.timing(head, { toValue: 0, duration: 1800, easing: Easing.inOut(Easing.quad), useNativeDriver: true })
-      ])
-    );
-    const glowLoop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(glow, { toValue: 1, duration: 900, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-        Animated.timing(glow, { toValue: 0, duration: 900, easing: Easing.inOut(Easing.quad), useNativeDriver: true })
-      ])
-    );
-    headLoop.start();
-    glowLoop.start();
-    return () => {
-      headLoop.stop();
-      glowLoop.stop();
-    };
-  }, [glow, head]);
-
-  const translateX = head.interpolate({ inputRange: [0, 1], outputRange: [0, 172] });
-  const glowOpacity = glow.interpolate({ inputRange: [0, 1], outputRange: [0.3, 0.9] });
+  const headOffset = `${Math.max(0, Math.min(72, progressPercent * 0.72))}%` as `${number}%`;
   const progressWidth = `${Math.max(8, Math.min(100, progressPercent))}%` as `${number}%`;
 
   return (
     <View style={styles.printerVisual}>
       <View style={styles.printerTopRail} />
-      <Animated.View style={[styles.printerHead, { transform: [{ translateX }] }]}>
+      <View style={[styles.printerHead, { left: headOffset }]}>
         <Printer size={18} color={palette.actionText} strokeWidth={2.6} />
-      </Animated.View>
-      <View style={styles.printerNozzle} />
+      </View>
+      <View style={[styles.printerNozzle, { left: headOffset }]} />
       <View style={styles.printBed}>
-        <Animated.View style={[styles.printGlow, { opacity: glowOpacity }]} />
+        <View style={styles.printGlow} />
         <View style={[styles.printObject, { width: progressWidth }]} />
       </View>
       <View style={styles.layerLines}>
@@ -3820,10 +3793,10 @@ function createStyles(palette: ThemePalette) {
   telemetryBlock: { paddingVertical: 4, gap: 12 },
   printerVisual: { height: 136, borderRadius: 8, borderWidth: 1, borderColor: palette.line, backgroundColor: palette.field, overflow: "hidden", padding: 14, justifyContent: "flex-end" },
   printerTopRail: { position: "absolute", left: 20, right: 20, top: 24, height: 6, borderRadius: 999, backgroundColor: palette.secondaryBg },
-  printerHead: { position: "absolute", left: 22, top: 12, width: 48, height: 36, borderRadius: 8, backgroundColor: palette.cyan, alignItems: "center", justifyContent: "center" },
-  printerNozzle: { position: "absolute", left: "50%", top: 46, width: 8, height: 28, marginLeft: -4, borderRadius: 999, backgroundColor: palette.cyanDark },
+  printerHead: { position: "absolute", top: 12, width: 48, height: 36, borderRadius: 8, backgroundColor: palette.cyan, alignItems: "center", justifyContent: "center" },
+  printerNozzle: { position: "absolute", top: 46, width: 8, height: 28, marginLeft: 20, borderRadius: 999, backgroundColor: palette.cyanDark },
   printBed: { height: 42, borderRadius: 8, borderWidth: 1, borderColor: palette.secondaryBorder, backgroundColor: palette.card, justifyContent: "flex-end", overflow: "hidden" },
-  printGlow: { position: "absolute", left: 8, right: 8, bottom: 6, height: 18, borderRadius: 999, backgroundColor: palette.cyan },
+  printGlow: { position: "absolute", left: 8, right: 8, bottom: 6, height: 18, borderRadius: 999, backgroundColor: palette.cyan, opacity: 0.35 },
   printObject: { height: 18, borderTopRightRadius: 8, borderTopLeftRadius: 8, backgroundColor: palette.mint },
   layerLines: { position: "absolute", left: 26, right: 26, top: 72, gap: 4 },
   layerLine: { height: 3, borderRadius: 999, backgroundColor: palette.cyan },
