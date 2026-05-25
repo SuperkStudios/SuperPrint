@@ -38,7 +38,7 @@ npx eas build --platform ios --profile review
 npx eas build --platform ios --profile production
 ```
 
-Before building, confirm the Apple provisioning profile for `studio.superk.superprint.merchant` includes the Tap to Pay on iPhone entitlement.
+Before building, confirm the Apple provisioning profile for `studio.superk.print` includes the Apple Pay merchant ID `merchant.studio.superk.print` and the Tap to Pay on iPhone entitlement.
 
 ## Review Recording
 

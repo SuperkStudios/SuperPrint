@@ -8,9 +8,10 @@ const config: ExpoConfig = {
   orientation: "portrait",
   userInterfaceStyle: "automatic",
   ios: {
-    bundleIdentifier: "studio.superk.superprint.merchant",
+    bundleIdentifier: "studio.superk.print",
     supportsTablet: false,
     entitlements: {
+      "com.apple.developer.in-app-payments": ["merchant.studio.superk.print"],
       "com.apple.developer.proximity-reader.payment.acceptance": true
     },
     infoPlist: {
@@ -22,14 +23,14 @@ const config: ExpoConfig = {
     }
   },
   android: {
-    package: "studio.superk.superprint.merchant",
+    package: "studio.superk.print",
     permissions: ["ACCESS_FINE_LOCATION", "BLUETOOTH", "BLUETOOTH_ADMIN", "BLUETOOTH_CONNECT", "NFC"]
   },
   plugins: [
     [
       "@stripe/stripe-react-native",
       {
-        merchantIdentifier: "merchant.studio.superk.superprint",
+        merchantIdentifier: "merchant.studio.superk.print",
         enableGooglePay: false
       }
     ],
