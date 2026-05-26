@@ -96,22 +96,31 @@ Not locked behind:
 
 ---
 
-# What SuperPrint OS Is
+# What This Public Repo Is
 
-SuperPrint OS is a universal manufacturing platform that connects:
+This public repository is the open software layer for connecting fabrication tools.
+
+Its focus is:
 
 * printers
-* livestreams
-* queues
 * telemetry
-* automation
 * slicing
-* analytics
 * maintenance
-* mobile apps
-* distributed manufacturing
+* queue handoff
+* print dispatch
+* local printer agents
+* printer adapter interfaces
+* hardware-agnostic manufacturing APIs
+* livestream and timelapse plumbing
 
-into one real-time ecosystem.
+The private SuperPrint company frontend, commerce experience, customer storefront, and brand-specific business workflows can build on top of this layer without making this repository depend on them.
+
+In short:
+
+```txt
+public repo = the manufacturing interconnect
+private app = SuperPrint's own business frontend
+```
 
 ---
 
@@ -161,19 +170,19 @@ Manufacturing becomes interactive instead of invisible.
 
 # Core Systems
 
-## SuperPrint Cloud
+## SuperPrint Core
 
-Central orchestration platform.
+Hardware-agnostic orchestration APIs.
 
 Handles:
 
 * authentication
 * queues
 * APIs
-* livestream routing
-* analytics
-* notifications
-* supporter systems
+* printer registry
+* job state
+* adapter contracts
+* manufacturing events
 
 ---
 
@@ -194,7 +203,7 @@ Handles:
 
 ## SuperQueue
 
-Distributed manufacturing scheduler.
+Distributed manufacturing scheduler and handoff layer.
 
 Handles:
 
@@ -208,7 +217,7 @@ Handles:
 
 ## SuperVision
 
-Livestream and telemetry infrastructure.
+Livestream, timelapse, and telemetry infrastructure.
 
 Handles:
 
@@ -251,7 +260,7 @@ Tracks:
 
 ## SuperFactory
 
-Community-powered factory evolution system.
+Optional factory evolution primitives.
 
 Supports:
 
@@ -269,7 +278,7 @@ Supports:
 Every order upgrades the factory.
 ```
 
-Users do not simply buy prints.
+In SuperPrint's own private product, users do not simply buy prints.
 
 They help unlock:
 
@@ -291,6 +300,8 @@ This is NOT:
 This IS:
 
 * community-powered infrastructure growth
+
+For this public repo, factory evolution should stay modular. The open layer can expose capacity, milestones, telemetry, and production history, while product-specific supporter experiences can live in private or downstream apps.
 
 ---
 
@@ -344,6 +355,75 @@ The goal is to support:
 
 Community:
 [SuperPrint Discord](https://discord.com/invite/Rh4ySUEYV4?utm_source=chatgpt.com)
+
+---
+
+# For Contributors
+
+SuperPrint OS is public now. The direction of this repository is the software that lets people slice models, connect printers, send jobs, observe telemetry, and coordinate manufacturing across different hardware.
+
+The repository still contains useful systems from the original live print shop:
+
+* STL uploads and review
+* print queues
+* printer profiles
+* SuperNode
+* local slicing
+* livestream and timelapse media
+* maintenance tracking
+* mobile operator apps
+* production deployment docs
+
+Those pieces are not throwaway MVP code. They are reference implementations and transition pieces for the broader OS. Do not remove working capabilities just because they came from the original SuperPrint business app.
+
+New public work should push toward the reusable layer:
+
+* printer adapters
+* slicer integration
+* queue dispatch
+* job state synchronization
+* telemetry normalization
+* live media plumbing
+* local agent reliability
+* hardware-agnostic APIs
+
+SuperPrint's company-specific storefront, checkout, customer journey, and branded frontend should be treated as downstream/private product surface.
+
+Start here:
+
+* [Contributing guide](CONTRIBUTING.md)
+* [Security policy](SECURITY.md)
+* [Public roadmap](docs/public-roadmap.md)
+* [Production deploy notes](docs/production-deploy.md)
+* [Live media relay notes](docs/live-media-relay.md)
+
+## Docker Quick Start
+
+Use Docker for local development:
+
+```bash
+cp .env.example .env
+docker compose build
+docker compose up -d postgres redis app worker slice-worker
+curl http://localhost:3000/api/health
+```
+
+Then open:
+
+```txt
+http://localhost:3000
+```
+
+On a clean database, SuperPrint redirects to `/setup`.
+
+SuperNode is opt-in because it talks to real printers:
+
+```bash
+cp .env.supernode.example .env.supernode
+docker compose --profile supernode up -d supernode
+```
+
+Do not commit real `.env`, `.env.production`, `.env.supernode`, printer LAN addresses, node secrets, payment keys, signing assets, or production logs.
 
 ---
 

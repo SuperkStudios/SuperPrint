@@ -7,30 +7,30 @@ services:
       - "3000:3000"
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/superprint?schema=public
-      NEXTAUTH_URL: https://print.superk.studio
-      NEXTAUTH_SECRET: dev-secret-change-me-dev-secret-change-me
-      BETTER_AUTH_URL: https://print.superk.studio
-      BETTER_AUTH_TRUSTED_ORIGINS: https://print.superk.studio,https://appleid.apple.com,http://Keenans-Mac-mini.local:3000,http://localhost:3000,http://127.0.0.1:3000,http://192.168.10.104:3000,http://192.168.10.126:3000
-      BETTER_AUTH_SECRET: dev-secret-change-me-dev-secret-change-me
-      NEXT_PUBLIC_APP_URL: https://print.superk.studio
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-dev-secret-change-me-dev-secret-change-me}
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:3000}
+      BETTER_AUTH_TRUSTED_ORIGINS: ${BETTER_AUTH_TRUSTED_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-dev-secret-change-me-dev-secret-change-me}
+      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
       APPLE_CLIENT_ID: ${APPLE_CLIENT_ID:-}
       APPLE_TEAM_ID: ${APPLE_TEAM_ID:-}
       APPLE_KEY_ID: ${APPLE_KEY_ID:-}
       APPLE_PRIVATE_KEY: ${APPLE_PRIVATE_KEY:-}
       APPLE_CLIENT_SECRET: ${APPLE_CLIENT_SECRET:-}
-      APPLE_APP_BUNDLE_IDENTIFIER: studio.superk.superprint.admin
+      APPLE_APP_BUNDLE_IDENTIFIER: ${APPLE_APP_BUNDLE_IDENTIFIER:-studio.superprint.admin}
       MERCHANT_MOBILE_ALLOW_UNVERIFIED_EMAIL: "true"
       STRIPE_SECRET_KEY: ""
       STRIPE_WEBHOOK_SECRET: ""
-      SUPERPRINT_FIELD_ENCRYPTION_KEY: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
-      MEDIA_TOKEN_SECRET: dev-media-secret-change-me
+      SUPERPRINT_FIELD_ENCRYPTION_KEY: ${SUPERPRINT_FIELD_ENCRYPTION_KEY:-MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=}
+      MEDIA_TOKEN_SECRET: ${MEDIA_TOKEN_SECRET:-dev-media-secret-change-me}
       REDIS_URL: redis://redis:6379
       HOST_SLICER_ESTIMATE_URL: http://host.docker.internal:4317/estimate
-      PRINTER_ALERT_WEBHOOK_TOKEN: dev-printer-alert-token-change-me
-      SUPERNODE_REGISTRATION_TOKEN: dev-supernode-registration-token
-      CENTAURI_DIRECT_START_ENABLED: "true"
+      PRINTER_ALERT_WEBHOOK_TOKEN: ${PRINTER_ALERT_WEBHOOK_TOKEN:-dev-printer-alert-token-change-me}
+      SUPERNODE_REGISTRATION_TOKEN: ${SUPERNODE_REGISTRATION_TOKEN:-dev-supernode-registration-token}
+      CENTAURI_DIRECT_START_ENABLED: ${CENTAURI_DIRECT_START_ENABLED:-false}
       SUPERPRINT_DATA_ROOT: /data
-      PUBLIC_FACTORY_STREAM_URL: https://demo.superprint.local/live/factory
+      PUBLIC_FACTORY_STREAM_URL: ${PUBLIC_FACTORY_STREAM_URL:-}
     volumes:
       - uploads:/data/uploads
       - sliced:/data/sliced
@@ -60,7 +60,7 @@ services:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/superprint?schema=public
       REDIS_URL: redis://redis:6379
       SUPERPRINT_DATA_ROOT: /data
-      CENTAURI_DIRECT_START_ENABLED: "true"
+      CENTAURI_DIRECT_START_ENABLED: ${CENTAURI_DIRECT_START_ENABLED:-false}
     volumes:
       - uploads:/data/uploads
       - sliced:/data/sliced
@@ -120,17 +120,19 @@ services:
         condition: service_healthy
 
   supernode:
+    profiles:
+      - supernode
     build:
       context: .
       dockerfile: Dockerfile
     command: npm run supernode
     environment:
       SUPERPRINT_API_URL: http://app:3000
-      SUPERNODE_ID: supernode-local
-      SUPERNODE_SECRET: supernode-local.EXsL3Fi_1JZsD81iQPKmr8sw4C3znMJAd36nz_01lBI
-      SUPERNODE_PRINTER_ID: cmp6fgcwp0007p33cwxjsp7ja
-      SUPERNODE_PRINTER_CONTROL_URL: ws://192.168.10.125:3030/websocket
-      SUPERNODE_PRINTER_CAMERA_URL: http://192.168.10.125:3031/video
+      SUPERNODE_ID: ${SUPERNODE_ID:-supernode-local}
+      SUPERNODE_SECRET: ${SUPERNODE_SECRET:-replace-after-registering-node}
+      SUPERNODE_PRINTER_ID: ${SUPERNODE_PRINTER_ID:-}
+      SUPERNODE_PRINTER_CONTROL_URL: ${SUPERNODE_PRINTER_CONTROL_URL:-}
+      SUPERNODE_PRINTER_CAMERA_URL: ${SUPERNODE_PRINTER_CAMERA_URL:-}
       SUPERNODE_HOST_SLICER_URL: http://host.docker.internal:4317
       SUPERNODE_UPLOADS_PATH: /data/uploads
       SUPERNODE_SLICED_PATH: /data/sliced
