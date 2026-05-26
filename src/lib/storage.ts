@@ -13,7 +13,6 @@ export const storageClasses = [
   "timelapses",
   "thumbnails",
   "logs",
-  "merchant-documents",
   "backup-staging"
 ] as const;
 

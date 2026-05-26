@@ -7,7 +7,6 @@ import { prisma } from "@/lib/prisma";
 import { resolveLocalStoragePath } from "@/lib/storage";
 import { getRecentSuperNodeCameraFrame } from "./supernode-camera-frames";
 import { recordPlatformEvent } from "./events";
-import { sendMobilePush } from "./mobile-push";
 import { getPartColorRequirements, getPartProductionPlanner } from "./part-planner";
 import { readPrinterTelemetry } from "./printer-heartbeat";
 import { rebuildProductionPlateJobs } from "./production-plates";
@@ -173,13 +172,6 @@ export async function runProductionLoopAction(input: {
       actorId: input.actorId,
       payload: { ...platePayload(plate, printer.id), aiStatus: result.status, confidence: result.confidence, reason: result.reason }
     });
-    if (result.status !== "clear") {
-      await sendMobilePush({
-        title: "Build plate needs review",
-        body: result.reason,
-        data: { plateJobId: plate.id, action: "plate_check" }
-      });
-    }
     await recordCheckpoint({ action: input.action, actorId: input.actorId, plateJobId: plate.id, printerId: printer.id, payload: result });
     return { result, state: await getProductionLoopState() };
   }
@@ -244,11 +236,6 @@ export async function runProductionLoopAction(input: {
       data: { status: "PRINTED", printedQuantity: plate.quantityPlanned, completedAt: new Date() }
     });
     await recordPlatformEvent({ type: "PRODUCTION_PLATE_PRINT_COMPLETED", actorId: input.actorId, payload: platePayload(plate, printer.id) });
-    await sendMobilePush({
-      title: "Print finished",
-      body: `${plate.color} ${plate.productPart.name} is ready to remove from the plate.`,
-      data: { plateJobId: plate.id, action: "print_finished" }
-    });
     await recordCheckpoint({ action: input.action, actorId: input.actorId, plateJobId: plate.id, printerId: printer.id });
     return { job: updated, state: await getProductionLoopState() };
   }
@@ -483,11 +470,6 @@ async function markPlatePrintedFromTelemetry(plate: PlateWithIncludes, printerId
     include: { productPart: { include: { product: { include: { parts: true } } } }, filament: true }
   });
   await recordPlatformEvent({ type: "PRODUCTION_PLATE_PRINT_COMPLETED", payload: platePayload(plate, printerId ?? "") });
-  await sendMobilePush({
-    title: "Print finished. Remove parts next.",
-    body: `${plate.color} ${plate.productPart.product.name} is done. Next step: clear the build plate and tap Parts Removed to add them to inventory.`,
-    data: { plateJobId: plate.id, action: "remove_finished_parts", nextAction: "markPartsInventoried" }
-  }).catch(() => undefined);
   return updated;
 }
 

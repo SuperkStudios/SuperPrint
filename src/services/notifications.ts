@@ -1,7 +1,6 @@
 import { notificationSettingKeys, resolveNotificationSettings } from "@/domain/notification-settings";
 import { prisma } from "@/lib/prisma";
 import { recordPlatformEvent } from "./events";
-import { sendMobilePush } from "./mobile-push";
 
 export type OperationsAlert = {
   title: string;
@@ -37,14 +36,4 @@ export async function sendOperationsAlert(alert: OperationsAlert) {
       signal: AbortSignal.timeout(5000)
     }).catch(() => null);
   }
-
-  await sendMobilePush({
-    title: alert.title,
-    body: alert.message,
-    data: {
-      severity: alert.severity,
-      printerId: alert.printerId ?? null,
-      printJobId: alert.printJobId ?? null
-    }
-  });
 }

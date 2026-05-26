@@ -3,16 +3,12 @@ import { compare, hash } from "bcryptjs";
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { nextCookies } from "better-auth/next-js";
-import { importPKCS8, SignJWT } from "jose";
 import { prisma } from "./prisma";
 import type { StaffPermission } from "@/domain/navigation";
-import { sendAccountCreatedEmail, sendPasswordResetEmail } from "@/services/email";
 
-const socialProviders = await buildSocialProviders();
 const authSecret = resolveAuthSecret();
 
-async function buildSocialProviders() {
-  const generatedAppleClientSecret = await resolveAppleClientSecret();
+function buildSocialProviders() {
   return {
   ...(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
     ? {
@@ -22,15 +18,6 @@ async function buildSocialProviders() {
         }
       }
     : {}),
-  ...(process.env.APPLE_CLIENT_ID && generatedAppleClientSecret
-    ? {
-        apple: {
-          clientId: process.env.APPLE_CLIENT_ID,
-          clientSecret: generatedAppleClientSecret,
-          appBundleIdentifier: process.env.APPLE_APP_BUNDLE_IDENTIFIER
-        }
-      }
-    : {})
   };
 }
 
@@ -45,25 +32,13 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
     minPasswordLength: 8,
-    requireEmailVerification: true,
-    sendResetPassword: async ({ user, url }) => {
-      await sendPasswordResetEmail({ email: user.email, name: user.name, resetUrl: url });
-    },
+    requireEmailVerification: false,
     password: {
       hash: (password) => hash(password, 10),
       verify: ({ hash: storedHash, password }) => compare(password, storedHash)
     }
   },
-  emailVerification: {
-    sendOnSignUp: true,
-    sendOnSignIn: true,
-    expiresIn: 60 * 60 * 24,
-    autoSignInAfterVerification: true,
-    sendVerificationEmail: async ({ user, url }) => {
-      await sendAccountCreatedEmail({ email: user.email, name: user.name, verificationUrl: url });
-    }
-  },
-  socialProviders,
+  socialProviders: buildSocialProviders(),
   user: {
     additionalFields: {
       role: {
@@ -109,24 +84,6 @@ function resolveAuthSecret() {
     throw new Error("BETTER_AUTH_SECRET or NEXTAUTH_SECRET must be at least 32 characters in production.");
   }
   return "dev-secret-change-me";
-}
-
-async function resolveAppleClientSecret() {
-  if (process.env.APPLE_CLIENT_SECRET) return process.env.APPLE_CLIENT_SECRET;
-  if (!process.env.APPLE_CLIENT_ID || !process.env.APPLE_TEAM_ID || !process.env.APPLE_KEY_ID || !process.env.APPLE_PRIVATE_KEY) {
-    return null;
-  }
-  const privateKey = process.env.APPLE_PRIVATE_KEY.replace(/\\n/g, "\n");
-  const key = await importPKCS8(privateKey, "ES256");
-  const now = Math.floor(Date.now() / 1000);
-  return new SignJWT({})
-    .setProtectedHeader({ alg: "ES256", kid: process.env.APPLE_KEY_ID })
-    .setIssuer(process.env.APPLE_TEAM_ID)
-    .setSubject(process.env.APPLE_CLIENT_ID)
-    .setAudience("https://appleid.apple.com")
-    .setIssuedAt(now)
-    .setExpirationTime(now + 60 * 60 * 24 * 180)
-    .sign(key);
 }
 
 export type AppSession = {

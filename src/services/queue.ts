@@ -20,8 +20,6 @@ import { prisma } from "../lib/prisma";
 import { resolveLocalStoragePath } from "../lib/storage";
 import { recordPlatformEvent } from "./events";
 import { attachCompletedPrintTimelapse } from "./timelapse-media";
-import { maybeCreateLabelAfterPrint } from "./shipping";
-import { sendOrderEmail } from "./email";
 
 export async function getPublicQueueState() {
   const [current, nextJobs, recentPrints, printers] = await Promise.all([
@@ -262,14 +260,6 @@ export async function completePrintJob(printJobId: string, actorId?: string) {
   void attachCompletedPrintTimelapse(printJobId).catch((error) => {
     console.error("Could not attach completed print timelapse", error);
   });
-  void maybeCreateLabelAfterPrint(updated.order.id).catch((error) => {
-    console.error("Could not run post-print Shippo label automation", error);
-  });
-  if (updated.order.fulfillmentMethod === "PICKUP") {
-    void sendOrderEmail("order-ready-pickup", updated.order.id).catch((error) => {
-      console.error("Could not send pickup ready email", error);
-    });
-  }
 
   return updated;
 }

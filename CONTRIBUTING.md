@@ -2,7 +2,7 @@
 
 SuperPrint OS is being built in public as the interoperability layer for observable manufacturing. The public project should help users slice models, connect printers, send jobs, observe telemetry, and coordinate fabrication across different hardware.
 
-The current codebase still includes useful systems from the original live print shop: mobile apps, production deploy paths, SuperNode, queueing, slicing, telemetry, media, payments, and maintenance. Please improve reusable systems in place instead of removing working capability. Company-specific storefront, checkout, customer journey, and branded frontend work should be treated as downstream/private product surface unless it is needed as a reference implementation.
+The current codebase keeps the reusable pieces from the original live print shop: production deploy paths, SuperNode, queueing, slicing, telemetry, media, printer profiles, filament tracking, and maintenance. Please improve reusable systems in place instead of removing working capability. Company-specific storefront, checkout, customer journey, mobile apps, payments, and branded frontend work belongs in downstream/private product repos.
 
 ## Development Rules
 

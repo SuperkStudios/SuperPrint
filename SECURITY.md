@@ -10,7 +10,6 @@ Do not open a public issue for vulnerabilities involving:
 - admin permission bypass
 - printer control or job dispatch without authorization
 - leaked API keys, node secrets, private LAN addresses, or customer data
-- payment, refund, or checkout manipulation
 - media token bypasses for private uploads, videos, or timelapses
 
 Use GitHub private vulnerability reporting if it is enabled for the repository. If it is not enabled yet, contact the maintainers through the project Discord and ask for a private security channel before sharing details.
@@ -32,7 +31,6 @@ Security fixes are welcome for the public code in this repository, including:
 - SuperVision
 - SuperSlice
 - SuperMaintain
-- mobile applications
 - deployment and Docker configuration
 
 Hardware-specific firmware vulnerabilities should also be reported to the hardware vendor.
