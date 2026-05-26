@@ -328,6 +328,20 @@ function buildNextAction(input: {
       primaryButton: "Filament Changed"
     };
   }
+  if (
+    input.latestCameraFrame &&
+    !input.nextPlate.plateClearConfirmedAt &&
+    input.nextPlate.aiPlateCheckStatus !== "clear"
+  ) {
+    return {
+      type: "camera_plate_check",
+      title: "Run camera plate check",
+      detail: input.nextPlate.aiPlateCheckStatus === "blocked"
+        ? input.nextPlate.aiPlateCheckReason ?? "Camera check thinks the build plate is blocked."
+        : "Use the latest camera frame to check for finished parts, scraps, or purge material before anyone starts the next plate.",
+      primaryButton: "Check Camera"
+    };
+  }
   if (!input.nextPlate.plateClearConfirmedAt) {
     return {
       type: "confirm_plate_clear",
