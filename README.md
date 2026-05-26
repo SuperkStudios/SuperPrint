@@ -1,175 +1,354 @@
-# SuperPrint MVP
+# SuperPrint OS
 
-SuperPrint is a transparent live 3D print-on-demand platform. Customers browse approved products or upload STL files, get approval, pay, join a live manufacturing queue, watch their print, and receive the finished print video afterward.
+> Observable manufacturing infrastructure for the next generation of fabrication.
 
-## Stack
+---
 
-- Next.js App Router + TypeScript
-- Tailwind CSS + shadcn-style UI primitives
-- NextAuth credentials scaffolding with customer/admin roles
-- PostgreSQL through Prisma
-- Redis + BullMQ print queue scaffold
-- Server-Sent Events for public platform events
-- Docker volume storage for STL/model uploads, sliced files, videos, timelapses, thumbnails, logs, and backup staging
+# Why SuperPrint Exists
 
-## Setup
+Two weeks ago I bought my first serious 3D printer:
 
-### Local Node
+* **Elegoo Centauri Carbon**
 
-```bash
-npm install
-cp .env.example .env
+At the same time, the entire 3D printing community was exploding over the Bambu Lab ecosystem drama.
+
+Originally, SuperPrint was supposed to be:
+
+```txt
+a small live-printing business
 ```
 
-Update `.env` with PostgreSQL, Redis, auth, local storage, backup, and Social Blade bucket values.
+The idea was simple:
 
-```bash
-npm run db:generate
-npm run db:migrate
-npm run dev
+* let people upload prints
+* watch them get manufactured live
+* make the manufacturing process transparent
+
+But after seeing the state of the industry, it became obvious the problem is much bigger.
+
+The 3D printing ecosystem is fragmented:
+
+* closed systems
+* disconnected software
+* hidden manufacturing
+* poor interoperability
+* weak transparency
+* limited community involvement
+
+So the vision evolved.
+
+SuperPrint is no longer just:
+
+```txt
+a 3D print shop
 ```
 
-`npm run db:seed` is bootstrap-safe and optional. It does not create users, products, printers, jobs, orders, uploads, media, telemetry, or events.
+SuperPrint becomes:
 
-Optional worker:
-
-```bash
-npm run worker
+```txt
+the operating system for observable manufacturing
 ```
 
-Optional backup worker:
+---
 
-```bash
-npm run backup
+# The Mission
+
+```txt
+Manufacturing should be transparent.
 ```
 
-Docker MVP stack:
+People should be able to:
 
-```bash
-docker compose build
-docker compose up
+* watch products being made live
+* understand where their order is
+* participate in factory growth
+* trust the production process
+* connect any printer into a shared ecosystem
+
+SuperPrint is designed to support:
+
+* makers
+* creators
+* print farms
+* schools
+* businesses
+* distributed manufacturing networks
+
+regardless of printer brand.
+
+---
+
+# Core Philosophy
+
+The future of fabrication should be:
+
+* open
+* observable
+* community-powered
+* hardware-agnostic
+* software-defined
+
+Not locked behind:
+
+* closed ecosystems
+* vendor restrictions
+* isolated hardware platforms
+
+---
+
+# What SuperPrint OS Is
+
+SuperPrint OS is a universal manufacturing platform that connects:
+
+* printers
+* livestreams
+* queues
+* telemetry
+* automation
+* slicing
+* analytics
+* maintenance
+* mobile apps
+* distributed manufacturing
+
+into one real-time ecosystem.
+
+---
+
+# Supported Ecosystem
+
+SuperPrint is designed to integrate with:
+
+* Bambu Lab
+* Elegoo
+* Prusa
+* Creality
+* Voron
+* RatRig
+* Klipper
+* Moonraker
+* OctoPrint
+* generic GCODE workflows
+
+The goal is not to replace hardware manufacturers.
+
+The goal is to build:
+
+```txt
+the software layer above them
 ```
 
-Then open `http://localhost:3000`. The app service runs migrations automatically on startup with `prisma migrate deploy`.
+---
 
-## Clean First-Run Setup
+# Observable Manufacturing
 
-```bash
-docker compose build
-docker compose up -d postgres redis app worker
-curl http://localhost:3000/api/health
+The queue itself becomes part of the product experience.
+
+Users can:
+
+* watch prints live
+* monitor queue movement
+* receive notifications
+* track printer health
+* view telemetry
+* see filament inventory
+* download timelapses
+* participate in factory upgrades
+
+Manufacturing becomes interactive instead of invisible.
+
+---
+
+# Core Systems
+
+## SuperPrint Cloud
+
+Central orchestration platform.
+
+Handles:
+
+* authentication
+* queues
+* APIs
+* livestream routing
+* analytics
+* notifications
+* supporter systems
+
+---
+
+## SuperNode
+
+Local printer agent.
+
+Handles:
+
+* printer communication
+* queue syncing
+* telemetry
+* local slicing
+* livestream relays
+* automation
+
+---
+
+## SuperQueue
+
+Distributed manufacturing scheduler.
+
+Handles:
+
+* printer assignment
+* material matching
+* batch optimization
+* priority systems
+* distributed routing
+
+---
+
+## SuperVision
+
+Livestream and telemetry infrastructure.
+
+Handles:
+
+* live streams
+* timelapses
+* overlays
+* recording
+* print archives
+
+---
+
+## SuperSlice
+
+Automated slicing infrastructure.
+
+Handles:
+
+* slicer profiles
+* material presets
+* optimization
+* support generation
+* print validation
+
+---
+
+## SuperMaintain
+
+Maintenance operating system.
+
+Tracks:
+
+* runtime hours
+* print failures
+* nozzle wear
+* filament usage
+* maintenance schedules
+* printer health
+
+---
+
+## SuperFactory
+
+Community-powered factory evolution system.
+
+Supports:
+
+* upgrade goals
+* supporter systems
+* infrastructure unlocks
+* factory milestones
+* community participation
+
+---
+
+# Factory Evolution
+
+```txt
+Every order upgrades the factory.
 ```
 
-Open `http://localhost:3000`. On a clean database, SuperPrint redirects to `/setup`.
+Users do not simply buy prints.
 
-The setup wizard creates the first owner account, company/brand name, storage confirmation, first printer profile, first filament spool, and security confirmations. After an owner or admin exists, `/setup` and the bootstrap API lock permanently.
+They help unlock:
 
-The production database starts empty: no fake users, products, printers, jobs, orders, uploads, media, telemetry, or events.
+* new printers
+* new materials
+* automation systems
+* better livestreams
+* AI monitoring
+* regional print nodes
+* future fabrication infrastructure
 
-## Main Routes
+This is NOT:
 
-- `/` public homepage with hero and live factory queue centerpiece
-- `/store` approved product store
-- `/upload` STL approval request flow
-- `/queue` public live queue
-- `/orders` customer order history and videos
-- `/admin` printer/admin dashboard
-- `/admin/uploads` model approval
-- `/admin/queue` queue reorder and print lifecycle controls
-- `/admin/filament` filament inventory tracking
-- `/admin/maintenance` maintenance queue tracking
+* investing
+* equity
+* ownership
+* securities
 
-## API Shape
+This IS:
 
-- `GET /api/products`
-- `POST /api/uploads`
-- `GET|POST /api/orders`
-- `GET /api/queue`
-- `GET /api/events` SSE stream
-- `GET|POST /api/admin/uploads`
-- `GET|POST /api/admin/queue`
-- `GET|POST /api/admin/filament`
-- `GET|POST /api/admin/maintenance`
-- `GET /api/mobile/queue`
-- `GET /api/mobile/events`
-- `GET /api/bootstrap/status`
-- `POST /api/bootstrap`
+* community-powered infrastructure growth
 
-Public APIs sanitize events and queue state. They never expose internal printer IPs, printer API URLs, admin notes, local volume paths, payment provider IDs, or operational controls.
+---
 
-## Events
+# Long-Term Vision
 
-The platform event model supports:
+SuperPrint eventually evolves into:
 
-- `ORDER_CREATED`
-- `MODEL_UPLOADED`
-- `MODEL_APPROVED`
-- `MODEL_REJECTED`
-- `PRINT_STARTED`
-- `PRINT_PAUSED`
-- `PRINT_REQUEUED`
-- `PRINT_COMPLETED`
-- `PRINT_FAILED`
-- `FILAMENT_LOW`
-- `MAINTENANCE_DUE`
-- `VIDEO_READY`
+* distributed print nodes
+* regional manufacturing hubs
+* AI-assisted manufacturing
+* autonomous print orchestration
+* fabrication routing networks
+* decentralized manufacturing infrastructure
 
-Order media links are served through signed local tokens at `/api/media/[token]`; customer-facing pages never render raw Docker volume paths.
+The long-term goal is:
 
-## Production TODO Seams
-
-- Real printer agent: replace `src/workers/print-worker.ts` with a secure agent protocol that owns internal printer credentials, telemetry, and G-code dispatch.
-- Custom uploads: product checkout uses Stripe, but custom STL upload orders still need a payment checkout path after review and customer approval.
-- Shipping: Shippo rate shopping, free-shipping thresholds, label purchase, and label printing are wired for product orders. Remaining production work is carrier webhooks, richer address validation, and exception handling for refunded/voided labels.
-- Local volume storage: add richer file processing, thumbnail generation, and private media authorization policy.
-- Social Blade bucket upload: replace `SOCIAL_BLADE_UPLOAD_COMMAND` with the real bucket CLI/API once credentials and endpoint behavior are available.
-
-## Mobile Release Checklist
-
-- Confirm Apple Tap to Pay on iPhone entitlement is enabled on both bundle IDs:
-  - `studio.superk.superprint.admin`
-  - `studio.superk.superprint.merchant`
-- Build the admin app from `apps/admin-mobile` with `npx eas build --platform ios --profile production`.
-- Build the merchant app from `apps/merchant-mobile` with `npx eas build --platform ios --profile review` for Apple review videos or `--profile production` for App Store release.
-- Set `EXPO_PUBLIC_SUPERPRINT_URL=https://print.superk.studio` for merchant release builds.
-- Set production `STRIPE_WEBHOOK_SECRET` and subscribe the webhook endpoint to checkout, payment intent, charge refund, and connected account update events.
-- Record Apple review videos using `docs/apple-tap-to-pay-review.md`.
-
-## Local Docker Volumes
-
-The MVP mounts separate volumes under `SUPERPRINT_DATA_ROOT`:
-
-- `/data/uploads` for STL/model uploads
-- `/data/sliced` for slicer outputs
-- `/data/videos` for finished print videos
-- `/data/timelapses` for timelapse captures
-- `/data/thumbnails` for generated thumbnails
-- `/data/logs` for worker and backup logs
-- `/data/backup-staging` for temporary and encrypted backup bundles
-
-## Backups And Restore
-
-`npm run backup` creates a PostgreSQL custom-format dump, archives media volumes, writes a manifest, compresses/encrypts the bundle, and optionally uploads it to Social Blade buckets through `SOCIAL_BLADE_UPLOAD_COMMAND`.
-
-Restore dry run:
-
-```bash
-npm run restore -- --bundle=/data/backup-staging/superprint-RUNID.tar.gz.enc
+```txt
+becoming the infrastructure layer for observable fabrication
 ```
 
-Execute disaster recovery:
+---
 
-```bash
-npm run restore -- --bundle=/data/backup-staging/superprint-RUNID.tar.gz.enc --confirm=true
+# Design Direction
+
+SuperPrint should feel like:
+
+* industrial telemetry
+* cyber manufacturing
+* operations center software
+* real-time infrastructure dashboards
+
+NOT:
+
+* generic e-commerce
+* hobby printer software
+* basic print farm tooling
+
+---
+
+# Open Community
+
+This is being built in public.
+
+The goal is to support:
+
+* the printer ecosystem
+* creators
+* operators
+* open manufacturing
+* interoperable infrastructure
+
+Community:
+[SuperPrint Discord](https://discord.com/invite/Rh4ySUEYV4?utm_source=chatgpt.com)
+
+---
+
+# Final Goal
+
+```txt
+Build the operating system that powers transparent manufacturing for the next generation of fabrication.
 ```
-
-## Verification
-
-```bash
-npm test
-npm run build
-```
-
-## Production Deploy
-
-See [docs/production-deploy.md](docs/production-deploy.md) for the VPS deployment, HTTPS/firewall checklist, and secure SuperNode setup for connecting the hosted app to your local PC and printer without exposing the printer to the internet.
