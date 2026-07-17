@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "SuperPrint OS",
-  description: "Open printer interconnect for slicing, dispatch, telemetry, and observable manufacturing.",
+  description: "3D printing software for local slicing, printer dispatch, telemetry, and observable manufacturing.",
   icons: {
     icon: "/favicon.png",
     shortcut: "/favicon.png",
